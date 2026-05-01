@@ -168,8 +168,33 @@ func createSpannerClient(ctx context.Context, project, instance, database, host 
 }
 
 func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, latencyHistogram metric.Float64Histogram, tableName string, targetTPS float64, concurrentThreads int, minId, maxId int64, attributes metric.MeasurementOption) {
-	semaphore := make(chan struct{}, concurrentThreads)
+	tasks := make(chan struct{}, 1000000) // large buffered channel to simulate unbounded queue
 	wg := &sync.WaitGroup{}
+
+	// Start worker goroutines
+	for i := 0; i < concurrentThreads; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case _, ok := <-tasks:
+					if !ok {
+						return
+					}
+					start := time.Now()
+					err := b.Execute(ctx, client, tableName, minId, maxId)
+					if err != nil {
+						log.Printf("Operation failed: %v", err)
+					} else {
+						latencyHistogram.Record(ctx, float64(time.Since(start).Microseconds()), attributes)
+					}
+				}
+			}
+		}()
+	}
 
 	generatorTicker := time.NewTicker(1 * time.Microsecond) // minimal tick for poisson calculation
 	defer generatorTicker.Stop()
@@ -177,23 +202,15 @@ func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, late
 	for {
 		select {
 		case <-ctx.Done():
+			close(tasks)
 			wg.Wait()
 			return
 		case <-generatorTicker.C:
-			semaphore <- struct{}{} // Acquire worker slot
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				defer func() { <-semaphore }() // Release worker slot
-
-				start := time.Now()
-				err := b.Execute(ctx, client, tableName, minId, maxId)
-				if err != nil {
-					log.Printf("Operation failed: %v", err)
-					return
-				}
-				latencyHistogram.Record(ctx, float64(time.Since(start).Microseconds()), attributes)
-			}()
+			select {
+			case tasks <- struct{}{}: // push task
+			default:
+				log.Printf("Task dropped: workload queue is full (1M tasks)")
+			}
 			time.Sleep(calculatePoissonDelay(targetTPS))
 		}
 	}
