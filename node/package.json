@@ -1,0 +1,17 @@
+{
+  "name": "spanner-node-benchmark",
+  "version": "1.0.0",
+  "description": "Spanner Node.js Benchmark",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@google-cloud/spanner": "^7.2.0",
+    "@opentelemetry/api": "^1.7.0",
+    "@opentelemetry/sdk-metrics": "^1.19.0",
+    "@opentelemetry/exporter-metrics-otlp-grpc": "^0.46.0",
+    "@opentelemetry/resources": "^1.19.0",
+    "@opentelemetry/semantic-conventions": "^1.19.0"
+  }
+}

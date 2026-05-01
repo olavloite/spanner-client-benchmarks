@@ -1,0 +1,51 @@
+# Compiled outputs
+**/target/
+**/bin/
+**/out/
+**/benchmark-app
+**/*.class
+**/*.jar
+
+# Go compiled binaries
+**/benchmark-app
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*.iml
+.classpath
+.project
+.settings/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Node
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
