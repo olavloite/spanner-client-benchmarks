@@ -58,7 +58,7 @@ JOB_NAME="${JOB_NAME:-spanner-$CLIENT_TYPE-benchmark-job-$SUFFIX}"
 
 # Build the image using Cloud Build
 echo "Building image with Cloud Build for $CLIENT_TYPE..."
-gcloud builds submit --project "$PROJECT_ID" --tag "$IMAGE_NAME" .
+gcloud builds submit --project "$PROJECT_ID" --tag "$IMAGE_NAME" --suppress-logs .
 
 if [ "$CLIENT_TYPE" = "java" ]; then
   ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,--for-alerting=true,$BENCHMARK_TYPE,--table=$TABLE_NAME,--tps=$TPS,--threads=$THREADS,--min-id=$MIN_ID,--max-id=$MAX_ID"
