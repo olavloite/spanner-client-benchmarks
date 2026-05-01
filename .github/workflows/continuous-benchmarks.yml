@@ -1,0 +1,59 @@
+name: Nightly Spanner Client Benchmarks
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: appdev-soda-spanner-staging
+  INSTANCE_ID: knut-test-ycsb
+  DATABASE_ID: spring-data-jpa
+  REGION: europe-north1
+  DURATION: 1425m
+  TPS: 10
+  SKIP_CLEANUP: 'true'
+
+jobs:
+  cleanup:
+    name: Maintenance Cleanup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Run automated cleanup
+        run: ./cleanup_benchmarks.sh
+
+  deploy-benchmarks:
+    name: Deploy Benchmark
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        client: [java, go]
+        benchmark_type: [point-select, select-update]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy and Execute Benchmark Preset
+        env:
+          BENCHMARK_TYPE: ${{ matrix.benchmark_type }}
+        run: ./run_benchmark.sh ${{ matrix.client }}
