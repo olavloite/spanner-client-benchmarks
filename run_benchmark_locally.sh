@@ -4,7 +4,7 @@
 set -e
 
 if [ "$#" -lt 1 ]; then
-  echo "Usage: $0 <go|java> [options] <benchmark-type>"
+  echo "Usage: $0 <go|java|node|python> [options] [benchmark-type]"
   exit 1
 fi
 
@@ -13,8 +13,8 @@ shift
 
 INIT_DIR="$(pwd)"
 
-if [ "$CLIENT_TYPE" != "go" ] && [ "$CLIENT_TYPE" != "java" ]; then
-  echo "Unsupported client type: $CLIENT_TYPE. Use 'go' or 'java'."
+if [ "$CLIENT_TYPE" != "go" ] && [ "$CLIENT_TYPE" != "java" ] && [ "$CLIENT_TYPE" != "node" ] && [ "$CLIENT_TYPE" != "python" ]; then
+  echo "Unsupported client type: $CLIENT_TYPE. Use 'go', 'java', 'node', or 'python'."
   exit 1
 fi
 
@@ -27,6 +27,10 @@ if [ "$CLIENT_TYPE" = "java" ]; then
   java -jar target/spanner-java-benchmark-1.0-SNAPSHOT.jar "$@"
 elif [ "$CLIENT_TYPE" = "go" ]; then
   ./benchmark-app "$@"
+elif [ "$CLIENT_TYPE" = "node" ]; then
+  node dist/index.js "$@"
+elif [ "$CLIENT_TYPE" = "python" ]; then
+  python3 main.py "$@"
 fi
 
 cd "$INIT_DIR"

@@ -40,6 +40,12 @@ public class AnalyzerApp implements Callable<Integer> {
     @Option(names = {"-c", "--client"}, description = "Filter by client type (e.g., java-client)")
     private String clientType;
 
+    @Option(names = {"--date"}, description = "Target date for analysis in YYYY-MM-DD format (defaults to UTC today)")
+    private String dateStr;
+
+    @Option(names = {"--baseline-date"}, description = "Optional baseline date for comparison in YYYY-MM-DD format")
+    private String baselineDateStr;
+
     public static void main(String[] args) {
         int exitCode = new CommandLine(new AnalyzerApp()).execute(args);
         System.exit(exitCode);
@@ -57,14 +63,30 @@ public class AnalyzerApp implements Callable<Integer> {
 
             boolean regressionFound = false;
             int[] percentiles = {50, 99};
-            int[] offsetsInDays = {1, 7};
 
-            for (int p : percentiles) {
-                for (int offset : offsetsInDays) {
+            if (baselineDateStr != null && !baselineDateStr.isEmpty()) {
+                LocalDate baselineDate = LocalDate.parse(baselineDateStr);
+                TimeInterval targetInterval = getTimeIntervalForDate(getTargetDate());
+                TimeInterval baselineInterval = getTimeIntervalForDate(baselineDate);
+
+                System.out.println("Comparing custom dates: target=" + getTargetDate() + " vs baseline=" + baselineDate);
+
+                for (int p : percentiles) {
                     double threshold = (p == 50) ? thresholdP50 : thresholdP99;
-                    boolean regression = analyzeRegression(client, p, offset, threshold);
+                    boolean regression = analyzeRegression(client, p, targetInterval, baselineInterval, threshold, "custom date " + baselineDateStr);
                     if (regression) {
                         regressionFound = true;
+                    }
+                }
+            } else {
+                int[] offsetsInDays = {1, 7};
+                for (int p : percentiles) {
+                    for (int offset : offsetsInDays) {
+                        double threshold = (p == 50) ? thresholdP50 : thresholdP99;
+                        boolean regression = analyzeRegression(client, p, offset, threshold);
+                        if (regression) {
+                            regressionFound = true;
+                        }
                     }
                 }
             }
@@ -84,40 +106,51 @@ public class AnalyzerApp implements Callable<Integer> {
         return 0;
     }
 
-    private void executeTestMode(MetricServiceClient client) {
-        System.out.println("Running in test mode. Extracting current percentiles...");
-        TimeInterval today = getDayInterval(0);
+    private LocalDate getTargetDate() {
+        if (dateStr != null && !dateStr.isEmpty()) {
+            return LocalDate.parse(dateStr);
+        }
+        return LocalDate.ofInstant(Instant.now(), ZoneOffset.UTC);
+    }
 
-        System.out.printf("Current P50: %.2f us\n", getMetricsPercentile(client, today, 50));
-        System.out.printf("Current P99: %.2f us\n", getMetricsPercentile(client, today, 99));
+    private void executeTestMode(MetricServiceClient client) {
+        LocalDate targetDate = getTargetDate();
+        System.out.println("Running in test mode. Extracting percentiles for date: " + targetDate);
+        TimeInterval interval = getTimeIntervalForDate(targetDate);
+
+        System.out.printf("P50: %.2f us\n", getMetricsPercentile(client, interval, 50));
+        System.out.printf("P99: %.2f us\n", getMetricsPercentile(client, interval, 99));
     }
 
     private boolean analyzeRegression(MetricServiceClient client, int percentile, int offsetDays, double threshold) {
         TimeInterval todayInterval = getDayInterval(0);
         TimeInterval baselineInterval = getDayInterval(offsetDays);
+        return analyzeRegression(client, percentile, todayInterval, baselineInterval, threshold, offsetDays + "-day baseline");
+    }
 
-        double todayP = getMetricsPercentile(client, todayInterval, percentile);
+    private boolean analyzeRegression(MetricServiceClient client, int percentile, TimeInterval targetInterval, TimeInterval baselineInterval, double threshold, String baselineLabel) {
+        double targetP = getMetricsPercentile(client, targetInterval, percentile);
         double baselineP = getMetricsPercentile(client, baselineInterval, percentile);
 
-        if (todayP > 0 && baselineP > 0) {
-            double ratio = todayP / baselineP;
-            System.out.printf("Calculated P%d offset comparison: today=%.2f us, baseline=%.2f us -> factor=%.2f\n",
-                    percentile, todayP, baselineP, ratio);
+        if (targetP > 0 && baselineP > 0) {
+            double ratio = targetP / baselineP;
+            System.out.printf("Calculated P%d comparison: target=%.2f us, baseline (%s)=%.2f us -> factor=%.2f\n",
+                    percentile, targetP, baselineLabel, baselineP, ratio);
 
             if (ratio > threshold) {
-                System.err.printf("ALERT: P%d deviation too large (factor: %.2f, limit threshold: %.2f) vs %d-day baseline\n",
-                        percentile, ratio, threshold, offsetDays);
+                System.err.printf("ALERT: P%d deviation too large (factor: %.2f, limit threshold: %.2f) vs %s\n",
+                        percentile, ratio, threshold, baselineLabel);
                 return true;
             }
+        } else {
+            System.out.printf("Could not retrieve metrics for P%d comparison: target=%.2f us, baseline (%s)=%.2f us\n",
+                    percentile, targetP, baselineLabel, baselineP);
         }
 
         return false;
     }
 
-    private TimeInterval getDayInterval(int offsetDays) {
-        Instant now = Instant.now();
-        LocalDate localDate = LocalDate.ofInstant(now, ZoneOffset.UTC).minusDays(offsetDays);
-
+    private TimeInterval getTimeIntervalForDate(LocalDate localDate) {
         Instant startOfDay = localDate.atStartOfDay().toInstant(ZoneOffset.UTC);
         Instant endOfDay = localDate.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
 
@@ -127,8 +160,12 @@ public class AnalyzerApp implements Callable<Integer> {
                 .build();
     }
 
+    private TimeInterval getDayInterval(int offsetDays) {
+        return getTimeIntervalForDate(getTargetDate().minusDays(offsetDays));
+    }
+
     private double getMetricsPercentile(MetricServiceClient client, TimeInterval interval, int targetPercentile) {
-        StringBuilder filterBuilder = new StringBuilder("metric.type=\"workload.googleapis.com/SpannerBenchmark/latency\" AND metric.labels.for_alerting=\"true\"");
+        StringBuilder filterBuilder = new StringBuilder("metric.type=\"workload.googleapis.com/spanner_client_benchmarks/latency\" AND metric.labels.for_alerting=\"true\"");
 
         if (benchmarkType != null && !benchmarkType.isEmpty()) {
             filterBuilder.append(" AND metric.labels.benchmark_type=\"").append(benchmarkType).append("\"");
@@ -147,13 +184,20 @@ public class AnalyzerApp implements Callable<Integer> {
                 .setView(ListTimeSeriesRequest.TimeSeriesView.FULL)
                 .build();
 
+        java.util.List<com.google.api.Distribution> distributions = new java.util.ArrayList<>();
         try {
             for (TimeSeries ts : client.listTimeSeries(request).iterateAll()) {
-                if (ts.getPointsCount() > 0) {
-                    var point = ts.getPoints(0); // current point
+                for (com.google.monitoring.v3.Point point : ts.getPointsList()) {
                     if (point.getValue().hasDistributionValue()) {
-                        return computePercentile(point.getValue().getDistributionValue(), targetPercentile);
+                        distributions.add(point.getValue().getDistributionValue());
                     }
+                }
+            }
+
+            if (!distributions.isEmpty()) {
+                com.google.api.Distribution merged = mergeDistributions(distributions);
+                if (merged != null) {
+                    return computePercentile(merged, targetPercentile);
                 }
             }
         } catch (ApiException e) {
@@ -161,6 +205,43 @@ public class AnalyzerApp implements Callable<Integer> {
         }
 
         return -1.0;
+    }
+
+    private com.google.api.Distribution mergeDistributions(java.util.List<com.google.api.Distribution> distributions) {
+        if (distributions.isEmpty()) return null;
+
+        com.google.api.Distribution first = distributions.get(0);
+        com.google.api.Distribution.Builder mergedBuilder = com.google.api.Distribution.newBuilder(first);
+
+        long totalCount = first.getCount();
+        double totalWeightedMean = first.getMean() * first.getCount();
+
+        java.util.List<Long> mergedBuckets = new java.util.ArrayList<>(first.getBucketCountsList());
+
+        for (int i = 1; i < distributions.size(); i++) {
+            com.google.api.Distribution d = distributions.get(i);
+            totalCount += d.getCount();
+            totalWeightedMean += d.getMean() * d.getCount();
+
+            for (int j = 0; j < Math.min(mergedBuckets.size(), d.getBucketCountsCount()); j++) {
+                mergedBuckets.set(j, mergedBuckets.get(j) + d.getBucketCounts(j));
+            }
+
+            if (d.getBucketCountsCount() > mergedBuckets.size()) {
+                for (int j = mergedBuckets.size(); j < d.getBucketCountsCount(); j++) {
+                    mergedBuckets.add(d.getBucketCounts(j));
+                }
+            }
+        }
+
+        double mergedMean = totalCount == 0 ? 0.0 : totalWeightedMean / totalCount;
+
+        mergedBuilder.setCount(totalCount);
+        mergedBuilder.setMean(mergedMean);
+        mergedBuilder.clearBucketCounts();
+        mergedBuilder.addAllBucketCounts(mergedBuckets);
+
+        return mergedBuilder.build();
     }
 
     private double computePercentile(com.google.api.Distribution dist, int targetPercentile) {

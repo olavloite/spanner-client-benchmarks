@@ -4,15 +4,15 @@
 set -e
 
 if [ "$#" -lt 1 ]; then
-  echo "Usage: $0 <go|java>"
+  echo "Usage: $0 <go|java|node|python>"
   exit 1
 fi
 
 CLIENT_TYPE="$1"
 shift
 
-if [ "$CLIENT_TYPE" != "go" ] && [ "$CLIENT_TYPE" != "java" ]; then
-  echo "Unsupported client type: $CLIENT_TYPE. Use 'go' or 'java'."
+if [ "$CLIENT_TYPE" != "go" ] && [ "$CLIENT_TYPE" != "java" ] && [ "$CLIENT_TYPE" != "node" ] && [ "$CLIENT_TYPE" != "python" ]; then
+  echo "Unsupported client type: $CLIENT_TYPE. Use 'go', 'java', 'node', or 'python'."
   exit 1
 fi
 
@@ -64,6 +64,8 @@ if [ "$CLIENT_TYPE" = "java" ]; then
   ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,--for-alerting=true,$BENCHMARK_TYPE,--table=$TABLE_NAME,--tps=$TPS,--threads=$THREADS,--min-id=$MIN_ID,--max-id=$MAX_ID"
 elif [ "$CLIENT_TYPE" = "go" ]; then
   ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,--for-alerting=true,--table=$TABLE_NAME,--tps=$TPS,--threads=$THREADS,--min-id=$MIN_ID,--max-id=$MAX_ID,$BENCHMARK_TYPE"
+elif [ "$CLIENT_TYPE" = "node" ] || [ "$CLIENT_TYPE" = "python" ]; then
+  ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,--for-alerting,$BENCHMARK_TYPE,--table=$TABLE_NAME,--tps=$TPS,--threads=$THREADS,--min-id=$MIN_ID,--max-id=$MAX_ID"
 fi
 
 # Create or update the Cloud Run Job

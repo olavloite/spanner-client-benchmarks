@@ -36,7 +36,7 @@ public class BenchmarkApp implements Runnable {
     private boolean forAlerting;
 
     public static final String METER_NAME = "spanner-benchmark";
-    public static final String LATENCY_NAME = "SpannerBenchmark/latency";
+    public static final String LATENCY_NAME = "spanner_client_benchmarks/latency";
 
     public static void main(String[] args) {
         int exitCode = new CommandLine(new BenchmarkApp()).execute(args);

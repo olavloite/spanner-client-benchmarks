@@ -26,7 +26,7 @@ import (
 
 const (
 	meterName   = "spanner-benchmark"
-	latencyName = "SpannerBenchmark/latency"
+	latencyName = "spanner_client_benchmarks/latency"
 )
 
 type Benchmark interface {

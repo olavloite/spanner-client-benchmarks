@@ -10,8 +10,10 @@ env:
   INSTANCE_ID: knut-test-ycsb
   DATABASE_ID: spring-data-jpa
   REGION: europe-north1
-  DURATION: 1425m
+  DURATION: 15h
   TPS: 10
+  CPU: 2
+  MEMORY: 8Gi
   SKIP_CLEANUP: 'true'
 
 jobs:
@@ -39,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        client: [java, go]
+        client: [java, go, node, python]
         benchmark_type: [point-select, select-update]
     steps:
       - name: Checkout code
