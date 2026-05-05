@@ -10,8 +10,8 @@ The benchmarks are built and run against the **most recent source code** of thei
 
 - 🟢 **Java**: Implemented.
 - 🟢 **Go**: Implemented.
-- 🟡 **Python**: Pending implementation.
-- 🟡 **Node.js**: Pending implementation.
+- 🟢 **Node.js**: Implemented.
+- 🟢 **Python**: Implemented.
 
 ---
 
@@ -29,8 +29,8 @@ A benchmark that selects a row and immediately updates it within a transaction.
 
 - [java/](java/): Java benchmark implementation.
 - [go/](go/): Go benchmark implementation.
-- [python/](python/): Python benchmark implementation scaffold.
-- [node/](node/): Node.js benchmark implementation scaffold.
+- [node/](node/): Node.js benchmark implementation.
+- [python/](python/): Python benchmark implementation.
 - [analyzer/](analyzer/): Benchmarks regression analyzer.
 
 ---
@@ -42,13 +42,13 @@ Build and execution scripts are provided at the project root to simplify running
 ### 1. Local Execution
 To build and test the benchmarks locally against the latest upstream client library:
 ```bash
-./run_benchmark_locally.sh <go|java> [options] <benchmark-type>
+./run_benchmark_locally.sh <go|java|node|python> [options] [benchmark-type]
 ```
 
 ### 2. Cloud Run Jobs
 Benchmarks are designed to run natively as Cloud Run Jobs for sustained performance tracking. To package and deploy them to the cloud:
 ```bash
-./run_benchmark.sh <go|java>
+./run_benchmark.sh <go|java|node|python>
 ```
 This will:
 - Pull the latest client library code from the official upstream repository.

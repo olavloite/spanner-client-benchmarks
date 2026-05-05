@@ -42,10 +42,11 @@ export function setupMetrics(projectId: string, isEmulator: boolean): MetricSetu
     exportIntervalMillis: 60000,
   });
 
-  // Explicit bucket boundaries matching Java and Go exactly (in microseconds)
+  // Explicit bucket boundaries matching Java, Go, and Python exactly (in microseconds)
   const explicitBoundaries = [
-    1000.0, 2500.0, 5000.0, 7500.0, 10000.0, 15000.0, 20000.0, 25000.0,
-    30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0,
+    500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 3500.0, 4000.0, 4500.0, 5000.0,
+    6000.0, 7000.0, 8000.0, 9000.0, 10000.0, 12000.0, 14000.0, 16000.0, 18000.0, 20000.0,
+    25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0,
   ];
 
   // Register custom view to apply explicit bucket histogram aggregation to the benchmark latency instrument
