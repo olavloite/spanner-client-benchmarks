@@ -12,7 +12,9 @@ INIT_DIR="$(pwd)"
 if [ "$USE_RELEASED_VERSION" = "false" ]; then
   WORK_DIR="$(mktemp -d)"
   echo "Cloning latest Spanner Node client source into: $WORK_DIR"
-  git clone --depth 1 https://github.com/googleapis/google-cloud-node.git "$WORK_DIR/node-repo"
+  git clone --depth 1 --sparse --filter=blob:none https://github.com/googleapis/google-cloud-node.git "$WORK_DIR/node-repo"
+  cd "$WORK_DIR/node-repo"
+  git sparse-checkout set handwritten/spanner
 
   echo "Building local Spanner client package..."
   cd "$WORK_DIR/node-repo/handwritten/spanner"

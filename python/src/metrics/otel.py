@@ -8,6 +8,8 @@ from typing import Tuple, Callable
 
 METER_NAME = "spanner-benchmark"
 LATENCY_NAME = "spanner_client_benchmarks/latency"
+OPERATION_COUNT_NAME = "spanner_client_benchmarks/operation_count"
+ERROR_COUNT_NAME = "spanner_client_benchmarks/error_count"
 
 def setup_metrics(project_id: str, is_emulator: bool) -> Tuple[metrics.Meter, Callable[[], None]]:
     """

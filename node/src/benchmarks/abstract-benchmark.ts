@@ -1,5 +1,5 @@
 import { Database } from "@google-cloud/spanner";
-import { Histogram } from "@opentelemetry/api";
+import { Histogram, Counter } from "@opentelemetry/api";
 
 export interface IBenchmark {
   execute(database: Database, tableName: string, minId: number, maxId: number): Promise<void>;
@@ -14,6 +14,8 @@ export interface IBenchmark {
 export abstract class AbstractBenchmark implements IBenchmark {
   protected database: Database;
   protected latencyHistogram: Histogram;
+  protected operationCounter: Counter;
+  protected errorCounter: Counter;
   protected tableName: string;
   protected minId: number;
   protected maxId: number;
@@ -30,6 +32,8 @@ export abstract class AbstractBenchmark implements IBenchmark {
   constructor(
     database: Database,
     latencyHistogram: Histogram,
+    operationCounter: Counter,
+    errorCounter: Counter,
     tableName: string,
     minId: number,
     maxId: number,
@@ -40,6 +44,8 @@ export abstract class AbstractBenchmark implements IBenchmark {
   ) {
     this.database = database;
     this.latencyHistogram = latencyHistogram;
+    this.operationCounter = operationCounter;
+    this.errorCounter = errorCounter;
     this.tableName = tableName;
     this.minId = minId;
     this.maxId = maxId;
@@ -165,14 +171,15 @@ export abstract class AbstractBenchmark implements IBenchmark {
 
     try {
       await this.execute(this.database, this.tableName, this.minId, this.maxId);
-      const endTimeNs = process.hrtime.bigint();
-
-      // Record latency in microseconds (us) matching Go and Java parity
-      const latencyUs = Number(endTimeNs - startTimeNs) / 1000;
-      this.latencyHistogram.record(latencyUs, this.attributes);
     } catch (err: any) {
       console.error(`Operation failed: ${err?.message || err}`);
+      this.errorCounter.add(1, this.attributes);
     } finally {
+      const endTimeNs = process.hrtime.bigint();
+      const latencyUs = Number(endTimeNs - startTimeNs) / 1000;
+      
+      this.latencyHistogram.record(latencyUs, this.attributes);
+      this.operationCounter.add(1, this.attributes);
       this.activeTasks--;
 
       // Drain buffered queue slots concurrently as workers become available

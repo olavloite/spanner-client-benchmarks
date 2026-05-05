@@ -3,7 +3,7 @@ import os
 import signal
 import sys
 from src.config.duration import parse_duration
-from src.metrics.otel import setup_metrics, LATENCY_NAME
+from src.metrics.otel import setup_metrics, LATENCY_NAME, OPERATION_COUNT_NAME, ERROR_COUNT_NAME
 def main():
     """
     Main command line entry point. Parses options, setups client services,
@@ -71,11 +71,23 @@ def main():
     # 1. Setup OpenTelemetry metrics provider and instruments
     meter, shutdown_metrics = setup_metrics(args.project, is_emulator)
 
-    # Create shared latency histogram instrument (us unit matching standard spec)
+    # Create shared metrics instruments (us unit matching standard spec)
     latency_histogram = meter.create_histogram(
         name=LATENCY_NAME,
         description="Query latency measured in microseconds",
         unit="us",
+    )
+
+    operation_counter = meter.create_counter(
+        name=OPERATION_COUNT_NAME,
+        description="Total number of benchmark operations executed",
+        unit="1",
+    )
+
+    error_counter = meter.create_counter(
+        name=ERROR_COUNT_NAME,
+        description="Total number of benchmark operations that failed with an error",
+        unit="1",
     )
 
     # 2. Initialize the Google Cloud Spanner Client driver
@@ -92,6 +104,8 @@ def main():
         benchmark = PointSelectBenchmark(
             database=database,
             latency_histogram=latency_histogram,
+            operation_counter=operation_counter,
+            error_counter=error_counter,
             table_name=args.table,
             min_id=args.min_id,
             max_id=args.max_id,
@@ -104,6 +118,8 @@ def main():
         benchmark = SelectAndUpdateBenchmark(
             database=database,
             latency_histogram=latency_histogram,
+            operation_counter=operation_counter,
+            error_counter=error_counter,
             table_name=args.table,
             min_id=args.min_id,
             max_id=args.max_id,

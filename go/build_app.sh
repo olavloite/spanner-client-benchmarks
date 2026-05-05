@@ -9,7 +9,9 @@ USE_RELEASED_VERSION="${USE_RELEASED_VERSION:-false}"
 if [ "$USE_RELEASED_VERSION" = "false" ]; then
   WORK_DIR="$(mktemp -d)"
   echo "Cloning latest Spanner Go client source into: $WORK_DIR"
-  git clone --depth 1 https://github.com/googleapis/google-cloud-go.git "$WORK_DIR/spanner-repo"
+  git clone --depth 1 --sparse --filter=blob:none https://github.com/googleapis/google-cloud-go.git "$WORK_DIR/spanner-repo"
+  cd "$WORK_DIR/spanner-repo"
+  git sparse-checkout set spanner
 
   echo "Integrating local Spanner reference to go.mod..."
   go mod edit -replace=cloud.google.com/go/spanner="$WORK_DIR/spanner-repo/spanner"

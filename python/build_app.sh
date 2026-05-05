@@ -12,7 +12,9 @@ INIT_DIR="$(pwd)"
 if [ "$USE_RELEASED_VERSION" = "false" ]; then
   WORK_DIR="$(mktemp -d)"
   echo "Cloning latest Spanner Python client source into: $WORK_DIR"
-  git clone --depth 1 https://github.com/googleapis/google-cloud-python.git "$WORK_DIR/python-repo"
+  git clone --depth 1 --sparse --filter=blob:none https://github.com/googleapis/google-cloud-python.git "$WORK_DIR/python-repo"
+  cd "$WORK_DIR/python-repo"
+  git sparse-checkout set packages/google-cloud-spanner
 
   echo "Backing up requirements.txt..."
   cp requirements.txt requirements.txt.bak

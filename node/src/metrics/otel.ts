@@ -11,6 +11,8 @@ import { Resource } from "@opentelemetry/resources";
 
 export const METER_NAME = "spanner-benchmark";
 export const LATENCY_NAME = "spanner_client_benchmarks/latency";
+export const OPERATION_COUNT_NAME = "spanner_client_benchmarks/operation_count";
+export const ERROR_COUNT_NAME = "spanner_client_benchmarks/error_count";
 
 export interface MetricSetupResult {
   meter: Meter;

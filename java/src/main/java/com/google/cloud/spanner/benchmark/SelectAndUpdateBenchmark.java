@@ -4,6 +4,7 @@ import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.Mutation;
 import com.google.cloud.spanner.ResultSet;
 import com.google.cloud.spanner.Statement;
+import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.LongHistogram;
 
 import java.time.Duration;
@@ -11,8 +12,8 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public class SelectAndUpdateBenchmark extends AbstractBenchmark {
 
-    public SelectAndUpdateBenchmark(DatabaseClient client, LongHistogram latencyHistogram, String tableName, long minId, long maxId, double tps, int threads, Duration duration, boolean forAlerting) {
-        super(client, latencyHistogram, tableName, minId, maxId, tps, threads, duration, forAlerting);
+    public SelectAndUpdateBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, String tableName, long minId, long maxId, double tps, int threads, Duration duration, boolean forAlerting) {
+        super(client, latencyHistogram, operationCounter, errorCounter, tableName, minId, maxId, tps, threads, duration, forAlerting);
     }
 
     @Override

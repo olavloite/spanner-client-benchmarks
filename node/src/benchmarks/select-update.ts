@@ -26,7 +26,8 @@ export class SelectAndUpdateBenchmark extends AbstractBenchmark {
     // Pick a random ID in range [minId, maxId] (inclusive)
     const randomId = Math.floor(Math.random() * (maxId - minId + 1)) + minId;
 
-    // Run a robust Read-Write Transaction
+    // Run a simple read/write transaction that selects one random row.
+    // If the row exists, the row is updated. If it does not exist, it is inserted.
     await database.runTransactionAsync(async (transaction) => {
       const selectQuery = {
         sql: `SELECT id FROM ${tableName} WHERE id = @id`,
@@ -75,7 +76,8 @@ export class SelectAndUpdateBenchmark extends AbstractBenchmark {
         await transaction.runUpdate(insertQuery);
       }
 
-      // Commit is performed automatically upon successful async callback resolution
+      // 3. Commit the transaction explicitly (mandatory in Node client library)
+      await transaction.commit();
     });
   }
 

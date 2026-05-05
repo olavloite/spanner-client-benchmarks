@@ -25,8 +25,10 @@ import (
 )
 
 const (
-	meterName   = "spanner-benchmark"
-	latencyName = "spanner_client_benchmarks/latency"
+	meterName          = "spanner-benchmark"
+	latencyName        = "spanner_client_benchmarks/latency"
+	operationCountName = "spanner_client_benchmarks/operation_count"
+	errorCountName     = "spanner_client_benchmarks/error_count"
 )
 
 type Benchmark interface {
@@ -102,7 +104,7 @@ func run(ctx context.Context, args []string) error {
 	}()
 
 	// 1. Setup Metrics
-	latencyHistogram, cleanupMetrics, err := setupMetrics(durationCtx, *project)
+	latencyHistogram, operationCounter, errorCounter, cleanupMetrics, err := setupMetrics(durationCtx, *project)
 	if err != nil {
 		return fmt.Errorf("failed to initialize metrics: %w", err)
 	}
@@ -125,19 +127,21 @@ func run(ctx context.Context, args []string) error {
 	fmt.Printf("Starting %s for %s, target TPS: %.1f, workers: %d\n", b.Name(), *durationStr, *tps, *threads)
 
 	// 3. Run loop
-	runBenchmark(durationCtx, b, client, latencyHistogram, *table, *tps, *threads, *minId, *maxId, attributes)
+	runBenchmark(durationCtx, b, client, latencyHistogram, operationCounter, errorCounter, *table, *tps, *threads, *minId, *maxId, attributes)
 
 	return nil
 }
 
-func setupMetrics(ctx context.Context, projectID string) (metric.Float64Histogram, func(), error) {
+func setupMetrics(ctx context.Context, projectID string) (metric.Float64Histogram, metric.Int64Counter, metric.Int64Counter, func(), error) {
 	if os.Getenv("SPANNER_EMULATOR_HOST") != "" {
 		h, _ := noop.NewMeterProvider().Meter("").Float64Histogram("")
-		return h, func() {}, nil
+		o, _ := noop.NewMeterProvider().Meter("").Int64Counter("")
+		e, _ := noop.NewMeterProvider().Meter("").Int64Counter("")
+		return h, o, e, func() {}, nil
 	}
 	exporter, err := mexporter.New(mexporter.WithProjectID(projectID))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	meterProvider := sdkmetric.NewMeterProvider(
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(60*time.Second))),
@@ -150,12 +154,31 @@ func setupMetrics(ctx context.Context, projectID string) (metric.Float64Histogra
 		metric.WithUnit("us"),
 		metric.WithExplicitBucketBoundaries(500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 3500.0, 4000.0, 4500.0, 5000.0, 6000.0, 7000.0, 8000.0, 9000.0, 10000.0, 12000.0, 14000.0, 16000.0, 18000.0, 20000.0, 25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0),
 	)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	operationCounter, err := meter.Int64Counter(operationCountName,
+		metric.WithDescription("Total number of benchmark operations executed"),
+		metric.WithUnit("1"),
+	)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	errorCounter, err := meter.Int64Counter(errorCountName,
+		metric.WithDescription("Total number of benchmark operations that failed with an error"),
+		metric.WithUnit("1"),
+	)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 
 	cleanup := func() {
 		meterProvider.Shutdown(ctx)
 	}
 
-	return latencyHistogram, cleanup, err
+	return latencyHistogram, operationCounter, errorCounter, cleanup, nil
 }
 
 func createSpannerClient(ctx context.Context, project, instance, database, host string) (*spanner.Client, error) {
@@ -167,7 +190,7 @@ func createSpannerClient(ctx context.Context, project, instance, database, host 
 	return spanner.NewClient(ctx, databaseName, clientOpts...)
 }
 
-func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, latencyHistogram metric.Float64Histogram, tableName string, targetTPS float64, concurrentThreads int, minId, maxId int64, attributes metric.MeasurementOption) {
+func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, latencyHistogram metric.Float64Histogram, operationCounter metric.Int64Counter, errorCounter metric.Int64Counter, tableName string, targetTPS float64, concurrentThreads int, minId, maxId int64, attributes metric.MeasurementOption) {
 	tasks := make(chan struct{}, 1000000) // large buffered channel to simulate unbounded queue
 	wg := &sync.WaitGroup{}
 
@@ -186,10 +209,12 @@ func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, late
 					}
 					start := time.Now()
 					err := b.Execute(ctx, client, tableName, minId, maxId)
+					
+					latencyHistogram.Record(ctx, float64(time.Since(start).Microseconds()), attributes)
+					operationCounter.Add(ctx, 1, attributes)
 					if err != nil {
 						log.Printf("Operation failed: %v", err)
-					} else {
-						latencyHistogram.Record(ctx, float64(time.Since(start).Microseconds()), attributes)
+						errorCounter.Add(ctx, 1, attributes)
 					}
 				}
 			}

@@ -1,6 +1,7 @@
 package com.google.cloud.spanner.benchmark;
 
 import com.google.cloud.spanner.DatabaseClient;
+import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.LongHistogram;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributeKey;
@@ -15,6 +16,8 @@ public abstract class AbstractBenchmark {
 
     protected final DatabaseClient client;
     protected final LongHistogram latencyHistogram;
+    protected final LongCounter operationCounter;
+    protected final LongCounter errorCounter;
     protected final String tableName;
     protected final long minId;
     protected final long maxId;
@@ -24,9 +27,11 @@ public abstract class AbstractBenchmark {
     protected final boolean forAlerting;
     private final Attributes attributes; // Pre-created attributes
 
-    public AbstractBenchmark(DatabaseClient client, LongHistogram latencyHistogram, String tableName, long minId, long maxId, double tps, int threads, Duration duration, boolean forAlerting) {
+    public AbstractBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, String tableName, long minId, long maxId, double tps, int threads, Duration duration, boolean forAlerting) {
         this.client = client;
         this.latencyHistogram = latencyHistogram;
+        this.operationCounter = operationCounter;
+        this.errorCounter = errorCounter;
         this.tableName = tableName;
         this.minId = minId;
         this.maxId = maxId;
@@ -55,13 +60,16 @@ public abstract class AbstractBenchmark {
                         executeOperation();
                     } catch (Exception e) {
                         System.err.println("Operation failed: " + e.getMessage());
-                    }
-                    long endTime = System.nanoTime();
-                    long latencyNs = endTime - startTime;
-                    long latencyUs = latencyNs / 1000;
+                        errorCounter.add(1, this.attributes);
+                    } finally {
+                        long endTime = System.nanoTime();
+                        long latencyNs = endTime - startTime;
+                        long latencyUs = latencyNs / 1000;
 
-                    // Record metrics with pre-created attributes
-                    latencyHistogram.record(latencyUs, this.attributes);
+                        // Record metrics with pre-created attributes
+                        latencyHistogram.record(latencyUs, this.attributes);
+                        operationCounter.add(1, this.attributes);
+                    }
                 });
                 LockSupport.parkNanos(calculatePoissonDelay(tps));
             }

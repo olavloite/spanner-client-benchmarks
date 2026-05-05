@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { setupMetrics, LATENCY_NAME } from "./src/metrics/otel";
+import { setupMetrics, LATENCY_NAME, OPERATION_COUNT_NAME, ERROR_COUNT_NAME } from "./src/metrics/otel";
 import { createSpannerClient } from "./src/spanner/client";
 import { PointSelectBenchmark } from "./src/benchmarks/point-select";
 import { SelectAndUpdateBenchmark } from "./src/benchmarks/select-update";
@@ -88,10 +88,20 @@ async function runBenchmarkAction(
   // 1. Bootstrap OpenTelemetry Metrics Exporter
   const { meter, shutdown: shutdownMetrics } = setupMetrics(projectId, isEmulator);
 
-  // Create the shared histogram metric instrument (us units match Go/Java)
+  // Create the shared metric instruments (us units match Go/Java)
   const latencyHistogram = meter.createHistogram(LATENCY_NAME, {
     description: "Query latency measured in microseconds",
     unit: "us",
+  });
+
+  const operationCounter = meter.createCounter(OPERATION_COUNT_NAME, {
+    description: "Total number of benchmark operations executed",
+    unit: "1",
+  });
+
+  const errorCounter = meter.createCounter(ERROR_COUNT_NAME, {
+    description: "Total number of benchmark operations that failed with an error",
+    unit: "1",
   });
 
   // 2. Bootstrap Google Cloud Spanner Client
@@ -107,6 +117,8 @@ async function runBenchmarkAction(
     benchmark = new PointSelectBenchmark(
       database,
       latencyHistogram,
+      operationCounter,
+      errorCounter,
       tableName,
       minId,
       maxId,
@@ -119,6 +131,8 @@ async function runBenchmarkAction(
     benchmark = new SelectAndUpdateBenchmark(
       database,
       latencyHistogram,
+      operationCounter,
+      errorCounter,
       tableName,
       minId,
       maxId,

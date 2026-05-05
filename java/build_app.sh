@@ -10,7 +10,9 @@ INIT_DIR="$(pwd)"
 WORK_DIR="$(mktemp -d)"
 echo "Using temporary work directory: $WORK_DIR"
 echo "Cloning Spanner Java client..."
-git clone --depth 1 --recurse-submodules https://github.com/googleapis/google-cloud-java.git "$WORK_DIR/spanner-repo"
+git clone --depth 1 --sparse --filter=blob:none https://github.com/googleapis/google-cloud-java.git "$WORK_DIR/spanner-repo"
+cd "$WORK_DIR/spanner-repo"
+git sparse-checkout set java-spanner sdk-platform-java java-common-protos java-iam pom.xml
 
 # Build Spanner artifacts and dependencies from repo root
 echo "Building Spanner artifacts..."

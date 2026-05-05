@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 from google.cloud import spanner
 from google.cloud.spanner_v1.database import Database
-from opentelemetry.metrics import Histogram
+from opentelemetry.metrics import Histogram, Counter
 
 class AbstractBenchmark(abc.ABC):
     """
@@ -20,6 +20,8 @@ class AbstractBenchmark(abc.ABC):
         self,
         database: Database,
         latency_histogram: Histogram,
+        operation_counter: Counter,
+        error_counter: Counter,
         table_name: str,
         min_id: int,
         max_id: int,
@@ -30,6 +32,8 @@ class AbstractBenchmark(abc.ABC):
     ):
         self.database = database
         self.latency_histogram = latency_histogram
+        self.operation_counter = operation_counter
+        self.error_counter = error_counter
         self.table_name = table_name
         self.min_id = min_id
         self.max_id = max_id
@@ -153,14 +157,15 @@ class AbstractBenchmark(abc.ABC):
         start_time = time.perf_counter()
         try:
             self.execute_operation(self.database, self.table_name, self.min_id, self.max_id)
-            end_time = time.perf_counter()
-
-            # Record latency in microseconds (us) matching Go, Java, and Node parity specifications
-            latency_us = (end_time - start_time) * 1000000.0
-            self.latency_histogram.record(latency_us, self.attributes)
         except Exception as err:
             print(f"Operation failed: {err}", file=sys.stderr)
+            self.error_counter.add(1, self.attributes)
         finally:
+            end_time = time.perf_counter()
+            latency_us = (end_time - start_time) * 1000000.0
+            
+            self.latency_histogram.record(latency_us, self.attributes)
+            self.operation_counter.add(1, self.attributes)
             with self._lock:
                 self._outstanding_tasks -= 1
 
