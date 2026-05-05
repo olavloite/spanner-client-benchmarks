@@ -103,9 +103,17 @@ export abstract class AbstractBenchmark implements IBenchmark {
         nextTaskTimeNs += delayNs;
       }
 
-      // Yield event loop slice and trigger check as fast as possible
+      // Yield event loop slice or sleep depending on remaining time
       if (!this.isStopped) {
-        setImmediate(scheduleLoop);
+        const nextNowNs = process.hrtime.bigint();
+        const remainingNs = nextTaskTimeNs - nextNowNs;
+
+        if (remainingNs > 1000000n) { // More than 1ms remaining
+          const remainingMs = Number(remainingNs / 1000000n);
+          setTimeout(scheduleLoop, remainingMs);
+        } else {
+          setImmediate(scheduleLoop);
+        }
       }
     };
 

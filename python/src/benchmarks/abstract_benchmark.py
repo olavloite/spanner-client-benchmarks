@@ -129,8 +129,14 @@ class AbstractBenchmark(abc.ABC):
                 delay_sec = self._calculate_poisson_delay(self.tps)
                 next_task_time_ns += delay_sec
 
-            # Sleep microsecond slice to yield interpretation time back to other worker threads
-            time.sleep(0.0001)
+            # Sleep to yield to other threads, sleeping longer if the next task is far in the future
+            if not self.is_stopped:
+                next_now_ns = time.perf_counter()
+                remaining_sec = next_task_time_ns - next_now_ns
+                if remaining_sec > 0.001: # More than 1ms remaining
+                    time.sleep(remaining_sec)
+                else:
+                    time.sleep(0.0001)
 
     def _submit_task(self) -> None:
         """Checks concurrency thresholds and dispatches task to thread executor pool."""
