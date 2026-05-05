@@ -4,7 +4,8 @@
 set -e
 set -x
 
-USE_RELEASED_VERSION="${USE_RELEASED_VERSION:-false}"
+# Store initial directory
+INIT_DIR="$(pwd)"
 
 if [ "$USE_RELEASED_VERSION" = "false" ]; then
   WORK_DIR="$(mktemp -d)"
@@ -12,6 +13,9 @@ if [ "$USE_RELEASED_VERSION" = "false" ]; then
   git clone --depth 1 --sparse --filter=blob:none https://github.com/googleapis/google-cloud-go.git "$WORK_DIR/spanner-repo"
   cd "$WORK_DIR/spanner-repo"
   git sparse-checkout set spanner
+
+  # Return to initial directory where benchmark go.mod resides
+  cd "$INIT_DIR"
 
   echo "Integrating local Spanner reference to go.mod..."
   go mod edit -replace=cloud.google.com/go/spanner="$WORK_DIR/spanner-repo/spanner"

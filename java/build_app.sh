@@ -12,7 +12,9 @@ echo "Using temporary work directory: $WORK_DIR"
 echo "Cloning Spanner Java client..."
 git clone --depth 1 --sparse --filter=blob:none https://github.com/googleapis/google-cloud-java.git "$WORK_DIR/spanner-repo"
 cd "$WORK_DIR/spanner-repo"
-git sparse-checkout set java-spanner sdk-platform-java java-common-protos java-iam pom.xml
+# Checkout all files in the repository root (e.g. license-checks.xml, pom.xml, checkstyle.xml)
+# but exclude all subdirectories except the ones we explicitly need
+git sparse-checkout set "/*" "java-spanner" "sdk-platform-java" "java-common-protos" "java-iam"
 
 # Build Spanner artifacts and dependencies from repo root
 echo "Building Spanner artifacts..."

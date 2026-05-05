@@ -16,6 +16,9 @@ if [ "$USE_RELEASED_VERSION" = "false" ]; then
   cd "$WORK_DIR/python-repo"
   git sparse-checkout set packages/google-cloud-spanner
 
+  # Return to the benchmark directory where requirements.txt resides
+  cd "$INIT_DIR"
+
   echo "Backing up requirements.txt..."
   cp requirements.txt requirements.txt.bak
 
