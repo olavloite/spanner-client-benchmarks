@@ -31,6 +31,7 @@ FOR_ALERTING_FLAG=""
 if [ "$FOR_ALERTING" = "true" ]; then
   FOR_ALERTING_FLAG="--for-alerting=true,"
 fi
+POLLING_INTERVAL="${POLLING_INTERVAL:-30}"
 
 if [[ $DURATION == *h ]]; then
   DURATION_SECONDS=$((${DURATION%h} * 3600))
@@ -59,7 +60,7 @@ JOB_NAME="${JOB_NAME:-spanner-$CLIENT_TYPE-benchmark-job-$SUFFIX}"
 
 # Build the image using Cloud Build
 echo "Building image with Cloud Build for $CLIENT_TYPE..."
-gcloud builds submit --project "$PROJECT_ID" --tag "$IMAGE_NAME" .
+gcloud builds submit --project "$PROJECT_ID" --tag "$IMAGE_NAME" --polling-interval="$POLLING_INTERVAL" .
 
 ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}$BENCHMARK_TYPE,--table=$TABLE_NAME"
 if [ -n "$TPS" ]; then ARGS="${ARGS},--tps=$TPS"; fi
