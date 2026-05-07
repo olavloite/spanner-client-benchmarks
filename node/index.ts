@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { ValueType } from "@opentelemetry/api";
 import { setupMetrics, LATENCY_NAME, OPERATION_COUNT_NAME, ERROR_COUNT_NAME } from "./src/metrics/otel";
 import { createSpannerClient } from "./src/spanner/client";
 import { PointSelectBenchmark } from "./src/benchmarks/point-select";
@@ -97,11 +98,13 @@ async function runBenchmarkAction(
   const operationCounter = meter.createCounter(OPERATION_COUNT_NAME, {
     description: "Total number of benchmark operations executed",
     unit: "1",
+    valueType: ValueType.INT,
   });
 
   const errorCounter = meter.createCounter(ERROR_COUNT_NAME, {
     description: "Total number of benchmark operations that failed with an error",
     unit: "1",
+    valueType: ValueType.INT,
   });
 
   // 2. Bootstrap Google Cloud Spanner Client
