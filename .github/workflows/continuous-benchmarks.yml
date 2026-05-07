@@ -11,7 +11,6 @@ env:
   DATABASE_ID: spring-data-jpa
   REGION: europe-north1
   DURATION: 15h
-  TPS: 10
   CPU: 2
   MEMORY: 8Gi
   SKIP_CLEANUP: 'true'
