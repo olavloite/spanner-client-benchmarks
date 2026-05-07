@@ -3,7 +3,7 @@ import os
 import signal
 import sys
 from src.config.duration import parse_duration
-from src.metrics.otel import setup_metrics, LATENCY_NAME, OPERATION_COUNT_NAME, ERROR_COUNT_NAME
+from src.metrics.otel import setup_metrics, LATENCY_NAME, READ_LATENCY_NAME, OPERATION_COUNT_NAME, ERROR_COUNT_NAME
 def main():
     """
     Main command line entry point. Parses options, setups client services,
@@ -12,6 +12,16 @@ def main():
     parser = argparse.ArgumentParser(
         description="High-performance Cloud Spanner client library benchmark tool for Python."
     )
+
+    def str2bool(v):
+        if isinstance(v, bool):
+            return v
+        if v.lower() in ('yes', 'true', 't', 'y', '1'):
+            return True
+        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+            return False
+        else:
+            raise argparse.ArgumentTypeError('Boolean value expected.')
 
     # Global flags matching Java, Go, and Node setups
     parser.add_argument("-p", "--project", required=True, help="Google Cloud Project ID")
@@ -25,7 +35,9 @@ def main():
     )
     parser.add_argument(
         "--for-alerting",
-        action="store_true",
+        type=str2bool,
+        nargs='?',
+        const=True,
         default=False,
         help="Marks the metrics emitted for regression/alerting pipelines.",
     )
@@ -38,26 +50,38 @@ def main():
         "point-select", help="Execute single point select statement workload scenario"
     )
     ps_parser.add_argument("-t", "--table", required=True, help="Target database table name")
-    ps_parser.add_argument("--min-id", type=int, default=1, help="Minimum primary key row identifier")
-    ps_parser.add_argument("--max-id", type=int, default=1000000, help="Maximum primary key row identifier")
-    ps_parser.add_argument("--tps", type=float, default=1.0, help="Target Transactions Per Second rate limit")
+    ps_parser.add_argument("--tps", type=float, default=10.0, help="Target Transactions Per Second rate limit")
     ps_parser.add_argument(
         "--threads", type=int, default=100, help="ThreadPoolExecutor worker thread concurrency cap"
     )
+    ps_parser.add_argument("--num-rows", type=int, default=1000000, help="Number of rows in target database table")
 
     # Select-Update subparser
     su_parser = subparsers.add_parser(
         "select-update", help="Execute read-modify-write transaction statement workload scenario"
     )
     su_parser.add_argument("-t", "--table", required=True, help="Target database table name")
-    su_parser.add_argument("--min-id", type=int, default=1, help="Minimum primary key row identifier")
-    su_parser.add_argument("--max-id", type=int, default=1000000, help="Maximum primary key row identifier")
-    su_parser.add_argument("--tps", type=float, default=1.0, help="Target Transactions Per Second rate limit")
+    su_parser.add_argument("--tps", type=float, default=10.0, help="Target Transactions Per Second rate limit")
     su_parser.add_argument(
         "--threads", type=int, default=100, help="ThreadPoolExecutor worker thread concurrency cap"
     )
+    su_parser.add_argument("--num-rows", type=int, default=1000000, help="Number of rows in target database table")
+
+    # Read-Large subparser
+    rl_parser = subparsers.add_parser(
+        "read-large-result-set", help="Execute dynamic large result set iteration scenario"
+    )
+    rl_parser.add_argument("-t", "--table", required=True, help="Target database table name")
+    rl_parser.add_argument("--tps", type=float, default=0.05, help="Target Transactions Per Second rate limit")
+    rl_parser.add_argument(
+        "--threads", type=int, default=100, help="ThreadPoolExecutor worker thread concurrency cap"
+    )
+    rl_parser.add_argument("--num-rows", type=int, default=100000, help="Number of rows to dynamically generate")
 
     args = parser.parse_args()
+
+    min_id = 1
+    max_id = args.num_rows
 
     # Convert human-readable duration into float seconds
     duration_sec = parse_duration(args.duration)
@@ -72,8 +96,9 @@ def main():
     meter, shutdown_metrics = setup_metrics(args.project, is_emulator)
 
     # Create shared metrics instruments (us unit matching standard spec)
+    metric_name = READ_LATENCY_NAME if args.command == "read-large-result-set" else LATENCY_NAME
     latency_histogram = meter.create_histogram(
-        name=LATENCY_NAME,
+        name=metric_name,
         description="Query latency measured in microseconds",
         unit="us",
     )
@@ -94,6 +119,7 @@ def main():
     from src.spanner.client import create_spanner_client
     from src.benchmarks.point_select import PointSelectBenchmark
     from src.benchmarks.select_update import SelectAndUpdateBenchmark
+    from src.benchmarks.read_large_result_set import ReadLargeResultSetBenchmark
 
     spanner_client = create_spanner_client(args.project, host)
     instance = spanner_client.instance(args.instance)
@@ -107,26 +133,41 @@ def main():
             operation_counter=operation_counter,
             error_counter=error_counter,
             table_name=args.table,
-            min_id=args.min_id,
-            max_id=args.max_id,
+            min_id=min_id,
+            max_id=max_id,
             tps=args.tps,
             threads=args.threads,
             duration_sec=duration_sec,
             for_alerting=args.for_alerting,
         )
-    else:
+    elif args.command == "select-update":
         benchmark = SelectAndUpdateBenchmark(
             database=database,
             latency_histogram=latency_histogram,
             operation_counter=operation_counter,
             error_counter=error_counter,
             table_name=args.table,
-            min_id=args.min_id,
-            max_id=args.max_id,
+            min_id=min_id,
+            max_id=max_id,
             tps=args.tps,
             threads=args.threads,
             duration_sec=duration_sec,
             for_alerting=args.for_alerting,
+        )
+    else:
+        benchmark = ReadLargeResultSetBenchmark(
+            database=database,
+            latency_histogram=latency_histogram,
+            operation_counter=operation_counter,
+            error_counter=error_counter,
+            table_name=args.table,
+            min_id=min_id,
+            max_id=max_id,
+            tps=args.tps,
+            threads=args.threads,
+            duration_sec=duration_sec,
+            for_alerting=args.for_alerting,
+            num_rows=args.num_rows,
         )
 
     # 4. Register process lifecycle termination traps (SIGINT, SIGTERM)

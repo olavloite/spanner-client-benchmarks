@@ -8,6 +8,7 @@ from typing import Tuple, Callable
 
 METER_NAME = "spanner-benchmark"
 LATENCY_NAME = "spanner_client_benchmarks/latency"
+READ_LATENCY_NAME = "spanner_client_benchmarks/read_latency"
 OPERATION_COUNT_NAME = "spanner_client_benchmarks/operation_count"
 ERROR_COUNT_NAME = "spanner_client_benchmarks/error_count"
 
@@ -35,10 +36,22 @@ def setup_metrics(project_id: str, is_emulator: bool) -> Tuple[metrics.Meter, Ca
         25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0,
     ]
 
+    read_latency_boundaries = [
+        50000.0, 100000.0, 250000.0, 500000.0, 750000.0,
+        1000000.0, 1250000.0, 1500000.0, 1750000.0, 2000000.0, 2250000.0, 2500000.0, 2750000.0, 3000000.0, 3250000.0, 3500000.0, 3750000.0, 4000000.0, 4250000.0, 4500000.0, 4750000.0, 5000000.0,
+        5500000.0, 6000000.0, 6500000.0, 7000000.0, 7500000.0, 8000000.0, 8500000.0, 9000000.0, 9500000.0, 10000000.0,
+        12500000.0, 15000000.0, 20000000.0, 30000000.0,
+    ]
+
     # Create custom view to overlay explicit bucket histogram aggregations onto the target latency instrument
     latency_view = View(
         instrument_name=LATENCY_NAME,
         aggregation=ExplicitBucketHistogramAggregation(boundaries=explicit_boundaries),
+    )
+
+    read_latency_view = View(
+        instrument_name=READ_LATENCY_NAME,
+        aggregation=ExplicitBucketHistogramAggregation(boundaries=read_latency_boundaries),
     )
 
     # Define basic project resource tags (lands metrics under 'Generic Node' in Stackdriver for 1-to-1 parity)
@@ -47,7 +60,7 @@ def setup_metrics(project_id: str, is_emulator: bool) -> Tuple[metrics.Meter, Ca
     # Build MeterProvider with readers, views, and resource constraints
     provider = MeterProvider(
         metric_readers=[reader],
-        views=[latency_view],
+        views=[latency_view, read_latency_view],
         resource=resource
     )
 

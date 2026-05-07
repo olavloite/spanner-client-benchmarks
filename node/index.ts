@@ -1,9 +1,10 @@
 import { Command } from "commander";
 import { ValueType } from "@opentelemetry/api";
-import { setupMetrics, LATENCY_NAME, OPERATION_COUNT_NAME, ERROR_COUNT_NAME } from "./src/metrics/otel";
+import { setupMetrics, LATENCY_NAME, READ_LATENCY_NAME, OPERATION_COUNT_NAME, ERROR_COUNT_NAME } from "./src/metrics/otel";
 import { createSpannerClient } from "./src/spanner/client";
 import { PointSelectBenchmark } from "./src/benchmarks/point-select";
 import { SelectAndUpdateBenchmark } from "./src/benchmarks/select-update";
+import { ReadLargeResultSetBenchmark } from "./src/benchmarks/read-large-result-set";
 import { parseDuration } from "./src/config/duration";
 import { AbstractBenchmark } from "./src/benchmarks/abstract-benchmark";
 
@@ -27,17 +28,21 @@ async function main() {
       "Duration of the benchmark (e.g. 60s, 5m, 2h, inf). Defaults to inf (infinite).",
       "inf"
     )
-    .option("--for-alerting", "Marks the metrics emitted for alerting/regression pipelines.", false);
+    .option(
+      "--for-alerting [value]",
+      "Marks the metrics emitted for alerting/regression pipelines.",
+      (val) => val === undefined || val === "true" || val === "1",
+      false
+    );
 
   // Point Select Workload Subcommand
   program
     .command("point-select")
     .description("Execute the single point select workload (implicitly read-only single-use snapshot)")
     .requiredOption("-t, --table <tableName>", "Target database table name")
-    .option("--min-id <id>", "Minimum row identifier primary key boundary", "1")
-    .option("--max-id <id>", "Maximum row identifier primary key boundary", "1000000")
-    .option("--tps <tps>", "Target transactions per second throughput", "1")
+    .option("--tps <tps>", "Target transactions per second throughput", "10")
     .option("--threads <threads>", "Parallel async worker pool concurrency limit", "100")
+    .option("--num-rows <numRows>", "Number of rows in target database table", "1000000")
     .action(async (subCommandOptions) => {
       const globalOptions = program.opts();
       await runBenchmarkAction("point-select", globalOptions, subCommandOptions);
@@ -48,13 +53,25 @@ async function main() {
     .command("select-update")
     .description("Execute the read-modify-write select and update workload inside Read-Write Transactions")
     .requiredOption("-t, --table <tableName>", "Target database table name")
-    .option("--min-id <id>", "Minimum row identifier primary key boundary", "1")
-    .option("--max-id <id>", "Maximum row identifier primary key boundary", "1000000")
-    .option("--tps <tps>", "Target transactions per second throughput", "1")
+    .option("--tps <tps>", "Target transactions per second throughput", "10")
     .option("--threads <threads>", "Parallel async worker pool concurrency limit", "100")
+    .option("--num-rows <numRows>", "Number of rows in target database table", "1000000")
     .action(async (subCommandOptions) => {
       const globalOptions = program.opts();
       await runBenchmarkAction("select-update", globalOptions, subCommandOptions);
+    });
+
+  // Read Large Result Set Workload Subcommand
+  program
+    .command("read-large-result-set")
+    .description("Execute the dynamic large result set iteration and client-side decoding workload scenario")
+    .requiredOption("-t, --table <tableName>", "Target database table name")
+    .option("--tps <tps>", "Target transactions per second throughput", "0.05")
+    .option("--threads <threads>", "Parallel async worker pool concurrency limit", "100")
+    .option("--num-rows <numRows>", "Number of rows to dynamically generate", "100000")
+    .action(async (subCommandOptions) => {
+      const globalOptions = program.opts();
+      await runBenchmarkAction("read-large-result-set", globalOptions, subCommandOptions);
     });
 
   await program.parseAsync(process.argv);
@@ -64,7 +81,7 @@ async function main() {
  * Orchestrates the initialization and lifecycle of the benchmark execution.
  */
 async function runBenchmarkAction(
-  type: "point-select" | "select-update",
+  type: "point-select" | "select-update" | "read-large-result-set",
   globalOpts: any,
   subOpts: any
 ) {
@@ -76,8 +93,9 @@ async function runBenchmarkAction(
   const forAlerting = globalOpts.forAlerting;
 
   const tableName = subOpts.table;
-  const minId = parseInt(subOpts.minId, 10);
-  const maxId = parseInt(subOpts.maxId, 10);
+  const numRows = parseInt(subOpts.numRows, 10);
+  const minId = 1;
+  const maxId = numRows;
   const tps = parseFloat(subOpts.tps);
   const threads = parseInt(subOpts.threads, 10);
 
@@ -90,7 +108,8 @@ async function runBenchmarkAction(
   const { meter, shutdown: shutdownMetrics } = setupMetrics(projectId, isEmulator);
 
   // Create the shared metric instruments (us units match Go/Java)
-  const latencyHistogram = meter.createHistogram(LATENCY_NAME, {
+  const metricName = type === "read-large-result-set" ? READ_LATENCY_NAME : LATENCY_NAME;
+  const latencyHistogram = meter.createHistogram(metricName, {
     description: "Query latency measured in microseconds",
     unit: "us",
   });
@@ -130,7 +149,7 @@ async function runBenchmarkAction(
       parsedDurationMs,
       forAlerting
     );
-  } else {
+  } else if (type === "select-update") {
     benchmark = new SelectAndUpdateBenchmark(
       database,
       latencyHistogram,
@@ -143,6 +162,21 @@ async function runBenchmarkAction(
       threads,
       parsedDurationMs,
       forAlerting
+    );
+  } else {
+    benchmark = new ReadLargeResultSetBenchmark(
+      database,
+      latencyHistogram,
+      operationCounter,
+      errorCounter,
+      tableName,
+      minId,
+      maxId,
+      tps,
+      threads,
+      parsedDurationMs,
+      forAlerting,
+      maxId
     );
   }
 

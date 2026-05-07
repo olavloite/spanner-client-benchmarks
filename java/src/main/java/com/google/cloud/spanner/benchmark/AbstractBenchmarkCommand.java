@@ -27,17 +27,18 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
     @Option(names = {"-t", "--table"}, description = "Table name", required = true)
     protected String tableName;
 
-    @Option(names = {"--min-id"}, description = "Minimum ID value", defaultValue = "1")
-    protected long minId;
+    @Option(names = {"--num-rows"}, description = "Number of rows to generate/select")
+    protected long numRows = 1000000;
 
-    @Option(names = {"--max-id"}, description = "Maximum ID value", defaultValue = "1000000")
-    protected long maxId;
-
-    @Option(names = {"--tps"}, description = "Target transactions per second", defaultValue = "1")
-    protected double tps;
+    @Option(names = {"--tps"}, description = "Target transactions per second")
+    protected double tps = 10.0;
 
     @Option(names = {"--threads"}, description = "Number of threads in the pool", defaultValue = "100")
     protected int threads;
+
+    protected String getMetricName() {
+        return LATENCY_NAME;
+    }
 
     @Override
     public void run() {
@@ -46,7 +47,7 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
             OpenTelemetry openTelemetry = initializeOpenTelemetry(parent.getProjectId(), parent.getHost());
             Meter meter = openTelemetry.getMeter(METER_NAME);
 
-            LongHistogram latencyHistogram = meter.histogramBuilder(LATENCY_NAME)
+            LongHistogram latencyHistogram = meter.histogramBuilder(getMetricName())
                     .ofLongs()
                     .setDescription("Query latency in microseconds")
                     .setUnit("us")

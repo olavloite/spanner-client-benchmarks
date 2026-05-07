@@ -11,6 +11,7 @@ import { Resource } from "@opentelemetry/resources";
 
 export const METER_NAME = "spanner-benchmark";
 export const LATENCY_NAME = "spanner_client_benchmarks/latency";
+export const READ_LATENCY_NAME = "spanner_client_benchmarks/read_latency";
 export const OPERATION_COUNT_NAME = "spanner_client_benchmarks/operation_count";
 export const ERROR_COUNT_NAME = "spanner_client_benchmarks/error_count";
 
@@ -51,11 +52,24 @@ export function setupMetrics(projectId: string, isEmulator: boolean): MetricSetu
     25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0,
   ];
 
+  const readLatencyBoundaries = [
+    50000.0, 100000.0, 250000.0, 500000.0, 750000.0,
+    1000000.0, 1250000.0, 1500000.0, 1750000.0, 2000000.0, 2250000.0, 2500000.0, 2750000.0, 3000000.0, 3250000.0, 3500000.0, 3750000.0, 4000000.0, 4250000.0, 4500000.0, 4750000.0, 5000000.0,
+    5500000.0, 6000000.0, 6500000.0, 7000000.0, 7500000.0, 8000000.0, 8500000.0, 9000000.0, 9500000.0, 10000000.0,
+    12500000.0, 15000000.0, 20000000.0, 30000000.0,
+  ];
+
   // Register custom view to apply explicit bucket histogram aggregation to the benchmark latency instrument
   const latencyView = new View({
     instrumentName: LATENCY_NAME,
     instrumentType: InstrumentType.HISTOGRAM,
     aggregation: new ExplicitBucketHistogramAggregation(explicitBoundaries),
+  });
+
+  const readLatencyView = new View({
+    instrumentName: READ_LATENCY_NAME,
+    instrumentType: InstrumentType.HISTOGRAM,
+    aggregation: new ExplicitBucketHistogramAggregation(readLatencyBoundaries),
   });
 
   // Set up standard resource tags (keeps it under Generic Node like Go and Java)
@@ -65,7 +79,7 @@ export function setupMetrics(projectId: string, isEmulator: boolean): MetricSetu
 
   const provider = new MeterProvider({
     resource: resource,
-    views: [latencyView],
+    views: [latencyView, readLatencyView],
   });
 
   provider.addMetricReader(reader);

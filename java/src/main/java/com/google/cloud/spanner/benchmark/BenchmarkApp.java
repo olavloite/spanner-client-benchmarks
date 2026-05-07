@@ -14,7 +14,7 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
 @Command(name = "BenchmarkApp", mixinStandardHelpOptions = true, version = "1.0", description = "Runs Spanner client benchmarks.", subcommands = {
-        PointSelectCommand.class, SelectAndUpdateCommand.class })
+        PointSelectCommand.class, SelectAndUpdateCommand.class, ReadLargeResultSetCommand.class })
 public class BenchmarkApp implements Runnable {
 
     @Option(names = { "-p", "--project" }, description = "Google Cloud Project ID", required = true)
@@ -98,6 +98,20 @@ public class BenchmarkApp implements Runnable {
                                                                 500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 3500.0, 4000.0, 4500.0, 5000.0,
                                                                 6000.0, 7000.0, 8000.0, 9000.0, 10000.0, 12000.0, 14000.0, 16000.0, 18000.0, 20000.0,
                                                                 25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0
+                                                        )))
+                                        .build())
+                        .registerView(
+                                InstrumentSelector.builder()
+                                        .setName("spanner_client_benchmarks/read_latency")
+                                        .build(),
+                                View.builder()
+                                        .setAggregation(
+                                                Aggregation.explicitBucketHistogram(
+                                                        java.util.List.of(
+                                                                50000.0, 100000.0, 250000.0, 500000.0, 750000.0,
+                                                                1000000.0, 1250000.0, 1500000.0, 1750000.0, 2000000.0, 2250000.0, 2500000.0, 2750000.0, 3000000.0, 3250000.0, 3500000.0, 3750000.0, 4000000.0, 4250000.0, 4500000.0, 4750000.0, 5000000.0,
+                                                                5500000.0, 6000000.0, 6500000.0, 7000000.0, 7500000.0, 8000000.0, 8500000.0, 9000000.0, 9500000.0, 10000000.0,
+                                                                12500000.0, 15000000.0, 20000000.0, 30000000.0
                                                         )))
                                         .build())
                         .build())

@@ -48,6 +48,14 @@ public abstract class AbstractBenchmark {
         );
     }
 
+    protected boolean shouldMeasureEntireMethod() {
+        return true;
+    }
+
+    protected Attributes getAttributes() {
+        return this.attributes;
+    }
+
     public void run() throws Exception {
         System.out.println("Starting " + getBenchmarkName() + " with TPS: " + tps + ", threads: " + threads);
         ExecutorService executor = Executors.newFixedThreadPool(threads);
@@ -60,15 +68,15 @@ public abstract class AbstractBenchmark {
                         executeOperation();
                     } catch (Exception e) {
                         System.err.println("Operation failed: " + e.getMessage());
-                        errorCounter.add(1, this.attributes);
+                        errorCounter.add(1, getAttributes());
                     } finally {
-                        long endTime = System.nanoTime();
-                        long latencyNs = endTime - startTime;
-                        long latencyUs = latencyNs / 1000;
-
-                        // Record metrics with pre-created attributes
-                        latencyHistogram.record(latencyUs, this.attributes);
-                        operationCounter.add(1, this.attributes);
+                        if (shouldMeasureEntireMethod()) {
+                            long endTime = System.nanoTime();
+                            long latencyNs = endTime - startTime;
+                            long latencyUs = latencyNs / 1000;
+                            latencyHistogram.record(latencyUs, getAttributes());
+                        }
+                        operationCounter.add(1, getAttributes());
                     }
                 });
                 LockSupport.parkNanos(calculatePoissonDelay(tps));

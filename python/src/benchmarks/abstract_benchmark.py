@@ -152,6 +152,12 @@ class AbstractBenchmark(abc.ABC):
                 # Dropping tasks to simulate unbounded network backlog limiters (parity with Go's 1M cap)
                 print("Task dropped: workload queue is full (1M tasks exceeded)", file=sys.stderr)
 
+    def should_measure_entire_method(self) -> bool:
+        return True
+
+    def get_attributes(self) -> dict:
+        return self.attributes
+
     def _run_task(self) -> None:
         """Executes the concrete Spanner scenario, measures latency in microseconds, records to metrics."""
         start_time = time.perf_counter()
@@ -162,9 +168,9 @@ class AbstractBenchmark(abc.ABC):
             self.error_counter.add(1, self.attributes)
         finally:
             end_time = time.perf_counter()
-            latency_us = (end_time - start_time) * 1000000.0
-            
-            self.latency_histogram.record(latency_us, self.attributes)
+            if self.should_measure_entire_method():
+                latency_us = (end_time - start_time) * 1000000.0
+                self.latency_histogram.record(latency_us, self.attributes)
             self.operation_counter.add(1, self.attributes)
             with self._lock:
                 self._outstanding_tasks -= 1

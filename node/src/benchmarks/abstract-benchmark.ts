@@ -162,6 +162,14 @@ export abstract class AbstractBenchmark implements IBenchmark {
     }
   }
 
+  protected shouldMeasureEntireMethod(): boolean {
+    return true;
+  }
+
+  protected getAttributes(): Record<string, any> {
+    return this.attributes;
+  }
+
   /**
    * Executes a task, measures its high-resolution latency, records to histogram, and drains queue.
    */
@@ -176,9 +184,10 @@ export abstract class AbstractBenchmark implements IBenchmark {
       this.errorCounter.add(1, this.attributes);
     } finally {
       const endTimeNs = process.hrtime.bigint();
-      const latencyUs = Number(endTimeNs - startTimeNs) / 1000;
-      
-      this.latencyHistogram.record(latencyUs, this.attributes);
+      if (this.shouldMeasureEntireMethod()) {
+        const latencyUs = Number(endTimeNs - startTimeNs) / 1000;
+        this.latencyHistogram.record(latencyUs, this.attributes);
+      }
       this.operationCounter.add(1, this.attributes);
       this.activeTasks--;
 

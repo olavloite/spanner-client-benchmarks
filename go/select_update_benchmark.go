@@ -12,6 +12,7 @@ type SelectAndUpdateBenchmark struct{}
 
 func (b *SelectAndUpdateBenchmark) Name() string { return "Select and Update Benchmark" }
 func (b *SelectAndUpdateBenchmark) Type() string { return "select-update" }
+func (b *SelectAndUpdateBenchmark) ShouldMeasureEntireMethod() bool { return true }
 func (b *SelectAndUpdateBenchmark) Execute(ctx context.Context, client *spanner.Client, tableName string, minId, maxId int64) error {
 	randomId := rand.Int63n(maxId-minId+1) + minId
 

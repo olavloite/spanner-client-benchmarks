@@ -42,7 +42,7 @@ jobs:
       fail-fast: false
       matrix:
         client: [java, go, node, python]
-        benchmark_type: [point-select, select-update]
+        benchmark_type: [point-select, select-update, read-large-result-set]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -58,4 +58,6 @@ jobs:
       - name: Deploy and Execute Benchmark Preset
         env:
           BENCHMARK_TYPE: ${{ matrix.benchmark_type }}
+          DURATION: ${{ matrix.benchmark_type == 'read-large-result-set' && '1h' || '15h' }}
+          FOR_ALERTING: 'true'
         run: ./run_benchmark.sh ${{ matrix.client }}

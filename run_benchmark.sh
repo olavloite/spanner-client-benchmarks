@@ -25,11 +25,12 @@ BENCHMARK_TYPE="${BENCHMARK_TYPE:-point-select}"
 CPU="${CPU:-8}"
 MEMORY="${MEMORY:-32Gi}"
 REGION="${REGION:-europe-north1}"
-TPS="${TPS:-1}"
-THREADS="${THREADS:-100}"
-MIN_ID="${MIN_ID:-1}"
-MAX_ID="${MAX_ID:-1000000}"
 DURATION="${DURATION:-60m}"
+FOR_ALERTING="${FOR_ALERTING:-false}"
+FOR_ALERTING_FLAG=""
+if [ "$FOR_ALERTING" = "true" ]; then
+  FOR_ALERTING_FLAG="--for-alerting=true,"
+fi
 
 if [[ $DURATION == *h ]]; then
   DURATION_SECONDS=$((${DURATION%h} * 3600))
@@ -60,13 +61,10 @@ JOB_NAME="${JOB_NAME:-spanner-$CLIENT_TYPE-benchmark-job-$SUFFIX}"
 echo "Building image with Cloud Build for $CLIENT_TYPE..."
 gcloud builds submit --project "$PROJECT_ID" --tag "$IMAGE_NAME" .
 
-if [ "$CLIENT_TYPE" = "java" ]; then
-  ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,--for-alerting=true,$BENCHMARK_TYPE,--table=$TABLE_NAME,--tps=$TPS,--threads=$THREADS,--min-id=$MIN_ID,--max-id=$MAX_ID"
-elif [ "$CLIENT_TYPE" = "go" ]; then
-  ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,--for-alerting=true,--table=$TABLE_NAME,--tps=$TPS,--threads=$THREADS,--min-id=$MIN_ID,--max-id=$MAX_ID,$BENCHMARK_TYPE"
-elif [ "$CLIENT_TYPE" = "node" ] || [ "$CLIENT_TYPE" = "python" ]; then
-  ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,--for-alerting,$BENCHMARK_TYPE,--table=$TABLE_NAME,--tps=$TPS,--threads=$THREADS,--min-id=$MIN_ID,--max-id=$MAX_ID"
-fi
+ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}$BENCHMARK_TYPE,--table=$TABLE_NAME"
+if [ -n "$TPS" ]; then ARGS="${ARGS},--tps=$TPS"; fi
+if [ -n "$THREADS" ]; then ARGS="${ARGS},--threads=$THREADS"; fi
+if [ -n "$NUM_ROWS" ]; then ARGS="${ARGS},--num-rows=$NUM_ROWS"; fi
 
 # Create or update the Cloud Run Job
 echo "Deploying Cloud Run Job..."
