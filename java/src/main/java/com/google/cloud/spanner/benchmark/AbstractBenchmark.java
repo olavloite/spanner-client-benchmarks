@@ -4,7 +4,7 @@ import com.google.cloud.spanner.DatabaseClient;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.LongHistogram;
 import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.api.common.AttributeKey;
+import javax.annotation.Nonnull;
 
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
@@ -40,18 +40,19 @@ public abstract class AbstractBenchmark {
         this.duration = duration;
         this.forAlerting = forAlerting;
         // Pre-create attributes to avoid object creation overhead in the hot path
-        this.attributes = Attributes.of(
-                AttributeKey.stringKey("benchmark_type"), getBenchmarkType(),
-                AttributeKey.doubleKey("tps"), tps,
-                AttributeKey.booleanKey("for_alerting"), forAlerting,
-                AttributeKey.stringKey("client"), "java-client"
-        );
+        this.attributes = Attributes.builder()
+                .put("benchmark_type", getBenchmarkType())
+                .put("tps", tps)
+                .put("for_alerting", forAlerting)
+                .put("client", "java-client")
+                .build();
     }
 
     protected boolean shouldMeasureEntireMethod() {
         return true;
     }
 
+    @Nonnull
     protected Attributes getAttributes() {
         return this.attributes;
     }
@@ -103,8 +104,10 @@ public abstract class AbstractBenchmark {
 
     protected abstract void executeOperation() throws Exception;
     
+    @Nonnull
     protected abstract String getBenchmarkName();
     
+    @Nonnull
     protected abstract String getBenchmarkType();
 
     public static Duration parseDuration(String durationStr) {

@@ -6,7 +6,7 @@ import com.google.cloud.spanner.Statement;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.LongHistogram;
 import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.api.common.AttributeKey;
+import javax.annotation.Nonnull;
 import java.time.Duration;
 
 public class ReadLargeResultSetBenchmark extends AbstractBenchmark {
@@ -32,7 +32,7 @@ public class ReadLargeResultSetBenchmark extends AbstractBenchmark {
     public ReadLargeResultSetBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, String tableName, long minId, long maxId, double tps, int threads, Duration duration, boolean forAlerting, long numRows) {
         super(client, latencyHistogram, operationCounter, errorCounter, tableName, minId, maxId, tps, threads, duration, forAlerting);
         this.customAttributes = super.getAttributes().toBuilder()
-                .put(AttributeKey.longKey("num_rows"), numRows)
+                .put("num_rows", numRows)
                 .build();
         this.statement = Statement.newBuilder(SQL)
                 .bind("num_rows").to(numRows)
@@ -40,6 +40,7 @@ public class ReadLargeResultSetBenchmark extends AbstractBenchmark {
     }
 
     @Override
+    @Nonnull
     protected Attributes getAttributes() {
         return this.customAttributes;
     }
