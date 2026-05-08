@@ -24,7 +24,7 @@ struct Args {
     #[arg(long)]
     database: String,
     #[arg(long, global = true)]
-    table: String,
+    table: Option<String>,
     #[arg(long, default_value = "inf")]
     duration: String,
     #[arg(long, default_value_t = false)]
@@ -250,7 +250,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let semaphore = Arc::new(Semaphore::new(args.threads));
-    let table = args.table.clone();
+    let table = args.table.clone().expect("--table is required");
     let command = args.command.clone();
 
     // Loop to generate tasks with Poisson delays

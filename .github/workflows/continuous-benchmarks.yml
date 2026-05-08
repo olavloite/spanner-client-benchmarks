@@ -40,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        client: [java, go, node, python]
+        client: [java, go, node, python, rust]
         benchmark_type: [point-select, select-update, read-large-result-set]
     steps:
       - name: Checkout code
