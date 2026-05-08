@@ -11,6 +11,6 @@ import java.time.Duration;
 public class PointSelectCommand extends AbstractBenchmarkCommand {
     @Override
     protected AbstractBenchmark createBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, Duration duration, boolean forAlerting) {
-        return new PointSelectBenchmark(client, latencyHistogram, operationCounter, errorCounter, tableName, 1, numRows, tps, threads, duration, forAlerting);
+        return new PointSelectBenchmark(client, latencyHistogram, operationCounter, errorCounter, tableName, 1, numRows, tps, threads, duration, forAlerting, burstFactor, burstDuration, burstFraction);
     }
 }

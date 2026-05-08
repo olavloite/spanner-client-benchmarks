@@ -25,9 +25,12 @@ public abstract class AbstractBenchmark {
     protected final int threads;
     protected final Duration duration;
     protected final boolean forAlerting;
+    protected final double burstFactor;
+    protected final double burstDuration;
+    protected final double burstFraction;
     private final Attributes attributes; // Pre-created attributes
 
-    public AbstractBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, String tableName, long minId, long maxId, double tps, int threads, Duration duration, boolean forAlerting) {
+    public AbstractBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, String tableName, long minId, long maxId, double tps, int threads, Duration duration, boolean forAlerting, double burstFactor, double burstDuration, double burstFraction) {
         this.client = client;
         this.latencyHistogram = latencyHistogram;
         this.operationCounter = operationCounter;
@@ -39,12 +42,18 @@ public abstract class AbstractBenchmark {
         this.threads = threads;
         this.duration = duration;
         this.forAlerting = forAlerting;
+        this.burstFactor = burstFactor;
+        this.burstDuration = burstDuration;
+        this.burstFraction = burstFraction;
         // Pre-create attributes to avoid object creation overhead in the hot path
         this.attributes = Attributes.builder()
                 .put("benchmark_type", getBenchmarkType())
                 .put("tps", tps)
                 .put("for_alerting", forAlerting)
                 .put("client", "java-client")
+                .put("burst_factor", burstFactor)
+                .put("burst_duration", burstDuration)
+                .put("burst_fraction", burstFraction)
                 .build();
     }
 
@@ -62,25 +71,48 @@ public abstract class AbstractBenchmark {
         ExecutorService executor = Executors.newFixedThreadPool(threads);
 
         Thread generatorThread = new Thread(() -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                executor.submit(() -> {
-                    long startTime = System.nanoTime();
-                    try {
-                        executeOperation();
-                    } catch (Exception e) {
-                        System.err.println("Operation failed: " + e.getMessage());
-                        errorCounter.add(1, getAttributes());
-                    } finally {
-                        if (shouldMeasureEntireMethod()) {
-                            long endTime = System.nanoTime();
-                            long latencyNs = endTime - startTime;
-                            long latencyUs = latencyNs / 1000;
-                            latencyHistogram.record(latencyUs, getAttributes());
-                        }
-                        operationCounter.add(1, getAttributes());
+            if (burstFactor == 1.0) {
+                while (!Thread.currentThread().isInterrupted()) {
+                    submitTask(executor);
+                    LockSupport.parkNanos(calculatePoissonDelay(tps));
+                }
+            } else {
+                double rBurst = tps * burstFactor;
+                double rNormal = (tps - burstFraction * rBurst) / (1.0 - burstFraction);
+
+                double mu2 = 1.0 / burstDuration;
+                double mu1 = mu2 * burstFraction / (1.0 - burstFraction);
+
+                boolean inBurst = false;
+                long nextStateChangeTime = System.nanoTime() + calculatePoissonDelay(mu1);
+
+                while (!Thread.currentThread().isInterrupted()) {
+                    long now = System.nanoTime();
+                    if (now >= nextStateChangeTime) {
+                        inBurst = !inBurst;
+                        long nextDelay = inBurst ? calculatePoissonDelay(mu2) : calculatePoissonDelay(mu1);
+                        nextStateChangeTime = now + nextDelay;
                     }
-                });
-                LockSupport.parkNanos(calculatePoissonDelay(tps));
+
+                    double currentRate = inBurst ? rBurst : rNormal;
+                    long delayNs;
+                    if (currentRate <= 0) {
+                        delayNs = Long.MAX_VALUE;
+                    } else {
+                        delayNs = calculatePoissonDelay(currentRate);
+                    }
+
+                    long timeToStateChange = nextStateChangeTime - now;
+                    if (delayNs > timeToStateChange) {
+                        if (timeToStateChange > 0) {
+                            LockSupport.parkNanos(timeToStateChange);
+                        }
+                        continue;
+                    }
+
+                    submitTask(executor);
+                    LockSupport.parkNanos(delayNs);
+                }
             }
         }, "TPS-Generator");
 
@@ -100,6 +132,26 @@ public abstract class AbstractBenchmark {
             generatorThread.interrupt();
             executor.shutdownNow();
         }
+    }
+
+    private void submitTask(ExecutorService executor) {
+        executor.submit(() -> {
+            long startTime = System.nanoTime();
+            try {
+                executeOperation();
+            } catch (Exception e) {
+                System.err.println("Operation failed: " + e.getMessage());
+                errorCounter.add(1, getAttributes());
+            } finally {
+                if (shouldMeasureEntireMethod()) {
+                    long endTime = System.nanoTime();
+                    long latencyNs = endTime - startTime;
+                    long latencyUs = latencyNs / 1000;
+                    latencyHistogram.record(latencyUs, getAttributes());
+                }
+                operationCounter.add(1, getAttributes());
+            }
+        });
     }
 
     protected abstract void executeOperation() throws Exception;

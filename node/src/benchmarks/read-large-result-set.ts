@@ -32,7 +32,10 @@ export class ReadLargeResultSetBenchmark extends AbstractBenchmark {
     threads: number,
     durationMs: number | null,
     forAlerting: boolean,
-    numRows: number
+    numRows: number,
+    burstFactor: number = 1.0,
+    burstDuration: number = 1.0,
+    burstFraction: number = 0.1
   ) {
     super(
       database,
@@ -45,7 +48,10 @@ export class ReadLargeResultSetBenchmark extends AbstractBenchmark {
       tps,
       threads,
       durationMs,
-      forAlerting
+      forAlerting,
+      burstFactor,
+      burstDuration,
+      burstFraction
     );
     this.numRows = numRows;
   }

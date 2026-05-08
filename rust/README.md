@@ -5,10 +5,19 @@ This directory contains the Rust implementation of the Cloud Spanner client benc
 ---
 
 ## Scenarios
-The benchmark provides three scenarios:
-- **`point-select`**: Executes a single row read based on a randomly selected primary key value.
-- **`select-update`**: Executes a read-write transaction reading a single row and updating its value, with built-in abort retry capability.
-- **`read-large-result-set`**: Dynamically generates a large dataset on Spanner and decodes all types of columns (integers, floats, JSON, dates, timestamps, etc.) to evaluate stream iteration throughput.
+The benchmark provides the standard workload scenarios. See the top-level [README](../README.md#implemented-benchmarks) for details.
+
+---
+
+## Configuration Options
+
+The benchmark supports all standard options described in the top-level [README](../README.md#configuration-options).
+
+Supported arguments here:
+- `--project`, `--instance`, `--database`: (Required) Connection details.
+- `--table`: (Required) Target database table name.
+- `--tps`, `--threads`, `--num-rows`: Execution parameters.
+- `--burst-factor`, `--burst-duration`, `--burst-fraction`: Bursty load configuration.
 
 ---
 

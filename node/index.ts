@@ -33,7 +33,10 @@ async function main() {
       "Marks the metrics emitted for alerting/regression pipelines.",
       (val) => val === undefined || val === "true" || val === "1",
       false
-    );
+    )
+    .option("--burst-factor <burstFactor>", "Ratio of burst rate to average rate", "1.0")
+    .option("--burst-duration <burstDuration>", "Average duration of a burst in seconds", "1.0")
+    .option("--burst-fraction <burstFraction>", "Fraction of total time spent in the burst state", "0.1");
 
   // Point Select Workload Subcommand
   program
@@ -91,6 +94,9 @@ async function runBenchmarkAction(
   const host = globalOpts.host;
   const durationStr = globalOpts.duration;
   const forAlerting = globalOpts.forAlerting;
+  const burstFactor = parseFloat(globalOpts.burstFactor);
+  const burstDuration = parseFloat(globalOpts.burstDuration);
+  const burstFraction = parseFloat(globalOpts.burstFraction);
 
   const tableName = subOpts.table;
   const numRows = parseInt(subOpts.numRows, 10);
@@ -147,7 +153,10 @@ async function runBenchmarkAction(
       tps,
       threads,
       parsedDurationMs,
-      forAlerting
+      forAlerting,
+      burstFactor,
+      burstDuration,
+      burstFraction
     );
   } else if (type === "select-update") {
     benchmark = new SelectAndUpdateBenchmark(
@@ -161,7 +170,10 @@ async function runBenchmarkAction(
       tps,
       threads,
       parsedDurationMs,
-      forAlerting
+      forAlerting,
+      burstFactor,
+      burstDuration,
+      burstFraction
     );
   } else {
     benchmark = new ReadLargeResultSetBenchmark(
@@ -176,7 +188,10 @@ async function runBenchmarkAction(
       threads,
       parsedDurationMs,
       forAlerting,
-      maxId
+      maxId,
+      burstFactor,
+      burstDuration,
+      burstFraction
     );
   }
 

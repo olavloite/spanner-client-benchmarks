@@ -23,7 +23,7 @@ struct Args {
     instance: String,
     #[arg(long)]
     database: String,
-    #[arg(long)]
+    #[arg(long, global = true)]
     table: String,
     #[arg(long, default_value = "inf")]
     duration: String,
@@ -31,8 +31,14 @@ struct Args {
     for_alerting: bool,
     #[arg(long)]
     host: Option<String>,
-    #[arg(long, default_value_t = 100)]
+    #[arg(long, global = true, default_value_t = 100)]
     threads: usize,
+    #[arg(long, global = true, default_value_t = 1.0)]
+    burst_factor: f64,
+    #[arg(long, global = true, default_value_t = 1.0)]
+    burst_duration: f64,
+    #[arg(long, global = true, default_value_t = 0.1)]
+    burst_fraction: f64,
 
     #[command(subcommand)]
     command: Commands,
@@ -233,6 +239,9 @@ async fn main() -> anyhow::Result<()> {
         KeyValue::new("tps", tps),
         KeyValue::new("for_alerting", args.for_alerting),
         KeyValue::new("client", "rust-client"),
+        KeyValue::new("burst_factor", args.burst_factor),
+        KeyValue::new("burst_duration", args.burst_duration),
+        KeyValue::new("burst_fraction", args.burst_fraction),
     ];
 
     println!(
@@ -246,27 +255,89 @@ async fn main() -> anyhow::Result<()> {
 
     // Loop to generate tasks with Poisson delays
     let start_time = Instant::now();
-    loop {
-        if let Some(dur) = duration {
-            if start_time.elapsed() >= dur {
-                break;
+    
+    if args.burst_factor == 1.0 {
+        loop {
+            if let Some(dur) = duration {
+                if start_time.elapsed() >= dur {
+                    break;
+                }
             }
+
+            let permit = match semaphore.clone().acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => break,
+            };
+
+            let db_client = db_client.clone();
+            let table = table.clone();
+            let command = command.clone();
+            let metrics = metrics.clone();
+            let attributes = attributes.clone();
+
+            tokio::spawn(run_task(db_client, table, command, permit, metrics, attributes));
+
+            tokio::time::sleep(calculate_poisson_delay(tps)).await;
         }
+    } else {
+        let r_burst = tps * args.burst_factor;
+        let r_normal = (tps - args.burst_fraction * r_burst) / (1.0 - args.burst_fraction);
 
-        let permit = match semaphore.clone().acquire_owned().await {
-            Ok(p) => p,
-            Err(_) => break,
-        };
+        let mu2 = 1.0 / args.burst_duration;
+        let mu1 = mu2 * args.burst_fraction / (1.0 - args.burst_fraction);
 
-        let db_client = db_client.clone();
-        let table = table.clone();
-        let command = command.clone();
-        let metrics = metrics.clone();
-        let attributes = attributes.clone();
+        let mut in_burst = false;
+        let mut next_state_change_time = Instant::now() + calculate_poisson_delay(mu1);
 
-        tokio::spawn(run_task(db_client, table, command, permit, metrics, attributes));
+        loop {
+            if let Some(dur) = duration {
+                if start_time.elapsed() >= dur {
+                    break;
+                }
+            }
 
-        tokio::time::sleep(calculate_poisson_delay(tps)).await;
+            let now = Instant::now();
+            if now >= next_state_change_time {
+                in_burst = !in_burst;
+                let next_delay = if in_burst { calculate_poisson_delay(mu2) } else { calculate_poisson_delay(mu1) };
+                next_state_change_time = now + next_delay;
+            }
+
+            let current_rate = if in_burst { r_burst } else { r_normal };
+            let delay = if current_rate <= 0.0 {
+                Duration::from_secs(3600)
+            } else {
+                calculate_poisson_delay(current_rate)
+            };
+
+            let time_to_state_change = if next_state_change_time > now {
+                next_state_change_time.duration_since(now)
+            } else {
+                Duration::from_secs(0)
+            };
+            
+            if delay > time_to_state_change {
+                if !time_to_state_change.is_zero() {
+                    tokio::time::sleep(time_to_state_change).await;
+                }
+                continue;
+            }
+
+            let permit = match semaphore.clone().acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => break,
+            };
+
+            let db_client = db_client.clone();
+            let table = table.clone();
+            let command = command.clone();
+            let metrics = metrics.clone();
+            let attributes = attributes.clone();
+
+            tokio::spawn(run_task(db_client, table, command, permit, metrics, attributes));
+
+            tokio::time::sleep(delay).await;
+        }
     }
 
     // Wait for all active worker tasks to complete

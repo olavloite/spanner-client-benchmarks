@@ -17,11 +17,43 @@ The benchmarks are built and run against the **most recent source code** of thei
 
 ## Implemented Benchmarks
 
+All benchmarks support the following workload scenarios:
+
 ### Point Query (`point-select`)
-A simple point query selecting one row based on a randomly selected primary key value using a query parameter.
+Executes a single row read based on a randomly selected primary key value using a query parameter. Measures raw read latency.
 
 ### Select and Update (`select-update`)
-A benchmark that selects a row and immediately updates it within a transaction.
+A read-modify-write scenario executed inside a Read-Write Transaction. Reads a row and updates its payload with a random string.
+
+### Read Large Result Set (`read-large-result-set`)
+Executes a query that generates a large result set with all supported data types, and iterates over the results to measure throughput and decoding performance.
+
+---
+
+## Configuration Options
+
+The following options are supported by the benchmark applications. While most languages support these as global options (specified before the subcommand) or subcommand options, the exact placement may vary slightly depending on the language's CLI library. Use `--help` on the specific client for exact usage.
+
+### General Options
+
+- `-p, --project`: (Required) Google Cloud Project ID.
+- `-i, --instance`: (Required) Spanner Instance ID.
+- `-d, --database`: (Required) Spanner Database ID.
+- `-t, --table`: (Required for most scenarios) Target database table name.
+- `--duration`: Duration of the benchmark (e.g., `60s`, `5m`, `inf` for infinite). Defaults to `inf`.
+- `--for-alerting`: Marks the metrics for alerting pipelines. Defaults to `false`.
+- `--host`: Custom Spanner endpoint URL override (e.g., for emulators).
+- `--threads`: Number of parallel workers allowed (default: 100).
+- `--tps`: Target transactions per second (default varies by scenario).
+- `--num-rows`: Number of rows to generate or select from.
+
+### Bursty Load Options
+
+These options configure the 2-State Markov-Modulated Poisson Process (MMPP) to simulate spiky load:
+
+- `--burst-factor`: Ratio of burst rate to average rate. A value of `1.0` means steady load (default).
+- `--burst-duration`: Average duration of a burst in seconds (default: 1.0).
+- `--burst-fraction`: Fraction of total time spent in the burst state (default: 0.1).
 
 ---
 

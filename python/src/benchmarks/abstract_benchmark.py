@@ -29,6 +29,9 @@ class AbstractBenchmark(abc.ABC):
         threads: int,
         duration_sec: Optional[float],
         for_alerting: bool,
+        burst_factor: float = 1.0,
+        burst_duration: float = 1.0,
+        burst_fraction: float = 0.1,
     ):
         self.database = database
         self.latency_histogram = latency_histogram
@@ -41,6 +44,9 @@ class AbstractBenchmark(abc.ABC):
         self.threads = threads
         self.duration_sec = duration_sec
         self.for_alerting = for_alerting
+        self.burst_factor = burst_factor
+        self.burst_duration = burst_duration
+        self.burst_fraction = burst_fraction
 
         # Pre-create metric attributes to optimize away overhead on the hot path
         self.attributes = {
@@ -48,6 +54,9 @@ class AbstractBenchmark(abc.ABC):
             "tps": self.tps,
             "for_alerting": self.for_alerting,
             "client": "python-client",
+            "burst_factor": self.burst_factor,
+            "burst_duration": self.burst_duration,
+            "burst_fraction": self.burst_fraction,
         }
 
         self.is_stopped = False
@@ -117,6 +126,15 @@ class AbstractBenchmark(abc.ABC):
         start_time_ns = time.perf_counter()
         next_task_time_ns = start_time_ns
 
+        r_burst = self.tps * self.burst_factor
+        r_normal = (self.tps - self.burst_fraction * r_burst) / (1.0 - self.burst_fraction)
+
+        mu2 = 1.0 / self.burst_duration
+        mu1 = mu2 * self.burst_fraction / (1.0 - self.burst_fraction)
+
+        in_burst = False
+        next_state_change_time_ns = start_time_ns + self._calculate_poisson_delay(mu1)
+
         while not self.is_stopped:
             now_ns = time.perf_counter()
 
@@ -125,12 +143,27 @@ class AbstractBenchmark(abc.ABC):
             if now_ns - next_task_time_ns > 1.0:
                 next_task_time_ns = now_ns
 
+            if self.burst_factor != 1.0:
+                if now_ns >= next_state_change_time_ns:
+                    in_burst = not in_burst
+                    next_delay_sec = self._calculate_poisson_delay(mu2) if in_burst else self._calculate_poisson_delay(mu1)
+                    next_state_change_time_ns = now_ns + next_delay_sec
+
+            current_rate = self.tps if self.burst_factor == 1.0 else (r_burst if in_burst else r_normal)
+
             # Spawn all tasks scheduled to run in the current delta window
             while now_ns >= next_task_time_ns and not self.is_stopped:
                 self._submit_task()
 
                 # Calculate next arrival delay using exponential inter-arrival distribution
-                delay_sec = self._calculate_poisson_delay(self.tps)
+                delay_sec = self._calculate_poisson_delay(current_rate)
+                
+                if self.burst_factor != 1.0:
+                    time_to_state_change_sec = next_state_change_time_ns - next_task_time_ns
+                    if delay_sec > time_to_state_change_sec:
+                        next_task_time_ns = next_state_change_time_ns
+                        break
+                
                 next_task_time_ns += delay_sec
 
             # Sleep to yield to other threads, sleeping longer if the next task is far in the future
@@ -180,6 +213,8 @@ class AbstractBenchmark(abc.ABC):
         Calculates next Poisson arrival interval delay in seconds.
         Formula: delaySeconds = -ln(1.0 - u) / rate, where u ~ Uniform(0, 1)
         """
+        if rate <= 0:
+            return 3600.0 # 1 hour in seconds
         u = random.random()
         # Guard to prevent log(0) -> -Infinity error if u is exactly 1.0
         safe_u = 0.999999999 if u == 1.0 else u

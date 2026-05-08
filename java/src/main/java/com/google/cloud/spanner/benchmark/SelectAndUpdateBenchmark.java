@@ -12,8 +12,8 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public class SelectAndUpdateBenchmark extends AbstractBenchmark {
 
-    public SelectAndUpdateBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, String tableName, long minId, long maxId, double tps, int threads, Duration duration, boolean forAlerting) {
-        super(client, latencyHistogram, operationCounter, errorCounter, tableName, minId, maxId, tps, threads, duration, forAlerting);
+    public SelectAndUpdateBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, String tableName, long minId, long maxId, double tps, int threads, Duration duration, boolean forAlerting, double burstFactor, double burstDuration, double burstFraction) {
+        super(client, latencyHistogram, operationCounter, errorCounter, tableName, minId, maxId, tps, threads, duration, forAlerting, burstFactor, burstDuration, burstFraction);
     }
 
     @Override

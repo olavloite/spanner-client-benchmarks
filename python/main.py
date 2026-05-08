@@ -41,6 +41,9 @@ def main():
         default=False,
         help="Marks the metrics emitted for regression/alerting pipelines.",
     )
+    parser.add_argument("--burst-factor", type=float, default=1.0, help="Ratio of burst rate to average rate")
+    parser.add_argument("--burst-duration", type=float, default=1.0, help="Average duration of a burst in seconds")
+    parser.add_argument("--burst-fraction", type=float, default=0.1, help="Fraction of total time spent in the burst state")
 
     # Workload Scenario Subcommands routing
     subparsers = parser.add_subparsers(dest="command", required=True, help="Workload scenario subcommands")
@@ -139,6 +142,9 @@ def main():
             threads=args.threads,
             duration_sec=duration_sec,
             for_alerting=args.for_alerting,
+            burst_factor=args.burst_factor,
+            burst_duration=args.burst_duration,
+            burst_fraction=args.burst_fraction,
         )
     elif args.command == "select-update":
         benchmark = SelectAndUpdateBenchmark(
@@ -153,6 +159,9 @@ def main():
             threads=args.threads,
             duration_sec=duration_sec,
             for_alerting=args.for_alerting,
+            burst_factor=args.burst_factor,
+            burst_duration=args.burst_duration,
+            burst_fraction=args.burst_fraction,
         )
     else:
         benchmark = ReadLargeResultSetBenchmark(
@@ -168,6 +177,9 @@ def main():
             duration_sec=duration_sec,
             for_alerting=args.for_alerting,
             num_rows=args.num_rows,
+            burst_factor=args.burst_factor,
+            burst_duration=args.burst_duration,
+            burst_fraction=args.burst_fraction,
         )
 
     # 4. Register process lifecycle termination traps (SIGINT, SIGTERM)

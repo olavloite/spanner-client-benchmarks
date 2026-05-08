@@ -66,6 +66,9 @@ ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--du
 if [ -n "$TPS" ]; then ARGS="${ARGS},--tps=$TPS"; fi
 if [ -n "$THREADS" ]; then ARGS="${ARGS},--threads=$THREADS"; fi
 if [ -n "$NUM_ROWS" ]; then ARGS="${ARGS},--num-rows=$NUM_ROWS"; fi
+if [ -n "$BURST_FACTOR" ]; then ARGS="${ARGS},--burst-factor=$BURST_FACTOR"; fi
+if [ -n "$BURST_DURATION" ]; then ARGS="${ARGS},--burst-duration=$BURST_DURATION"; fi
+if [ -n "$BURST_FRACTION" ]; then ARGS="${ARGS},--burst-fraction=$BURST_FRACTION"; fi
 
 # Create or update the Cloud Run Job
 echo "Deploying Cloud Run Job..."

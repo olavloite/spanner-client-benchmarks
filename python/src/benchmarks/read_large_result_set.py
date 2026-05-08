@@ -34,6 +34,9 @@ class ReadLargeResultSetBenchmark(AbstractBenchmark):
         duration_sec: float | None,
         for_alerting: bool,
         num_rows: int,
+        burst_factor: float = 1.0,
+        burst_duration: float = 1.0,
+        burst_fraction: float = 0.1,
     ):
         super().__init__(
             database,
@@ -47,6 +50,9 @@ class ReadLargeResultSetBenchmark(AbstractBenchmark):
             threads,
             duration_sec,
             for_alerting,
+            burst_factor,
+            burst_duration,
+            burst_fraction,
         )
         self.num_rows = num_rows
 

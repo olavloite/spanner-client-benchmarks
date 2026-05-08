@@ -13,8 +13,8 @@ shift
 
 INIT_DIR="$(pwd)"
 
-if [ "$CLIENT_TYPE" != "go" ] && [ "$CLIENT_TYPE" != "java" ] && [ "$CLIENT_TYPE" != "node" ] && [ "$CLIENT_TYPE" != "python" ]; then
-  echo "Unsupported client type: $CLIENT_TYPE. Use 'go', 'java', 'node', or 'python'."
+if [ "$CLIENT_TYPE" != "go" ] && [ "$CLIENT_TYPE" != "java" ] && [ "$CLIENT_TYPE" != "node" ] && [ "$CLIENT_TYPE" != "python" ] && [ "$CLIENT_TYPE" != "rust" ]; then
+  echo "Unsupported client type: $CLIENT_TYPE. Use 'go', 'java', 'node', 'python', or 'rust'."
   exit 1
 fi
 
@@ -31,6 +31,8 @@ elif [ "$CLIENT_TYPE" = "node" ]; then
   node dist/index.js "$@"
 elif [ "$CLIENT_TYPE" = "python" ]; then
   python3 main.py "$@"
+elif [ "$CLIENT_TYPE" = "rust" ]; then
+  ./target/release/spanner-rust-benchmark "$@"
 fi
 
 cd "$INIT_DIR"

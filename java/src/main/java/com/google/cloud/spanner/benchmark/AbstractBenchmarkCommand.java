@@ -36,6 +36,15 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
     @Option(names = {"--threads"}, description = "Number of threads in the pool", defaultValue = "100")
     protected int threads;
 
+    @Option(names = {"--burst-factor"}, description = "Ratio of burst rate to average rate", defaultValue = "1.0")
+    protected double burstFactor = 1.0;
+
+    @Option(names = {"--burst-duration"}, description = "Average duration of a burst in seconds", defaultValue = "1.0")
+    protected double burstDuration = 1.0;
+
+    @Option(names = {"--burst-fraction"}, description = "Fraction of total time spent in the burst state", defaultValue = "0.1")
+    protected double burstFraction = 0.1;
+
     protected String getMetricName() {
         return LATENCY_NAME;
     }

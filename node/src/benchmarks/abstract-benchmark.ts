@@ -23,6 +23,9 @@ export abstract class AbstractBenchmark implements IBenchmark {
   protected threads: number;
   protected durationMs: number | null;
   protected forAlerting: boolean;
+  protected burstFactor: number;
+  protected burstDuration: number;
+  protected burstFraction: number;
 
   private attributes: Record<string, any>;
   private activeTasks = 0;
@@ -40,7 +43,10 @@ export abstract class AbstractBenchmark implements IBenchmark {
     tps: number,
     threads: number,
     durationMs: number | null,
-    forAlerting: boolean
+    forAlerting: boolean,
+    burstFactor: number = 1.0,
+    burstDuration: number = 1.0,
+    burstFraction: number = 0.1
   ) {
     this.database = database;
     this.latencyHistogram = latencyHistogram;
@@ -53,6 +59,9 @@ export abstract class AbstractBenchmark implements IBenchmark {
     this.threads = threads;
     this.durationMs = durationMs;
     this.forAlerting = forAlerting;
+    this.burstFactor = burstFactor;
+    this.burstDuration = burstDuration;
+    this.burstFraction = burstFraction;
 
     // Pre-create attributes to avoid object creation overhead on the hot path (parity with Go and Java)
     this.attributes = {
@@ -60,6 +69,9 @@ export abstract class AbstractBenchmark implements IBenchmark {
       tps: this.tps,
       for_alerting: this.forAlerting,
       client: "node-client",
+      burst_factor: this.burstFactor,
+      burst_duration: this.burstDuration,
+      burst_fraction: this.burstFraction,
     };
   }
 
@@ -76,6 +88,15 @@ export abstract class AbstractBenchmark implements IBenchmark {
 
     const startTimeNs = process.hrtime.bigint();
     let nextTaskTimeNs = startTimeNs;
+
+    const rBurst = this.tps * this.burstFactor;
+    const rNormal = (this.tps - this.burstFraction * rBurst) / (1.0 - this.burstFraction);
+
+    const mu2 = 1.0 / this.burstDuration;
+    const mu1 = mu2 * this.burstFraction / (1.0 - this.burstFraction);
+
+    let inBurst = false;
+    let nextStateChangeTimeNs = startTimeNs + this.calculatePoissonDelayNs(mu1);
 
     let timeoutId: NodeJS.Timeout | null = null;
     if (this.durationMs !== null) {
@@ -100,12 +121,30 @@ export abstract class AbstractBenchmark implements IBenchmark {
         nextTaskTimeNs = nowNs;
       }
 
+      if (this.burstFactor !== 1.0) {
+        if (nowNs >= nextStateChangeTimeNs) {
+          inBurst = !inBurst;
+          const nextDelayNs = inBurst ? this.calculatePoissonDelayNs(mu2) : this.calculatePoissonDelayNs(mu1);
+          nextStateChangeTimeNs = nowNs + nextDelayNs;
+        }
+      }
+
+      const currentRate = this.burstFactor === 1.0 ? this.tps : (inBurst ? rBurst : rNormal);
+
       // Spawn all operations whose scheduled trigger time has arrived or passed
       while (nowNs >= nextTaskTimeNs && !this.isStopped) {
         this.submitTask();
 
-        // Calculate next arrival inter-event interval using Poisson process distribution
-        const delayNs = this.calculatePoissonDelayNs(this.tps);
+        const delayNs = this.calculatePoissonDelayNs(currentRate);
+        
+        if (this.burstFactor !== 1.0) {
+          const timeToStateChangeNs = nextStateChangeTimeNs - nextTaskTimeNs;
+          if (delayNs > timeToStateChangeNs) {
+            nextTaskTimeNs = nextStateChangeTimeNs;
+            break;
+          }
+        }
+
         nextTaskTimeNs += delayNs;
       }
 
@@ -204,6 +243,9 @@ export abstract class AbstractBenchmark implements IBenchmark {
    * Formula: delaySeconds = -ln(1 - u) / rate, where u is Uniform(0, 1)
    */
   private calculatePoissonDelayNs(rate: number): bigint {
+    if (rate <= 0) {
+      return 3600000000000n; // 1 hour in nanoseconds
+    }
     const u = Math.random();
     // Prevent u being exactly 1.0 which would result in ln(0) -> -Infinity
     const safeU = u === 1.0 ? 0.999999999 : u;

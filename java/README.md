@@ -3,9 +3,7 @@
 This directory contains the Java implementation of the Cloud Spanner client benchmarks, tailored to test the performance of standard `google-cloud-spanner` driver scenarios against live databases.
 
 ## Scenarios
-The benchmark provides two subcommands:
-- **`point-select`**: Executes a single row read based on a randomly selected primary key value.
-- **`select-update`**: Reads a single row and updates its payload by default transaction rate.
+The benchmark provides the standard workload scenarios. See the top-level [README](../README.md#implemented-benchmarks) for details.
 
 ---
 
@@ -26,13 +24,13 @@ The benchmark provides two subcommands:
 
 ## Configuration Options
 
-You can invoke options of the benchmark application natively:
-- `-p, --project`: (Required) Target GCP Project ID.
-- `-i, --instance`: (Required) Target Spanner Instance ID.
-- `-d, --database`: (Required) Target Spanner Database ID.
-- `--duration`: The runtime of the test (e.g. `30s`, `60m`, `1h`). Defaults to infinite indefinite. 
-- `--for-alerting`: Default to continuous measurements tracking. Set true for nightly compliance runs.
-- `--host`: Custom endpoint hook for local emulators.
+The benchmark supports all standard options described in the top-level [README](../README.md#configuration-options).
+
+Supported arguments here:
+- `-p, --project`, `-i, --instance`, `-d, --database`: (Required) Connection details.
+- `-t, --table`: (Required) Target database table name.
+- `--tps`, `--threads`, `--num-rows`: Execution parameters.
+- `--burst-factor`, `--burst-duration`, `--burst-fraction`: Bursty load configuration.
 
 ---
 

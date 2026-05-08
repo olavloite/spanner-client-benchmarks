@@ -55,6 +55,9 @@ func main() {
 			&cli.BoolFlag{Name: "for-alerting", Value: false, Usage: "Marks the benchmark for alerting purposes"},
 			&cli.StringFlag{Name: "host", Usage: "Custom Spanner host endpoint override"},
 			&cli.IntFlag{Name: "threads", Value: 100, Usage: "Number of parallel workers allowed"},
+			&cli.FloatFlag{Name: "burst-factor", Value: 1.0, Usage: "Ratio of burst rate to average rate"},
+			&cli.FloatFlag{Name: "burst-duration", Value: 1.0, Usage: "Average duration of a burst in seconds"},
+			&cli.FloatFlag{Name: "burst-fraction", Value: 0.1, Usage: "Fraction of total time spent in the burst state"},
 		},
 		Commands: []*cli.Command{
 			{
@@ -122,6 +125,9 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	threads := cmd.Int("threads")
 	tps := cmd.Float("tps")
 	numRows := int64(cmd.Int("num-rows"))
+	burstFactor := cmd.Float("burst-factor")
+	burstDuration := cmd.Float("burst-duration")
+	burstFraction := cmd.Float("burst-fraction")
 
 	// Setup Metrics
 	latencyHistogram, readLatencyHistogram, operationCounter, errorCounter, cleanupMetrics, err := setupMetrics(runCtx, project, host)
@@ -154,6 +160,9 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 		attribute.Float64("tps", tps),
 		attribute.Bool("for_alerting", forAlerting),
 		attribute.String("client", "go-client"),
+		attribute.Float64("burst_factor", burstFactor),
+		attribute.Float64("burst_duration", burstDuration),
+		attribute.Float64("burst_fraction", burstFraction),
 	}
 	if benchmarkType == "read-large-result-set" {
 		attributeList = append(attributeList, attribute.Int64("num_rows", numRows))
@@ -180,7 +189,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	}
 
 	// Run loop
-	runBenchmark(durationCtx, b, client, latencyHistogram, operationCounter, errorCounter, table, tps, threads, 1, numRows, attributes)
+	runBenchmark(durationCtx, b, client, latencyHistogram, operationCounter, errorCounter, table, tps, threads, 1, numRows, attributes, burstFactor, burstDuration, burstFraction)
 
 	return nil
 }
@@ -258,7 +267,7 @@ func createSpannerClient(ctx context.Context, project, instance, database, host 
 	return spanner.NewClient(ctx, databaseName, clientOpts...)
 }
 
-func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, latencyHistogram metric.Float64Histogram, operationCounter metric.Int64Counter, errorCounter metric.Int64Counter, tableName string, targetTPS float64, concurrentThreads int, minId, maxId int64, attributes metric.MeasurementOption) {
+func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, latencyHistogram metric.Float64Histogram, operationCounter metric.Int64Counter, errorCounter metric.Int64Counter, tableName string, targetTPS float64, concurrentThreads int, minId, maxId int64, attributes metric.MeasurementOption, burstFactor, burstDuration, burstFraction float64) {
 	tasks := make(chan struct{}, 1000000) // large buffered channel to simulate unbounded queue
 	wg := &sync.WaitGroup{}
 
@@ -291,22 +300,80 @@ func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, late
 		}()
 	}
 
-	generatorTicker := time.NewTicker(1 * time.Microsecond) // minimal tick for poisson calculation
-	defer generatorTicker.Stop()
+	if burstFactor == 1.0 {
+		generatorTicker := time.NewTicker(1 * time.Microsecond)
+		defer generatorTicker.Stop()
 
-	for {
-		select {
-		case <-ctx.Done():
-			close(tasks)
-			wg.Wait()
-			return
-		case <-generatorTicker.C:
+		for {
 			select {
-			case tasks <- struct{}{}: // push task
-			default:
-				log.Printf("Task dropped: workload queue is full (1M tasks)")
+			case <-ctx.Done():
+				close(tasks)
+				wg.Wait()
+				return
+			case <-generatorTicker.C:
+				select {
+				case tasks <- struct{}{}:
+				default:
+					log.Printf("Task dropped: workload queue is full (1M tasks)")
+				}
+				time.Sleep(calculatePoissonDelay(targetTPS))
 			}
-			time.Sleep(calculatePoissonDelay(targetTPS))
+		}
+	} else {
+		rBurst := targetTPS * burstFactor
+		rNormal := (targetTPS - burstFraction*rBurst) / (1.0 - burstFraction)
+
+		mu2 := 1.0 / burstDuration
+		mu1 := mu2 * burstFraction / (1.0 - burstFraction)
+
+		inBurst := false
+		nextStateChangeTime := time.Now().Add(calculatePoissonDelay(mu1))
+
+		for {
+			select {
+			case <-ctx.Done():
+				close(tasks)
+				wg.Wait()
+				return
+			default:
+				now := time.Now()
+				if now.After(nextStateChangeTime) {
+					inBurst = !inBurst
+					var nextDelay time.Duration
+					if inBurst {
+						nextDelay = calculatePoissonDelay(mu2)
+					} else {
+						nextDelay = calculatePoissonDelay(mu1)
+					}
+					nextStateChangeTime = now.Add(nextDelay)
+				}
+
+				currentRate := rNormal
+				if inBurst {
+					currentRate = rBurst
+				}
+
+				var delay time.Duration
+				if currentRate <= 0.0 {
+					delay = 1 * time.Hour
+				} else {
+					delay = calculatePoissonDelay(currentRate)
+				}
+
+				timeToStateChange := nextStateChangeTime.Sub(now)
+				if delay > timeToStateChange {
+					time.Sleep(timeToStateChange)
+					continue
+				}
+
+				select {
+				case tasks <- struct{}{}:
+				default:
+					log.Printf("Task dropped: workload queue is full (1M tasks)")
+				}
+
+				time.Sleep(delay)
+			}
 		}
 	}
 }

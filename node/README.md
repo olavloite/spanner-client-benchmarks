@@ -5,9 +5,19 @@ This directory contains the Node.js implementation of the Cloud Spanner client b
 ---
 
 ## Scenarios
-The benchmark provides two workloads:
-- **`point-select`**: Executes an optimized single-row point-select query (`SELECT * FROM {table} WHERE id = @id`) under a single-use snapshot read context.
-- **`select-update`**: Executes a read-modify-write sequence within a Read-Write transaction, updating a payload column with a random alphanumeric string.
+The benchmark provides the standard workload scenarios. See the top-level [README](../README.md#implemented-benchmarks) for details.
+
+---
+
+## Configuration Options
+
+The benchmark supports all standard options described in the top-level [README](../README.md#configuration-options).
+
+Supported arguments here:
+- `--project`, `--instance`, `--database`: (Required) Connection details.
+- `--table`: (Required) Target database table name.
+- `--tps`, `--threads`, `--num-rows`: Execution parameters.
+- `--burst-factor`, `--burst-duration`, `--burst-fraction`: Bursty load configuration.
 
 ---
 
