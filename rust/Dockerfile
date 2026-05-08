@@ -1,4 +1,4 @@
-FROM rust:slim AS build
+FROM rust:slim-bookworm AS build
 WORKDIR /app
 
 # Install compilation prerequisites

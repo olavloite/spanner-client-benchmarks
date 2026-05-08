@@ -34,7 +34,13 @@ for line in sys.stdin:
   for job in $JOBS_TO_DELETE; do
     if [[ $job == spanner-$CLIENT_TYPE-benchmark-job-* ]]; then
       # Check if job has active executions
-      ACTIVE_EXECS=$(gcloud run jobs executions list --project="$PROJECT_ID" --region="$REGION" --job="$job" --filter="status.completionTime:null" --format="value(metadata.name)")
+      ACTIVE_EXECS=$(gcloud run jobs executions list --project="$PROJECT_ID" --region="$REGION" --job="$job" --format="value(metadata.name,status.completionTime)" | python3 -c "
+import sys
+for line in sys.stdin:
+    parts = line.strip().split()
+    if len(parts) == 1: # Only name is present, completionTime is null/missing
+        print(parts[0])
+")
       if [ -n "$ACTIVE_EXECS" ]; then
         echo "Skipping deletion of running job: $job"
         # Collect the image used by this job
