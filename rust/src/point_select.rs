@@ -1,6 +1,7 @@
 use google_cloud_spanner::client::{DatabaseClient, Statement};
 use futures::future::BoxFuture;
 use futures::FutureExt;
+use std::hint::black_box;
 
 pub fn execute_point_select(
     client: DatabaseClient,
@@ -18,7 +19,8 @@ pub fn execute_point_select(
         let transaction = client.single_use().build();
         let mut result_set = transaction.execute_query(statement).await?;
         while let Some(row) = result_set.next().await.transpose()? {
-            let _id: i64 = row.get(0);
+            let _: i64 = black_box(row.get(0));
+            let _: String = black_box(row.get(1));
         }
         Ok(())
     }

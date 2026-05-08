@@ -4,6 +4,7 @@ use futures::FutureExt;
 use opentelemetry::metrics::Histogram;
 use opentelemetry::KeyValue;
 use std::time::Instant;
+use std::hint::black_box;
 
 pub fn execute_read_large_result_set(
     client: DatabaseClient,
@@ -49,13 +50,13 @@ pub fn execute_read_large_result_set(
 }
 
 fn decode_row(row: &google_cloud_spanner::client::Row) {
-    let _: bool = row.get(0);
-    let _: Vec<u8> = row.get(1);
-    let _: time::Date = row.get(2);
-    let _: f32 = row.get(3);
-    let _: f64 = row.get(4);
-    let _: String = row.get(5);
-    let _: i64 = row.get(6);
-    let _: String = row.get(7);
-    let _: time::OffsetDateTime = row.get(8);
+    let _: bool = black_box(row.get(0));
+    let _: Vec<u8> = black_box(row.get(1));
+    let _: time::Date = black_box(row.get(2));
+    let _: f32 = black_box(row.get(3));
+    let _: f64 = black_box(row.get(4));
+    let _: String = black_box(row.get(5));
+    let _: i64 = black_box(row.get(6));
+    let _: String = black_box(row.get(7));
+    let _: time::OffsetDateTime = black_box(row.get(8));
 }
