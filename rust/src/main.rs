@@ -1,0 +1,277 @@
+mod point_select;
+mod read_large_result_set;
+mod select_update;
+
+use clap::{Parser, Subcommand};
+use google_cloud_spanner::client::Spanner;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::time::Instant;
+use futures::FutureExt;
+use opentelemetry::metrics::{Counter, Histogram, MeterProvider};
+use opentelemetry::KeyValue;
+use opentelemetry_gcloud_monitoring_exporter::{GCPMetricsExporter, GCPMetricsExporterConfig};
+use opentelemetry_sdk::metrics::{SdkMeterProvider, Aggregation, Stream, Instrument};
+
+#[derive(Parser, Debug)]
+#[command(name = "BenchmarkApp", about = "Spanner client library benchmark tool for Rust.")]
+struct Args {
+    #[arg(long)]
+    project: String,
+    #[arg(long)]
+    instance: String,
+    #[arg(long)]
+    database: String,
+    #[arg(long)]
+    table: String,
+    #[arg(long, default_value = "inf")]
+    duration: String,
+    #[arg(long, default_value_t = false)]
+    for_alerting: bool,
+    #[arg(long)]
+    host: Option<String>,
+    #[arg(long, default_value_t = 100)]
+    threads: usize,
+
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum Commands {
+    PointSelect {
+        #[arg(long, default_value_t = 10.0)]
+        tps: f64,
+        #[arg(long, default_value_t = 1000000)]
+        num_rows: i64,
+    },
+    SelectUpdate {
+        #[arg(long, default_value_t = 10.0)]
+        tps: f64,
+        #[arg(long, default_value_t = 1000000)]
+        num_rows: i64,
+    },
+    ReadLargeResultSet {
+        #[arg(long, default_value_t = 0.05)]
+        tps: f64,
+        #[arg(long, default_value_t = 100000)]
+        num_rows: i64,
+    },
+}
+
+fn calculate_poisson_delay(rate: f64) -> Duration {
+    let u: f64 = rand::random();
+    let delay_seconds = -u.ln() / rate;
+    Duration::from_secs_f64(delay_seconds)
+}
+
+fn parse_duration(duration_str: &str) -> Option<Duration> {
+    if duration_str == "inf" || duration_str == "infinite" {
+        return None;
+    }
+    if duration_str.ends_with('h') {
+        let hours: u64 = duration_str.trim_end_matches('h').parse().ok()?;
+        Some(Duration::from_secs(hours * 3600))
+    } else if duration_str.ends_with('m') {
+        let minutes: u64 = duration_str.trim_end_matches('m').parse().ok()?;
+        Some(Duration::from_secs(minutes * 60))
+    } else if duration_str.ends_with('s') {
+        let seconds: u64 = duration_str.trim_end_matches('s').parse().ok()?;
+        Some(Duration::from_secs(seconds))
+    } else {
+        let seconds: u64 = duration_str.parse().ok()?;
+        Some(Duration::from_secs(seconds))
+    }
+}
+#[derive(Clone)]
+struct BenchmarkMetrics {
+    latency: Histogram<f64>,
+    read_latency: Histogram<f64>,
+    operation_count: Counter<u64>,
+    error_count: Counter<u64>,
+}
+
+async fn setup_metrics(project_id: &str) -> anyhow::Result<(BenchmarkMetrics, SdkMeterProvider)> {
+    let config = GCPMetricsExporterConfig {
+        project_id: Some(project_id.to_string()),
+        ..Default::default()
+    };
+    let exporter = GCPMetricsExporter::init(config).await.map_err(|e| anyhow::anyhow!("{:?}", e))?;
+
+    let provider = SdkMeterProvider::builder()
+        .with_reader(opentelemetry_sdk::metrics::periodic_reader_with_async_runtime::PeriodicReader::builder(exporter, opentelemetry_sdk::runtime::Tokio).build())
+        .with_view(|i: &Instrument| {
+            if i.name() == "spanner_client_benchmarks/latency" {
+                Some(Stream::builder()
+                    .with_aggregation(Aggregation::ExplicitBucketHistogram {
+                        boundaries: vec![500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 3500.0, 4000.0, 4500.0, 5000.0, 6000.0, 7000.0, 8000.0, 9000.0, 10000.0, 12000.0, 14000.0, 16000.0, 18000.0, 20000.0, 25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0],
+                        record_min_max: true,
+                    })
+                    .build()
+                    .unwrap())
+            } else if i.name() == "spanner_client_benchmarks/read_latency" {
+                Some(Stream::builder()
+                    .with_aggregation(Aggregation::ExplicitBucketHistogram {
+                        boundaries: vec![
+                            50000.0, 100000.0, 250000.0, 500000.0, 750000.0,
+                            1000000.0, 1250000.0, 1500000.0, 1750000.0, 2000000.0, 2250000.0, 2500000.0, 2750000.0, 3000000.0, 3250000.0, 3500000.0, 3750000.0, 4000000.0, 4250000.0, 4500000.0, 4750000.0, 5000000.0,
+                            5500000.0, 6000000.0, 6500000.0, 7000000.0, 7500000.0, 8000000.0, 8500000.0, 9000000.0, 9500000.0, 10000000.0,
+                            12500000.0, 15000000.0, 20000000.0, 30000000.0,
+                        ],
+                        record_min_max: true,
+                    })
+                    .build()
+                    .unwrap())
+            } else {
+                None
+            }
+        })
+        .build();
+
+    let meter = provider.meter("spanner-benchmark");
+
+    let latency = meter.f64_histogram("spanner_client_benchmarks/latency")
+        .with_description("Query latency in microseconds")
+        .with_unit("us")
+        .build();
+
+    let read_latency = meter.f64_histogram("spanner_client_benchmarks/read_latency")
+        .with_description("Query latency in microseconds")
+        .with_unit("us")
+        .build();
+
+    let operation_count = meter.u64_counter("spanner_client_benchmarks/operation_count")
+        .with_description("Total number of benchmark operations executed")
+        .with_unit("1")
+        .build();
+
+    let error_count = meter.u64_counter("spanner_client_benchmarks/error_count")
+        .with_description("Total number of benchmark operations that failed with an error")
+        .with_unit("1")
+        .build();
+
+    Ok((BenchmarkMetrics { latency, read_latency, operation_count, error_count }, provider))
+}
+
+fn run_task(
+    db_client: google_cloud_spanner::client::DatabaseClient,
+    table: String,
+    command: Commands,
+    _permit: OwnedSemaphorePermit,
+    metrics: BenchmarkMetrics,
+    attributes: Vec<KeyValue>,
+) -> futures::future::BoxFuture<'static, ()> {
+    async move {
+        let start = Instant::now();
+        let is_read_large = matches!(command, Commands::ReadLargeResultSet { .. });
+        let res = match command {
+            Commands::PointSelect { num_rows, .. } => {
+                point_select::execute_point_select(db_client, table, 1, num_rows).await
+            }
+            Commands::SelectUpdate { num_rows, .. } => {
+                select_update::execute_select_update(db_client, table, 1, num_rows).await
+            }
+            Commands::ReadLargeResultSet { num_rows, .. } => {
+                read_large_result_set::execute_read_large_result_set(db_client, num_rows, metrics.read_latency.clone(), attributes.clone()).await
+            }
+        };
+        let duration_us = start.elapsed().as_micros() as f64;
+
+        metrics.operation_count.add(1, &attributes);
+
+        if let Err(e) = &res {
+            metrics.error_count.add(1, &attributes);
+            eprintln!("Operation failed: {:?}", e);
+        }
+
+        if !is_read_large {
+            metrics.latency.record(duration_us, &attributes);
+        }
+    }
+    .boxed()
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    let args = Args::parse();
+
+    // Build Spanner client
+    let mut builder = Spanner::builder();
+    if let Some(ref host) = args.host {
+        builder = builder.with_endpoint(host);
+    }
+    let spanner = builder.build().await?;
+    let db_client = spanner
+        .database_client(format!(
+            "projects/{}/instances/{}/databases/{}",
+            args.project, args.instance, args.database
+        ))
+        .build()
+        .await?;
+
+    // Extract subcommand parameters
+    let (tps, _num_rows) = match args.command {
+        Commands::PointSelect { tps, num_rows } => (tps, num_rows),
+        Commands::SelectUpdate { tps, num_rows } => (tps, num_rows),
+        Commands::ReadLargeResultSet { tps, num_rows } => (tps, num_rows),
+    };
+
+    let duration = parse_duration(&args.duration);
+
+    let (metrics, _meter_provider) = setup_metrics(&args.project).await?;
+
+    let benchmark_type_str = match &args.command {
+        Commands::PointSelect { .. } => "point-select",
+        Commands::SelectUpdate { .. } => "select-update",
+        Commands::ReadLargeResultSet { .. } => "read-large-result-set",
+    };
+
+    let attributes = vec![
+        KeyValue::new("benchmark_type", benchmark_type_str),
+        KeyValue::new("tps", tps),
+        KeyValue::new("for_alerting", args.for_alerting),
+        KeyValue::new("client", "rust-client"),
+    ];
+
+    println!(
+        "Starting Spanner Rust Benchmark preset: {:?} for duration: {}, target TPS: {}, threads: {}",
+        args.command, args.duration, tps, args.threads
+    );
+
+    let semaphore = Arc::new(Semaphore::new(args.threads));
+    let table = args.table.clone();
+    let command = args.command.clone();
+
+    // Loop to generate tasks with Poisson delays
+    let start_time = Instant::now();
+    loop {
+        if let Some(dur) = duration {
+            if start_time.elapsed() >= dur {
+                break;
+            }
+        }
+
+        let permit = match semaphore.clone().acquire_owned().await {
+            Ok(p) => p,
+            Err(_) => break,
+        };
+
+        let db_client = db_client.clone();
+        let table = table.clone();
+        let command = command.clone();
+        let metrics = metrics.clone();
+        let attributes = attributes.clone();
+
+        tokio::spawn(run_task(db_client, table, command, permit, metrics, attributes));
+
+        tokio::time::sleep(calculate_poisson_delay(tps)).await;
+    }
+
+    // Wait for all active worker tasks to complete
+    let _ = semaphore.acquire_many(args.threads as u32).await;
+
+    println!("Benchmark completed successfully.");
+    Ok(())
+}

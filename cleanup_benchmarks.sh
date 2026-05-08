@@ -11,7 +11,7 @@ EXPIRATION_DATE=$(python3 -c "from datetime import datetime, timedelta; print((d
 
 echo "Cleaning up benchmark artifacts older than $EXPIRATION_DATE..."
 
-SUPPORTED_CLIENTS=("java" "go" "python" "node")
+SUPPORTED_CLIENTS=("java" "go" "python" "node" "rust")
 
 for CLIENT_TYPE in "${SUPPORTED_CLIENTS[@]}"; do
   echo "Scanning artifacts for client: $CLIENT_TYPE"
@@ -30,8 +30,20 @@ for line in sys.stdin:
             print(name)
 ")
 
+  RUNNING_DIGESTS=""
   for job in $JOBS_TO_DELETE; do
     if [[ $job == spanner-$CLIENT_TYPE-benchmark-job-* ]]; then
+      # Check if job has active executions
+      ACTIVE_EXECS=$(gcloud run jobs executions list --project="$PROJECT_ID" --region="$REGION" --job="$job" --filter="status.completionTime:null" --format="value(metadata.name)")
+      if [ -n "$ACTIVE_EXECS" ]; then
+        echo "Skipping deletion of running job: $job"
+        # Collect the image used by this job
+        IMAGE=$(gcloud run jobs describe "$job" --project="$PROJECT_ID" --region="$REGION" --format="value(spec.template.spec.containers[0].image)")
+        DIGEST=$(gcloud artifacts docker images describe "$IMAGE" --format="value(image_summary.digest)" 2>/dev/null || true)
+        RUNNING_DIGESTS="$RUNNING_DIGESTS $DIGEST"
+        continue
+      fi
+      
       echo "Deleting Cloud Run Job: $job"
       gcloud run jobs delete "$job" --project="$PROJECT_ID" --region="$REGION" --quiet
     fi
@@ -55,6 +67,10 @@ for line in sys.stdin:
 ")
 
     for digest in $IMAGES_TO_DELETE; do
+      if [[ $RUNNING_DIGESTS == *"$digest"* ]]; then
+        echo "Skipping deletion of image used by running job: $digest"
+        continue
+      fi
       echo "Deleting Artifact Registry Image: $digest"
       gcloud artifacts docker images delete "$REPO@$digest" --delete-tags --quiet || true
     done
