@@ -49,11 +49,43 @@ The following options are supported by the benchmark applications. While most la
 
 ### Bursty Load Options
 
-These options configure the 2-State Markov-Modulated Poisson Process (MMPP) to simulate spiky load:
+These options configure the **2-State Markov-Modulated Poisson Process (MMPP)** to simulate spiky load. The load generator alternates randomly between a **Quiet** state and a **Burst** state. The arrivals in both states are still Poisson (random inter-arrival times), but the average rate changes.
 
-- `--burst-factor`: Ratio of burst rate to average rate. A value of `1.0` means steady load (default).
-- `--burst-duration`: Average duration of a burst in seconds (default: 1.0).
-- `--burst-fraction`: Fraction of total time spent in the burst state (default: 0.1).
+- `--burst-factor`: The multiplier applied to the target `--tps` to determine the rate during a burst.
+    - *How it works*: If your target `--tps` is `100`, and you set `--burst-factor` to `5.0`, the benchmark will generate traffic at a rate of `500` TPS during bursts.
+    - *Default*: `1.0` (Steady load, no bursts).
+- `--burst-duration`: The average duration of a single burst period in seconds.
+    - *How it works*: `--burst-duration 2.0` means that once a burst starts, it will last for an average of 2 seconds before returning to the quiet state.
+    - *Default*: `1.0`
+- `--burst-fraction`: The fraction of the total time the benchmark spends in the burst state.
+    - *How it works*: `--burst-fraction 0.1` means the benchmark will be in the burst state roughly 10% of the time and in the quiet state 90% of the time.
+    - *Default*: `0.1`
+
+#### How They Work Together (Examples)
+
+The model guarantees that the **overall long-term average TPS matches the requested `--tps`**. To achieve this, traffic during the quiet state is automatically reduced to compensate for the bursts.
+
+**Example 1: Occasional heavy spikes**
+- `--tps 100`
+- `--burst-factor 5.0` (Burst rate: 500 TPS)
+- `--burst-fraction 0.1` (10% time in burst)
+- *Result*: 10% of the time the rate is 500 TPS. To maintain a 100 TPS average, the rate during the remaining 90% of the time (Quiet state) drops to about `55` TPS. This simulates an application that is usually quiet but occasionally gets hit by a flood of requests.
+
+**Example 2: Frequent small bursts**
+- `--tps 100`
+- `--burst-factor 2.0` (Burst rate: 200 TPS)
+- `--burst-fraction 0.3` (30% time in burst)
+- *Result*: 30% of the time the rate is 200 TPS. The remaining 70% of the time, the rate is about `57` TPS.
+
+**Example 3: Simulating quiet periods (Lulls)**
+- `--tps 100`
+- `--burst-factor 0.5` (Burst rate is *lower* than average: 50 TPS)
+- `--burst-fraction 0.2` (20% time in "burst" state, which is actually a lull)
+- *Result*: 20% of the time the rate drops to 50 TPS. The remaining 80% of the time, the rate increases to about `112` TPS to compensate. This is useful for testing how the system recovers after a quiet period.
+
+> [!WARNING]
+> **Constraint**: To ensure the rate in the quiet state does not become negative, you must ensure that `burst-factor` $\le 1 / \text{burst-fraction}$. For example, if `burst-fraction` is `0.2`, the maximum `burst-factor` is `5.0`.
+
 
 ---
 
