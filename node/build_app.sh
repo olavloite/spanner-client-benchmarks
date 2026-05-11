@@ -4,28 +4,39 @@
 set -e
 
 USE_RELEASED_VERSION="${USE_RELEASED_VERSION:-false}"
-CLIENT_BRANCH="${CLIENT_BRANCH:-main}"
-CLIENT_REPO="${CLIENT_REPO:-https://github.com/googleapis/google-cloud-node.git}"
+
+# --- ADD THESE LINES TO SUPPORT CUSTOM BRANCHES ---
+GOOGLE_CLOUD_NODE_REPO="${GOOGLE_CLOUD_NODE_REPO:-https://github.com/googleapis/google-cloud-node.git}"
+GOOGLE_CLOUD_NODE_BRANCH="${GOOGLE_CLOUD_NODE_BRANCH:-configurable-affinity-keys}"
+GRPC_GCP_NODE_REPO="${GRPC_GCP_NODE_REPO:-https://github.com/alkatrivedi/grpc-gcp-node.git#feat/metadata-affinity-control}" # e.g., github:your-username/grpc-gcp-node#your-branch
 
 # Store initial directory
 INIT_DIR="$(pwd)"
 
 if [ "$USE_RELEASED_VERSION" = "false" ]; then
   WORK_DIR="$(mktemp -d)"
-  echo "Cloning Spanner Node client source from $CLIENT_REPO into: $WORK_DIR"
-  git clone --sparse --filter=blob:none "$CLIENT_REPO" "$WORK_DIR/node-repo"
+  echo "Cloning Spanner Node client source from $GOOGLE_CLOUD_NODE_REPO branch $GOOGLE_CLOUD_NODE_BRANCH into: $WORK_DIR"
+  
+  # MODIFIED: Added --branch and using variable for repo URL
+  git clone --depth 1 --branch "$GOOGLE_CLOUD_NODE_BRANCH" --sparse --filter=blob:none "$GOOGLE_CLOUD_NODE_REPO" "$WORK_DIR/node-repo"
+  
   cd "$WORK_DIR/node-repo"
   echo "Checking out Spanner Node client branch/commit $CLIENT_BRANCH..."
   git checkout "$CLIENT_BRANCH"
   git sparse-checkout set handwritten/spanner
-
   echo "Building local Spanner client package..."
   cd "$WORK_DIR/node-repo/handwritten/spanner"
+  
+  # --- ADD THESE LINES TO INSTALL CUSTOM GRPC-GCP ---
+  if [ -n "$GRPC_GCP_NODE_REPO" ]; then
+    echo "Installing custom grpc-gcp from $GRPC_GCP_NODE_REPO..."
+    npm install "$GRPC_GCP_NODE_REPO" --legacy-peer-deps
+  fi
+  # --------------------------------------------------
   npm install
   npm run compile
   TARBALL_NAME=$(npm pack | tail -n 1)
   echo "Packed Spanner client to tarball: $TARBALL_NAME"
-
   cd "$INIT_DIR"
 
   echo "Backing up package.json (and package-lock.json if present)..."

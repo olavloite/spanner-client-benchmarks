@@ -7,6 +7,7 @@ import * as grpc from '@grpc/grpc-js';
 export function createSpannerClient(projectId: string, host?: string): Spanner {
   const options: SpannerOptions = {
     projectId: projectId,
+    disableBuiltInMetrics: true,
   };
 
   if (host) {
