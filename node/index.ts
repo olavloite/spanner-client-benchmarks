@@ -85,10 +85,10 @@ async function main() {
 
 function validateAndFillLoadParams(loadType: LoadType, globalOpts: any) {
   let cycleDurationStr = globalOpts.cycleDuration;
-  let peakFactor = parseFloat(globalOpts.peakFactor);
-  let burstFactor = parseFloat(globalOpts.burstFactor);
-  let burstDuration = parseFloat(globalOpts.burstDuration);
-  let burstFraction = parseFloat(globalOpts.burstFraction);
+  let peakFactor = globalOpts.peakFactor !== undefined ? parseFloat(globalOpts.peakFactor) : 2.0;
+  let burstFactor = globalOpts.burstFactor !== undefined ? parseFloat(globalOpts.burstFactor) : 1.0;
+  let burstDuration = globalOpts.burstDuration !== undefined ? parseFloat(globalOpts.burstDuration) : 1.0;
+  let burstFraction = globalOpts.burstFraction !== undefined ? parseFloat(globalOpts.burstFraction) : 0.1;
 
   if (loadType === LoadType.Steady) {
     if (globalOpts.cycleDuration !== undefined || globalOpts.peakFactor !== undefined || globalOpts.burstFactor !== undefined || globalOpts.burstDuration !== undefined || globalOpts.burstFraction !== undefined) {
@@ -100,9 +100,6 @@ function validateAndFillLoadParams(loadType: LoadType, globalOpts: any) {
       console.error("Error: Cannot specify gradual load options when load-type is spiky");
       process.exit(1);
     }
-    if (globalOpts.burstFactor === undefined) burstFactor = 1.0;
-    if (globalOpts.burstDuration === undefined) burstDuration = 1.0;
-    if (globalOpts.burstFraction === undefined) burstFraction = 0.1;
   } else if (loadType === LoadType.Gradual) {
     if (globalOpts.burstFactor !== undefined || globalOpts.burstDuration !== undefined || globalOpts.burstFraction !== undefined) {
       console.error("Error: Cannot specify burst load options when load-type is gradual");
