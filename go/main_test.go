@@ -32,7 +32,7 @@ func TestBenchmarkExecution(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	args := []string{"-project=fake-project", "-instance=fake-instance", "-database=fake-database", "-table=test", "--duration=2s", "point-select"}
+	args := []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--table=test", "--duration=2s", "point-select"}
 	err = run(ctx, args)
 	if err != nil {
 		t.Fatalf("run benchmark failed: %v", err)

@@ -1,6 +1,6 @@
 import { Database } from "@google-cloud/spanner";
 import { Histogram, Counter } from "@opentelemetry/api";
-import { AbstractBenchmark } from "./abstract-benchmark";
+import { AbstractBenchmark, LoadType } from "./abstract-benchmark";
 
 const SQL = `SELECT
   MOD(FARM_FINGERPRINT(GENERATE_UUID()), 2) = 0 AS random_bool,
@@ -33,6 +33,9 @@ export class ReadLargeResultSetBenchmark extends AbstractBenchmark {
     durationMs: number | null,
     forAlerting: boolean,
     numRows: number,
+    loadType: LoadType = LoadType.Steady,
+    cycleDurationMs: number | null = null,
+    peakFactor: number = 2.0,
     burstFactor: number = 1.0,
     burstDuration: number = 1.0,
     burstFraction: number = 0.1
@@ -49,6 +52,9 @@ export class ReadLargeResultSetBenchmark extends AbstractBenchmark {
       threads,
       durationMs,
       forAlerting,
+      loadType,
+      cycleDurationMs,
+      peakFactor,
       burstFactor,
       burstDuration,
       burstFraction

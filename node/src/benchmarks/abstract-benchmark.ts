@@ -1,6 +1,12 @@
 import { Database } from "@google-cloud/spanner";
 import { Histogram, Counter } from "@opentelemetry/api";
 
+export enum LoadType {
+  Steady = "steady",
+  Spiky = "spiky",
+  Gradual = "gradual",
+}
+
 export interface IBenchmark {
   execute(database: Database, tableName: string, minId: number, maxId: number): Promise<void>;
   getName(): string;
@@ -26,11 +32,16 @@ export abstract class AbstractBenchmark implements IBenchmark {
   protected burstFactor: number;
   protected burstDuration: number;
   protected burstFraction: number;
+  protected loadType: LoadType;
+  protected cycleDurationMs: number | null;
+  protected peakFactor: number;
 
   private attributes: Record<string, any>;
   private activeTasks = 0;
   private taskQueue: number[] = [];
   private isStopped = false;
+  private rBurst: number;
+  private rNormal: number;
 
   constructor(
     database: Database,
@@ -44,6 +55,9 @@ export abstract class AbstractBenchmark implements IBenchmark {
     threads: number,
     durationMs: number | null,
     forAlerting: boolean,
+    loadType: LoadType = LoadType.Steady,
+    cycleDurationMs: number | null = null,
+    peakFactor: number = 2.0,
     burstFactor: number = 1.0,
     burstDuration: number = 1.0,
     burstFraction: number = 0.1
@@ -59,19 +73,28 @@ export abstract class AbstractBenchmark implements IBenchmark {
     this.threads = threads;
     this.durationMs = durationMs;
     this.forAlerting = forAlerting;
+    this.loadType = loadType;
+    this.cycleDurationMs = cycleDurationMs;
+    this.peakFactor = peakFactor;
     this.burstFactor = burstFactor;
     this.burstDuration = burstDuration;
     this.burstFraction = burstFraction;
-
+ 
+    this.rBurst = this.tps * this.burstFactor;
+    this.rNormal = (this.tps - this.burstFraction * this.rBurst) / (1.0 - this.burstFraction);
+ 
     // Pre-create attributes to avoid object creation overhead on the hot path (parity with Go and Java)
     this.attributes = {
       benchmark_type: this.getType(),
       tps: this.tps,
       for_alerting: this.forAlerting,
       client: "node-client",
+      load_type: this.loadType,
       burst_factor: this.burstFactor,
       burst_duration: this.burstDuration,
       burst_fraction: this.burstFraction,
+      cycle_duration_ms: this.cycleDurationMs || 0,
+      peak_factor: this.peakFactor,
     };
   }
 
@@ -88,9 +111,6 @@ export abstract class AbstractBenchmark implements IBenchmark {
 
     const startTimeNs = process.hrtime.bigint();
     let nextTaskTimeNs = startTimeNs;
-
-    const rBurst = this.tps * this.burstFactor;
-    const rNormal = (this.tps - this.burstFraction * rBurst) / (1.0 - this.burstFraction);
 
     const mu2 = 1.0 / this.burstDuration;
     const mu1 = mu2 * this.burstFraction / (1.0 - this.burstFraction);
@@ -121,7 +141,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
         nextTaskTimeNs = nowNs;
       }
 
-      if (this.burstFactor !== 1.0) {
+      if (this.loadType === LoadType.Spiky) {
         if (nowNs >= nextStateChangeTimeNs) {
           inBurst = !inBurst;
           const nextDelayNs = inBurst ? this.calculatePoissonDelayNs(mu2) : this.calculatePoissonDelayNs(mu1);
@@ -129,7 +149,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
         }
       }
 
-      const currentRate = this.burstFactor === 1.0 ? this.tps : (inBurst ? rBurst : rNormal);
+      const currentRate = this.calculateCurrentRate(nowNs, startTimeNs, inBurst);
 
       // Spawn all operations whose scheduled trigger time has arrived or passed
       while (nowNs >= nextTaskTimeNs && !this.isStopped) {
@@ -137,7 +157,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
 
         const delayNs = this.calculatePoissonDelayNs(currentRate);
         
-        if (this.burstFactor !== 1.0) {
+        if (this.loadType === LoadType.Spiky) {
           const timeToStateChangeNs = nextStateChangeTimeNs - nextTaskTimeNs;
           if (delayNs > timeToStateChangeNs) {
             nextTaskTimeNs = nextStateChangeTimeNs;
@@ -251,5 +271,18 @@ export abstract class AbstractBenchmark implements IBenchmark {
     const safeU = u === 1.0 ? 0.999999999 : u;
     const delaySeconds = -Math.log(1.0 - safeU) / rate;
     return BigInt(Math.floor(delaySeconds * 1_000_000_000));
+  }
+
+  private calculateCurrentRate(nowNs: bigint, startTimeNs: bigint, inBurst: boolean): number {
+    if (this.loadType === LoadType.Spiky) {
+      return inBurst ? this.rBurst : this.rNormal;
+    } else if (this.loadType === LoadType.Gradual) {
+      const elapsedNs = Number(nowNs - startTimeNs);
+      const cycleDurationNs = (this.cycleDurationMs || 3600000) * 1000000;
+      const amplitude = this.tps * (this.peakFactor - 1.0);
+      const angle = (2.0 * Math.PI * (elapsedNs % cycleDurationNs)) / cycleDurationNs;
+      return this.tps + amplitude * Math.cos(angle - Math.PI);
+    }
+    return this.tps;
   }
 }

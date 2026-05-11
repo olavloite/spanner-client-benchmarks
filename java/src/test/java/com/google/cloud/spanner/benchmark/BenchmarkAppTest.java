@@ -160,7 +160,47 @@ public class BenchmarkAppTest {
                         "-p", "my-project", "-i", "my-instance", "-d", "my-database",
                         "--host", "http://localhost:" + port,
                         "point-select", "-t", "my_table", "--tps", "1000", "--threads", "10",
+                        "--load-type", "SPIKY",
                         "--burst-factor", "5.0", "--burst-duration", "0.5", "--burst-fraction", "0.2"
+                });
+            } catch (Exception e) {
+                System.out.println("App terminated: " + e.getMessage());
+            }
+        });
+
+        thread.start();
+        
+        // Wait for at least one specific request
+        long startTime = System.currentTimeMillis();
+        boolean received = false;
+        while (System.currentTimeMillis() - startTime < 5000) {
+            boolean hasRequest = mockSpanner.getRequestsOfType(com.google.spanner.v1.ExecuteSqlRequest.class)
+                    .stream()
+                    .anyMatch(r -> r.getSql().contains("SELECT * FROM my_table"));
+            if (hasRequest) {
+                received = true;
+                break;
+            }
+            Thread.sleep(1);
+        }
+        
+        assertTrue("Should have received some requests", received);
+        
+        // Interrupt the thread to stop the infinite loop
+        thread.interrupt();
+        thread.join(5000); // Wait for it to finish
+        
+        assertTrue("Thread should have finished", !thread.isAlive());
+    }
+    @Test
+    public void testPointSelectBenchmarkGradualRuns() throws Exception {
+        Thread thread = new Thread(() -> {
+            try {
+                new picocli.CommandLine(new BenchmarkApp()).execute(new String[]{
+                        "-p", "my-project", "-i", "my-instance", "-d", "my-database",
+                        "--host", "http://localhost:" + port,
+                        "point-select", "-t", "my_table", "--tps", "1000", "--threads", "10",
+                        "--load-type", "GRADUAL", "--cycle-duration", "10s", "--peak-factor", "2.0"
                 });
             } catch (Exception e) {
                 System.out.println("App terminated: " + e.getMessage());

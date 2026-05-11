@@ -6,9 +6,15 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
+from enum import Enum
 from google.cloud import spanner
 from google.cloud.spanner_v1.database import Database
 from opentelemetry.metrics import Histogram, Counter
+
+class LoadType(str, Enum):
+    STEADY = "steady"
+    SPIKY = "spiky"
+    GRADUAL = "gradual"
 
 class AbstractBenchmark(abc.ABC):
     """
@@ -29,6 +35,9 @@ class AbstractBenchmark(abc.ABC):
         threads: int,
         duration_sec: Optional[float],
         for_alerting: bool,
+        load_type: LoadType = LoadType.STEADY,
+        cycle_duration_sec: Optional[float] = None,
+        peak_factor: float = 2.0,
         burst_factor: float = 1.0,
         burst_duration: float = 1.0,
         burst_fraction: float = 0.1,
@@ -44,9 +53,15 @@ class AbstractBenchmark(abc.ABC):
         self.threads = threads
         self.duration_sec = duration_sec
         self.for_alerting = for_alerting
+        self.load_type = load_type
+        self.cycle_duration_sec = cycle_duration_sec
+        self.peak_factor = peak_factor
         self.burst_factor = burst_factor
         self.burst_duration = burst_duration
         self.burst_fraction = burst_fraction
+
+        self.r_burst = self.tps * self.burst_factor
+        self.r_normal = (self.tps - self.burst_fraction * self.r_burst) / (1.0 - self.burst_fraction)
 
         # Pre-create metric attributes to optimize away overhead on the hot path
         self.attributes = {
@@ -54,9 +69,12 @@ class AbstractBenchmark(abc.ABC):
             "tps": self.tps,
             "for_alerting": self.for_alerting,
             "client": "python-client",
+            "load_type": self.load_type,
             "burst_factor": self.burst_factor,
             "burst_duration": self.burst_duration,
             "burst_fraction": self.burst_fraction,
+            "cycle_duration_ms": (self.cycle_duration_sec * 1000) if self.cycle_duration_sec else 0,
+            "peak_factor": self.peak_factor,
         }
 
         self.is_stopped = False
@@ -126,9 +144,6 @@ class AbstractBenchmark(abc.ABC):
         start_time_ns = time.perf_counter()
         next_task_time_ns = start_time_ns
 
-        r_burst = self.tps * self.burst_factor
-        r_normal = (self.tps - self.burst_fraction * r_burst) / (1.0 - self.burst_fraction)
-
         mu2 = 1.0 / self.burst_duration
         mu1 = mu2 * self.burst_fraction / (1.0 - self.burst_fraction)
 
@@ -143,13 +158,13 @@ class AbstractBenchmark(abc.ABC):
             if now_ns - next_task_time_ns > 1.0:
                 next_task_time_ns = now_ns
 
-            if self.burst_factor != 1.0:
+            if self.load_type == LoadType.SPIKY:
                 if now_ns >= next_state_change_time_ns:
                     in_burst = not in_burst
                     next_delay_sec = self._calculate_poisson_delay(mu2) if in_burst else self._calculate_poisson_delay(mu1)
                     next_state_change_time_ns = now_ns + next_delay_sec
 
-            current_rate = self.tps if self.burst_factor == 1.0 else (r_burst if in_burst else r_normal)
+            current_rate = self._calculate_current_rate(now_ns, start_time_ns, in_burst)
 
             # Spawn all tasks scheduled to run in the current delta window
             while now_ns >= next_task_time_ns and not self.is_stopped:
@@ -158,7 +173,7 @@ class AbstractBenchmark(abc.ABC):
                 # Calculate next arrival delay using exponential inter-arrival distribution
                 delay_sec = self._calculate_poisson_delay(current_rate)
                 
-                if self.burst_factor != 1.0:
+                if self.load_type == LoadType.SPIKY:
                     time_to_state_change_sec = next_state_change_time_ns - next_task_time_ns
                     if delay_sec > time_to_state_change_sec:
                         next_task_time_ns = next_state_change_time_ns
@@ -219,3 +234,14 @@ class AbstractBenchmark(abc.ABC):
         # Guard to prevent log(0) -> -Infinity error if u is exactly 1.0
         safe_u = 0.999999999 if u == 1.0 else u
         return -math.log(1.0 - safe_u) / rate
+
+    def _calculate_current_rate(self, now_sec: float, start_time_sec: float, in_burst: bool) -> float:
+        if self.load_type == LoadType.SPIKY:
+            return self.r_burst if in_burst else self.r_normal
+        elif self.load_type == LoadType.GRADUAL:
+            elapsed_sec = now_sec - start_time_sec
+            cycle_duration_sec = self.cycle_duration_sec or 3600.0
+            amplitude = self.tps * (self.peak_factor - 1.0)
+            angle = (2.0 * math.pi * (elapsed_sec % cycle_duration_sec)) / cycle_duration_sec
+            return self.tps + amplitude * math.cos(angle - math.pi)
+        return self.tps

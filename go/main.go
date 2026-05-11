@@ -4,8 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math"
-	"math/rand"
+
 	"os"
 	"os/signal"
 	"strings"
@@ -42,7 +41,13 @@ type Benchmark interface {
 
 func main() {
 	ctx := context.Background()
+	if err := run(ctx, os.Args); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
 
+func run(ctx context.Context, args []string) error {
 	app := &cli.Command{
 		Name:  "BenchmarkApp",
 		Usage: "Spanner client library benchmark tool for Go.",
@@ -55,9 +60,12 @@ func main() {
 			&cli.BoolFlag{Name: "for-alerting", Value: false, Usage: "Marks the benchmark for alerting purposes"},
 			&cli.StringFlag{Name: "host", Usage: "Custom Spanner host endpoint override"},
 			&cli.IntFlag{Name: "threads", Value: 100, Usage: "Number of parallel workers allowed"},
-			&cli.FloatFlag{Name: "burst-factor", Value: 1.0, Usage: "Ratio of burst rate to average rate"},
-			&cli.FloatFlag{Name: "burst-duration", Value: 1.0, Usage: "Average duration of a burst in seconds"},
-			&cli.FloatFlag{Name: "burst-fraction", Value: 0.1, Usage: "Fraction of total time spent in the burst state"},
+			&cli.StringFlag{Name: "load-type", Value: "steady", Usage: "Load type (steady, spiky, gradual)"},
+			&cli.StringFlag{Name: "cycle-duration", Usage: "Duration of a full cycle for gradual load"},
+			&cli.FloatFlag{Name: "peak-factor", Usage: "Ratio of peak rate to average rate for gradual load"},
+			&cli.FloatFlag{Name: "burst-factor", Usage: "Ratio of burst rate to average rate"},
+			&cli.FloatFlag{Name: "burst-duration", Usage: "Average duration of a burst in seconds"},
+			&cli.FloatFlag{Name: "burst-fraction", Usage: "Fraction of total time spent in the burst state"},
 		},
 		Commands: []*cli.Command{
 			{
@@ -96,10 +104,7 @@ func main() {
 		},
 	}
 
-	if err := app.Run(ctx, os.Args); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	return app.Run(ctx, args)
 }
 
 func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType string) error {
@@ -125,9 +130,23 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	threads := cmd.Int("threads")
 	tps := cmd.Float("tps")
 	numRows := int64(cmd.Int("num-rows"))
+	loadTypeStr := cmd.String("load-type")
+	cycleDurationStr := cmd.String("cycle-duration")
+	peakFactor := cmd.Float("peak-factor")
 	burstFactor := cmd.Float("burst-factor")
 	burstDuration := cmd.Float("burst-duration")
 	burstFraction := cmd.Float("burst-fraction")
+
+	loadType, err := ParseLoadType(loadTypeStr)
+	if err != nil {
+		return err
+	}
+
+	// Validation
+	err = ValidateAndApplyDefaults(cmd, loadType, &cycleDurationStr, &peakFactor, &burstFactor, &burstDuration, &burstFraction)
+	if err != nil {
+		return err
+	}
 
 	// Setup Metrics
 	latencyHistogram, readLatencyHistogram, operationCounter, errorCounter, cleanupMetrics, err := setupMetrics(runCtx, project, host)
@@ -160,9 +179,12 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 		attribute.Float64("tps", tps),
 		attribute.Bool("for_alerting", forAlerting),
 		attribute.String("client", "go-client"),
+		attribute.String("load_type", loadType.String()),
 		attribute.Float64("burst_factor", burstFactor),
 		attribute.Float64("burst_duration", burstDuration),
 		attribute.Float64("burst_fraction", burstFraction),
+		attribute.Int64("cycle_duration_ms", ParseDuration(cycleDurationStr).Milliseconds()),
+		attribute.Float64("peak_factor", peakFactor),
 	}
 	if benchmarkType == "read-large-result-set" {
 		attributeList = append(attributeList, attribute.Int64("num_rows", numRows))
@@ -176,7 +198,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	// Setup duration context timeout if not infinite
 	var durationCtx context.Context
 	if durationStr != "inf" && durationStr != "infinite" {
-		duration := parseDuration(durationStr)
+		duration := ParseDuration(durationStr)
 		if duration > 0 {
 			var durationCancel context.CancelFunc
 			durationCtx, durationCancel = context.WithTimeout(runCtx, duration)
@@ -189,7 +211,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	}
 
 	// Run loop
-	runBenchmark(durationCtx, b, client, latencyHistogram, operationCounter, errorCounter, table, tps, threads, 1, numRows, attributes, burstFactor, burstDuration, burstFraction)
+	runBenchmark(durationCtx, b, client, latencyHistogram, operationCounter, errorCounter, table, tps, threads, 1, numRows, attributes, loadType, cycleDurationStr, peakFactor, burstFactor, burstDuration, burstFraction)
 
 	return nil
 }
@@ -267,7 +289,7 @@ func createSpannerClient(ctx context.Context, project, instance, database, host 
 	return spanner.NewClient(ctx, databaseName, clientOpts...)
 }
 
-func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, latencyHistogram metric.Float64Histogram, operationCounter metric.Int64Counter, errorCounter metric.Int64Counter, tableName string, targetTPS float64, concurrentThreads int, minId, maxId int64, attributes metric.MeasurementOption, burstFactor, burstDuration, burstFraction float64) {
+func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, latencyHistogram metric.Float64Histogram, operationCounter metric.Int64Counter, errorCounter metric.Int64Counter, tableName string, targetTPS float64, concurrentThreads int, minId, maxId int64, attributes metric.MeasurementOption, loadType LoadType, cycleDurationStr string, peakFactor, burstFactor, burstDuration, burstFraction float64) {
 	tasks := make(chan struct{}, 1000000) // large buffered channel to simulate unbounded queue
 	wg := &sync.WaitGroup{}
 
@@ -300,97 +322,12 @@ func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, late
 		}()
 	}
 
-	if burstFactor == 1.0 {
-		generatorTicker := time.NewTicker(1 * time.Microsecond)
-		defer generatorTicker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				close(tasks)
-				wg.Wait()
-				return
-			case <-generatorTicker.C:
-				select {
-				case tasks <- struct{}{}:
-				default:
-					log.Printf("Task dropped: workload queue is full (1M tasks)")
-				}
-				time.Sleep(calculatePoissonDelay(targetTPS))
-			}
-		}
-	} else {
-		rBurst := targetTPS * burstFactor
-		rNormal := (targetTPS - burstFraction*rBurst) / (1.0 - burstFraction)
-
-		mu2 := 1.0 / burstDuration
-		mu1 := mu2 * burstFraction / (1.0 - burstFraction)
-
-		inBurst := false
-		nextStateChangeTime := time.Now().Add(calculatePoissonDelay(mu1))
-
-		for {
-			select {
-			case <-ctx.Done():
-				close(tasks)
-				wg.Wait()
-				return
-			default:
-				now := time.Now()
-				if now.After(nextStateChangeTime) {
-					inBurst = !inBurst
-					var nextDelay time.Duration
-					if inBurst {
-						nextDelay = calculatePoissonDelay(mu2)
-					} else {
-						nextDelay = calculatePoissonDelay(mu1)
-					}
-					nextStateChangeTime = now.Add(nextDelay)
-				}
-
-				currentRate := rNormal
-				if inBurst {
-					currentRate = rBurst
-				}
-
-				var delay time.Duration
-				if currentRate <= 0.0 {
-					delay = 1 * time.Hour
-				} else {
-					delay = calculatePoissonDelay(currentRate)
-				}
-
-				timeToStateChange := nextStateChangeTime.Sub(now)
-				if delay > timeToStateChange {
-					time.Sleep(timeToStateChange)
-					continue
-				}
-
-				select {
-				case tasks <- struct{}{}:
-				default:
-					log.Printf("Task dropped: workload queue is full (1M tasks)")
-				}
-
-				time.Sleep(delay)
-			}
-		}
+	generator, ok := generators[loadType]
+	if !ok {
+		log.Fatalf("No generator found for load type: %v", loadType)
 	}
+
+	generator.Run(ctx, b, client, latencyHistogram, operationCounter, errorCounter, tableName, targetTPS, concurrentThreads, minId, maxId, attributes, cycleDurationStr, peakFactor, burstFactor, burstDuration, burstFraction, tasks, wg)
 }
 
-func parseDuration(d string) time.Duration {
-	if d == "inf" || d == "infinite" {
-		return 0
-	}
-	duration, err := time.ParseDuration(d)
-	if err != nil {
-		return 0
-	}
-	return duration
-}
 
-func calculatePoissonDelay(rate float64) time.Duration {
-	u := rand.Float64()
-	delaySeconds := -math.Log(1.0-u) / rate
-	return time.Duration(delaySeconds * float64(time.Second))
-}

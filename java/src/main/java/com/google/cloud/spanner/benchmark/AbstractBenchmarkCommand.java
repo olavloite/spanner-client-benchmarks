@@ -36,14 +36,23 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
     @Option(names = {"--threads"}, description = "Number of threads in the pool", defaultValue = "100")
     protected int threads;
 
-    @Option(names = {"--burst-factor"}, description = "Ratio of burst rate to average rate", defaultValue = "1.0")
-    protected double burstFactor = 1.0;
+    @Option(names = {"--load-type"}, description = "Load type (STEADY, SPIKY, GRADUAL)", defaultValue = "STEADY")
+    protected LoadType loadType = LoadType.STEADY;
 
-    @Option(names = {"--burst-duration"}, description = "Average duration of a burst in seconds", defaultValue = "1.0")
-    protected double burstDuration = 1.0;
+    @Option(names = {"--cycle-duration"}, description = "Duration of a full cycle for gradual load")
+    protected String cycleDuration;
 
-    @Option(names = {"--burst-fraction"}, description = "Fraction of total time spent in the burst state", defaultValue = "0.1")
-    protected double burstFraction = 0.1;
+    @Option(names = {"--peak-factor"}, description = "Ratio of peak rate to average rate for gradual load")
+    protected Double peakFactor;
+
+    @Option(names = {"--burst-factor"}, description = "Ratio of burst rate to average rate")
+    protected Double burstFactor;
+
+    @Option(names = {"--burst-duration"}, description = "Average duration of a burst in seconds")
+    protected Double burstDuration;
+
+    @Option(names = {"--burst-fraction"}, description = "Fraction of total time spent in the burst state")
+    protected Double burstFraction;
 
     protected String getMetricName() {
         return LATENCY_NAME;
@@ -51,6 +60,35 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
 
     @Override
     public void run() {
+        // Validation
+        if (loadType == LoadType.STEADY) {
+            if (cycleDuration != null || peakFactor != null || burstFactor != null || burstDuration != null || burstFraction != null) {
+                throw new IllegalArgumentException("Cannot specify burst or gradual load options when load-type is steady");
+            }
+        } else if (loadType == LoadType.SPIKY) {
+            if (cycleDuration != null || peakFactor != null) {
+                throw new IllegalArgumentException("Cannot specify gradual load options when load-type is spiky");
+            }
+            // Set defaults if not specified
+            if (burstFactor == null) burstFactor = 1.0;
+            if (burstDuration == null) burstDuration = 1.0;
+            if (burstFraction == null) burstFraction = 0.1;
+        } else if (loadType == LoadType.GRADUAL) {
+            if (burstFactor != null || burstDuration != null || burstFraction != null) {
+                throw new IllegalArgumentException("Cannot specify burst load options when load-type is gradual");
+            }
+            // Set defaults if not specified
+            if (cycleDuration == null) cycleDuration = "1h";
+            if (peakFactor == null) peakFactor = 2.0;
+        }
+
+        // Set defaults for anything still null to avoid NPE during unboxing
+        if (burstFactor == null) burstFactor = 1.0;
+        if (burstDuration == null) burstDuration = 1.0;
+        if (burstFraction == null) burstFraction = 0.1;
+        if (cycleDuration == null) cycleDuration = "1h";
+        if (peakFactor == null) peakFactor = 2.0;
+
         try {
             // Initialize OpenTelemetry
             OpenTelemetry openTelemetry = initializeOpenTelemetry(parent.getProjectId(), parent.getHost());

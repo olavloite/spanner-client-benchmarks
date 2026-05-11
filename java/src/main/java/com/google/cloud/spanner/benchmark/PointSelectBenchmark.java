@@ -11,8 +11,8 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public class PointSelectBenchmark extends AbstractBenchmark {
 
-    public PointSelectBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, String tableName, long minId, long maxId, double tps, int threads, Duration duration, boolean forAlerting, double burstFactor, double burstDuration, double burstFraction) {
-        super(client, latencyHistogram, operationCounter, errorCounter, tableName, minId, maxId, tps, threads, duration, forAlerting, burstFactor, burstDuration, burstFraction);
+    public PointSelectBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, String tableName, long minId, long maxId, double tps, int threads, Duration duration, boolean forAlerting, LoadType loadType, Duration cycleDuration, double peakFactor, double burstFactor, double burstDuration, double burstFraction) {
+        super(client, latencyHistogram, operationCounter, errorCounter, tableName, minId, maxId, tps, threads, duration, forAlerting, loadType, cycleDuration, peakFactor, burstFactor, burstDuration, burstFraction);
     }
 
     @Override

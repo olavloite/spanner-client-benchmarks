@@ -6,7 +6,7 @@ import { PointSelectBenchmark } from "./src/benchmarks/point-select";
 import { SelectAndUpdateBenchmark } from "./src/benchmarks/select-update";
 import { ReadLargeResultSetBenchmark } from "./src/benchmarks/read-large-result-set";
 import { parseDuration } from "./src/config/duration";
-import { AbstractBenchmark } from "./src/benchmarks/abstract-benchmark";
+import { AbstractBenchmark, LoadType } from "./src/benchmarks/abstract-benchmark";
 
 /**
  * Application entry point for Cloud Spanner Node.js client library performance benchmarks.
@@ -34,9 +34,12 @@ async function main() {
       (val) => val === undefined || val === "true" || val === "1",
       false
     )
-    .option("--burst-factor <burstFactor>", "Ratio of burst rate to average rate", "1.0")
-    .option("--burst-duration <burstDuration>", "Average duration of a burst in seconds", "1.0")
-    .option("--burst-fraction <burstFraction>", "Fraction of total time spent in the burst state", "0.1");
+    .option("--load-type <loadType>", "Load type (steady, spiky, gradual)", "steady")
+    .option("--cycle-duration <cycleDuration>", "Duration of a full cycle for gradual load")
+    .option("--peak-factor <peakFactor>", "Ratio of peak rate to average rate for gradual load")
+    .option("--burst-factor <burstFactor>", "Ratio of burst rate to average rate")
+    .option("--burst-duration <burstDuration>", "Average duration of a burst in seconds")
+    .option("--burst-fraction <burstFraction>", "Fraction of total time spent in the burst state");
 
   // Point Select Workload Subcommand
   program
@@ -80,6 +83,38 @@ async function main() {
   await program.parseAsync(process.argv);
 }
 
+function validateAndFillLoadParams(loadType: LoadType, globalOpts: any) {
+  let cycleDurationStr = globalOpts.cycleDuration;
+  let peakFactor = parseFloat(globalOpts.peakFactor);
+  let burstFactor = parseFloat(globalOpts.burstFactor);
+  let burstDuration = parseFloat(globalOpts.burstDuration);
+  let burstFraction = parseFloat(globalOpts.burstFraction);
+
+  if (loadType === LoadType.Steady) {
+    if (globalOpts.cycleDuration !== undefined || globalOpts.peakFactor !== undefined || globalOpts.burstFactor !== undefined || globalOpts.burstDuration !== undefined || globalOpts.burstFraction !== undefined) {
+      console.error("Error: Cannot specify burst or gradual load options when load-type is steady");
+      process.exit(1);
+    }
+  } else if (loadType === LoadType.Spiky) {
+    if (globalOpts.cycleDuration !== undefined || globalOpts.peakFactor !== undefined) {
+      console.error("Error: Cannot specify gradual load options when load-type is spiky");
+      process.exit(1);
+    }
+    if (globalOpts.burstFactor === undefined) burstFactor = 1.0;
+    if (globalOpts.burstDuration === undefined) burstDuration = 1.0;
+    if (globalOpts.burstFraction === undefined) burstFraction = 0.1;
+  } else if (loadType === LoadType.Gradual) {
+    if (globalOpts.burstFactor !== undefined || globalOpts.burstDuration !== undefined || globalOpts.burstFraction !== undefined) {
+      console.error("Error: Cannot specify burst load options when load-type is gradual");
+      process.exit(1);
+    }
+    if (globalOpts.cycleDuration === undefined) cycleDurationStr = "1h";
+    if (globalOpts.peakFactor === undefined) peakFactor = 2.0;
+  }
+  
+  return { burstFactor, burstDuration, burstFraction, cycleDurationStr, peakFactor };
+}
+
 /**
  * Orchestrates the initialization and lifecycle of the benchmark execution.
  */
@@ -94,9 +129,10 @@ async function runBenchmarkAction(
   const host = globalOpts.host;
   const durationStr = globalOpts.duration;
   const forAlerting = globalOpts.forAlerting;
-  const burstFactor = parseFloat(globalOpts.burstFactor);
-  const burstDuration = parseFloat(globalOpts.burstDuration);
-  const burstFraction = parseFloat(globalOpts.burstFraction);
+  const loadType = globalOpts.loadType as LoadType;
+  const { burstFactor, burstDuration, burstFraction, cycleDurationStr, peakFactor } = validateAndFillLoadParams(loadType, globalOpts);
+
+  const cycleDurationMs = parseDuration(cycleDurationStr);
 
   const tableName = subOpts.table;
   const numRows = parseInt(subOpts.numRows, 10);
@@ -154,6 +190,9 @@ async function runBenchmarkAction(
       threads,
       parsedDurationMs,
       forAlerting,
+      loadType,
+      cycleDurationMs,
+      peakFactor,
       burstFactor,
       burstDuration,
       burstFraction
@@ -171,6 +210,9 @@ async function runBenchmarkAction(
       threads,
       parsedDurationMs,
       forAlerting,
+      loadType,
+      cycleDurationMs,
+      peakFactor,
       burstFactor,
       burstDuration,
       burstFraction
@@ -189,6 +231,9 @@ async function runBenchmarkAction(
       parsedDurationMs,
       forAlerting,
       maxId,
+      loadType,
+      cycleDurationMs,
+      peakFactor,
       burstFactor,
       burstDuration,
       burstFraction

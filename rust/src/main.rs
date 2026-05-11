@@ -1,18 +1,19 @@
+mod load_type;
 mod point_select;
 mod read_large_result_set;
 mod select_update;
 
 use clap::{Parser, Subcommand, ArgAction};
-use google_cloud_spanner::client::Spanner;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-use tokio::time::Instant;
 use futures::FutureExt;
-use opentelemetry::metrics::{Counter, Histogram, MeterProvider};
+use google_cloud_spanner::client::Spanner;
+use load_type::{LoadType, RunConfig};
 use opentelemetry::KeyValue;
+use opentelemetry::metrics::{Counter, Histogram, MeterProvider};
 use opentelemetry_gcloud_monitoring_exporter::{GCPMetricsExporter, GCPMetricsExporterConfig};
 use opentelemetry_sdk::metrics::{SdkMeterProvider, Aggregation, Stream, Instrument};
+use std::sync::Arc;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::time::Instant;
 
 #[derive(Parser, Debug)]
 #[command(name = "BenchmarkApp", about = "Spanner client library benchmark tool for Rust.")]
@@ -33,19 +34,24 @@ struct Args {
     host: Option<String>,
     #[arg(long, global = true, default_value_t = 100)]
     threads: usize,
-    #[arg(long, global = true, default_value_t = 1.0)]
-    burst_factor: f64,
-    #[arg(long, global = true, default_value_t = 1.0)]
-    burst_duration: f64,
-    #[arg(long, global = true, default_value_t = 0.1)]
-    burst_fraction: f64,
-
+    #[arg(long, global = true, value_enum, default_value_t = LoadType::Steady)]
+    load_type: LoadType,
+    #[arg(long, global = true)]
+    cycle_duration: Option<String>,
+    #[arg(long, global = true)]
+    peak_factor: Option<f64>,
+    #[arg(long, global = true)]
+    burst_factor: Option<f64>,
+    #[arg(long, global = true)]
+    burst_duration: Option<f64>,
+    #[arg(long, global = true)]
+    burst_fraction: Option<f64>,
     #[command(subcommand)]
     command: Commands,
 }
 
 #[derive(Subcommand, Debug, Clone)]
-enum Commands {
+pub(crate) enum Commands {
     PointSelect {
         #[arg(long, default_value_t = 10.0)]
         tps: f64,
@@ -66,32 +72,9 @@ enum Commands {
     },
 }
 
-fn calculate_poisson_delay(rate: f64) -> Duration {
-    let u: f64 = rand::random();
-    let delay_seconds = -u.ln() / rate;
-    Duration::from_secs_f64(delay_seconds)
-}
 
-fn parse_duration(duration_str: &str) -> Option<Duration> {
-    if duration_str == "inf" || duration_str == "infinite" {
-        return None;
-    }
-    if duration_str.ends_with('h') {
-        let hours: u64 = duration_str.trim_end_matches('h').parse().ok()?;
-        Some(Duration::from_secs(hours * 3600))
-    } else if duration_str.ends_with('m') {
-        let minutes: u64 = duration_str.trim_end_matches('m').parse().ok()?;
-        Some(Duration::from_secs(minutes * 60))
-    } else if duration_str.ends_with('s') {
-        let seconds: u64 = duration_str.trim_end_matches('s').parse().ok()?;
-        Some(Duration::from_secs(seconds))
-    } else {
-        let seconds: u64 = duration_str.parse().ok()?;
-        Some(Duration::from_secs(seconds))
-    }
-}
 #[derive(Clone)]
-struct BenchmarkMetrics {
+pub(crate) struct BenchmarkMetrics {
     latency: Histogram<f64>,
     read_latency: Histogram<f64>,
     operation_count: Counter<u64>,
@@ -160,7 +143,7 @@ async fn setup_metrics(project_id: &str) -> anyhow::Result<(BenchmarkMetrics, Sd
     Ok((BenchmarkMetrics { latency, read_latency, operation_count, error_count }, provider))
 }
 
-fn run_task(
+pub(crate) fn run_task(
     db_client: google_cloud_spanner::client::DatabaseClient,
     table: String,
     command: Commands,
@@ -203,6 +186,33 @@ async fn main() -> anyhow::Result<()> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     let args = Args::parse();
 
+    // Validation
+    match args.load_type {
+        LoadType::Steady => {
+            if args.cycle_duration.is_some() || args.peak_factor.is_some() || args.burst_factor.is_some() || args.burst_duration.is_some() || args.burst_fraction.is_some() {
+                anyhow::bail!("Cannot specify burst or gradual load options when load-type is steady");
+            }
+        }
+        LoadType::Spiky => {
+            if args.cycle_duration.is_some() || args.peak_factor.is_some() {
+                anyhow::bail!("Cannot specify gradual load options when load-type is spiky");
+            }
+        }
+        LoadType::Gradual => {
+            if args.burst_factor.is_some() || args.burst_duration.is_some() || args.burst_fraction.is_some() {
+                anyhow::bail!("Cannot specify burst load options when load-type is gradual");
+            }
+        }
+    }
+
+    // Set defaults for anything still None to avoid using optional values directly
+    let burst_factor = args.burst_factor.unwrap_or(1.0);
+    let burst_duration = args.burst_duration.unwrap_or(1.0);
+    let burst_fraction = args.burst_fraction.unwrap_or(0.1);
+    let cycle_duration_str = args.cycle_duration.clone().unwrap_or_else(|| "1h".to_string());
+    let peak_factor = args.peak_factor.unwrap_or(2.0);
+    let cycle_duration = load_type::parse_duration(&cycle_duration_str).ok_or_else(|| anyhow::anyhow!("Failed to parse cycle duration: {}", cycle_duration_str))?;
+
     // Build Spanner client
     let mut builder = Spanner::builder();
     if let Some(ref host) = args.host {
@@ -224,7 +234,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::ReadLargeResultSet { tps, num_rows } => (tps, num_rows),
     };
 
-    let duration = parse_duration(&args.duration);
+    let duration = load_type::parse_duration(&args.duration);
 
     let (metrics, _meter_provider) = setup_metrics(&args.project).await?;
 
@@ -239,9 +249,12 @@ async fn main() -> anyhow::Result<()> {
         KeyValue::new("tps", tps),
         KeyValue::new("for_alerting", args.for_alerting),
         KeyValue::new("client", "rust-client"),
-        KeyValue::new("burst_factor", args.burst_factor),
-        KeyValue::new("burst_duration", args.burst_duration),
-        KeyValue::new("burst_fraction", args.burst_fraction),
+        KeyValue::new("load_type", format!("{:?}", args.load_type).to_lowercase()),
+        KeyValue::new("burst_factor", burst_factor),
+        KeyValue::new("burst_duration", burst_duration),
+        KeyValue::new("burst_fraction", burst_fraction),
+        KeyValue::new("cycle_duration_ms", cycle_duration.as_millis() as i64),
+        KeyValue::new("peak_factor", peak_factor),
     ];
 
     println!(
@@ -256,89 +269,23 @@ async fn main() -> anyhow::Result<()> {
     // Loop to generate tasks with Poisson delays
     let start_time = Instant::now();
     
-    if args.burst_factor == 1.0 {
-        loop {
-            if let Some(dur) = duration {
-                if start_time.elapsed() >= dur {
-                    break;
-                }
-            }
-
-            let permit = match semaphore.clone().acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => break,
-            };
-
-            let db_client = db_client.clone();
-            let table = table.clone();
-            let command = command.clone();
-            let metrics = metrics.clone();
-            let attributes = attributes.clone();
-
-            tokio::spawn(run_task(db_client, table, command, permit, metrics, attributes));
-
-            tokio::time::sleep(calculate_poisson_delay(tps)).await;
-        }
-    } else {
-        let r_burst = tps * args.burst_factor;
-        let r_normal = (tps - args.burst_fraction * r_burst) / (1.0 - args.burst_fraction);
-
-        let mu2 = 1.0 / args.burst_duration;
-        let mu1 = mu2 * args.burst_fraction / (1.0 - args.burst_fraction);
-
-        let mut in_burst = false;
-        let mut next_state_change_time = Instant::now() + calculate_poisson_delay(mu1);
-
-        loop {
-            if let Some(dur) = duration {
-                if start_time.elapsed() >= dur {
-                    break;
-                }
-            }
-
-            let now = Instant::now();
-            if now >= next_state_change_time {
-                in_burst = !in_burst;
-                let next_delay = if in_burst { calculate_poisson_delay(mu2) } else { calculate_poisson_delay(mu1) };
-                next_state_change_time = now + next_delay;
-            }
-
-            let current_rate = if in_burst { r_burst } else { r_normal };
-            let delay = if current_rate <= 0.0 {
-                Duration::from_secs(3600)
-            } else {
-                calculate_poisson_delay(current_rate)
-            };
-
-            let time_to_state_change = if next_state_change_time > now {
-                next_state_change_time.duration_since(now)
-            } else {
-                Duration::from_secs(0)
-            };
-            
-            if delay > time_to_state_change {
-                if !time_to_state_change.is_zero() {
-                    tokio::time::sleep(time_to_state_change).await;
-                }
-                continue;
-            }
-
-            let permit = match semaphore.clone().acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => break,
-            };
-
-            let db_client = db_client.clone();
-            let table = table.clone();
-            let command = command.clone();
-            let metrics = metrics.clone();
-            let attributes = attributes.clone();
-
-            tokio::spawn(run_task(db_client, table, command, permit, metrics, attributes));
-
-            tokio::time::sleep(delay).await;
-        }
-    }
+    let config = RunConfig {
+        db_client,
+        table,
+        command,
+        semaphore: semaphore.clone(),
+        metrics,
+        attributes,
+        tps,
+        duration,
+        start_time,
+        burst_factor,
+        burst_duration,
+        burst_fraction,
+        cycle_duration,
+        peak_factor,
+    };
+    args.load_type.run(config).await;
 
     // Wait for all active worker tasks to complete
     let _ = semaphore.acquire_many(args.threads as u32).await;

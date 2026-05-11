@@ -10,7 +10,6 @@ import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.locks.LockSupport;
 
 public abstract class AbstractBenchmark {
 
@@ -28,9 +27,15 @@ public abstract class AbstractBenchmark {
     protected final double burstFactor;
     protected final double burstDuration;
     protected final double burstFraction;
+    protected final LoadType loadType;
+    protected final Duration cycleDuration;
+    protected final double peakFactor;
     private final Attributes attributes; // Pre-created attributes
 
-    public AbstractBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, String tableName, long minId, long maxId, double tps, int threads, Duration duration, boolean forAlerting, double burstFactor, double burstDuration, double burstFraction) {
+    public AbstractBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter,
+            LongCounter errorCounter, String tableName, long minId, long maxId, double tps, int threads,
+            Duration duration, boolean forAlerting, LoadType loadType, Duration cycleDuration, double peakFactor,
+            double burstFactor, double burstDuration, double burstFraction) {
         this.client = client;
         this.latencyHistogram = latencyHistogram;
         this.operationCounter = operationCounter;
@@ -42,6 +47,9 @@ public abstract class AbstractBenchmark {
         this.threads = threads;
         this.duration = duration;
         this.forAlerting = forAlerting;
+        this.loadType = loadType != null ? loadType : LoadType.STEADY;
+        this.cycleDuration = cycleDuration;
+        this.peakFactor = peakFactor;
         this.burstFactor = burstFactor;
         this.burstDuration = burstDuration;
         this.burstFraction = burstFraction;
@@ -51,9 +59,12 @@ public abstract class AbstractBenchmark {
                 .put("tps", tps)
                 .put("for_alerting", forAlerting)
                 .put("client", "java-client")
+                .put("load_type", this.loadType.name().toLowerCase())
                 .put("burst_factor", burstFactor)
                 .put("burst_duration", burstDuration)
                 .put("burst_fraction", burstFraction)
+                .put("cycle_duration_ms", cycleDuration != null ? cycleDuration.toMillis() : 0)
+                .put("peak_factor", peakFactor)
                 .build();
     }
 
@@ -71,49 +82,7 @@ public abstract class AbstractBenchmark {
         ExecutorService executor = Executors.newFixedThreadPool(threads);
 
         Thread generatorThread = new Thread(() -> {
-            if (burstFactor == 1.0) {
-                while (!Thread.currentThread().isInterrupted()) {
-                    submitTask(executor);
-                    LockSupport.parkNanos(calculatePoissonDelay(tps));
-                }
-            } else {
-                double rBurst = tps * burstFactor;
-                double rNormal = (tps - burstFraction * rBurst) / (1.0 - burstFraction);
-
-                double mu2 = 1.0 / burstDuration;
-                double mu1 = mu2 * burstFraction / (1.0 - burstFraction);
-
-                boolean inBurst = false;
-                long nextStateChangeTime = System.nanoTime() + calculatePoissonDelay(mu1);
-
-                while (!Thread.currentThread().isInterrupted()) {
-                    long now = System.nanoTime();
-                    if (now >= nextStateChangeTime) {
-                        inBurst = !inBurst;
-                        long nextDelay = inBurst ? calculatePoissonDelay(mu2) : calculatePoissonDelay(mu1);
-                        nextStateChangeTime = now + nextDelay;
-                    }
-
-                    double currentRate = inBurst ? rBurst : rNormal;
-                    long delayNs;
-                    if (currentRate <= 0) {
-                        delayNs = Long.MAX_VALUE;
-                    } else {
-                        delayNs = calculatePoissonDelay(currentRate);
-                    }
-
-                    long timeToStateChange = nextStateChangeTime - now;
-                    if (delayNs > timeToStateChange) {
-                        if (timeToStateChange > 0) {
-                            LockSupport.parkNanos(timeToStateChange);
-                        }
-                        continue;
-                    }
-
-                    submitTask(executor);
-                    LockSupport.parkNanos(delayNs);
-                }
-            }
+            loadType.run(this, executor);
         }, "TPS-Generator");
 
         generatorThread.start();
@@ -134,7 +103,7 @@ public abstract class AbstractBenchmark {
         }
     }
 
-    private void submitTask(ExecutorService executor) {
+    void submitTask(ExecutorService executor) {
         executor.submit(() -> {
             long startTime = System.nanoTime();
             try {
@@ -177,7 +146,7 @@ public abstract class AbstractBenchmark {
         }
     }
 
-    private static long calculatePoissonDelay(double rate) {
+    static long calculatePoissonDelay(double rate) {
         double u = ThreadLocalRandom.current().nextDouble();
         return (long) (-Math.log(1.0 - u) * 1_000_000_000L / rate);
     }

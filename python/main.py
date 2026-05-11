@@ -4,6 +4,29 @@ import signal
 import sys
 from src.config.duration import parse_duration
 from src.metrics.otel import setup_metrics, LATENCY_NAME, READ_LATENCY_NAME, OPERATION_COUNT_NAME, ERROR_COUNT_NAME
+
+def validate_and_fill_load_params(args):
+    if args.load_type == "steady":
+        if args.cycle_duration is not None or args.peak_factor is not None or args.burst_factor is not None or args.burst_duration is not None or args.burst_fraction is not None:
+            print("Error: Cannot specify burst or gradual load options when load-type is steady", file=sys.stderr)
+            sys.exit(1)
+    elif args.load_type == "spiky":
+        if args.cycle_duration is not None or args.peak_factor is not None:
+            print("Error: Cannot specify gradual load options when load-type is spiky", file=sys.stderr)
+            sys.exit(1)
+    elif args.load_type == "gradual":
+        if args.burst_factor is not None or args.burst_duration is not None or args.burst_fraction is not None:
+            print("Error: Cannot specify burst load options when load-type is gradual", file=sys.stderr)
+            sys.exit(1)
+
+    burst_factor = args.burst_factor if args.burst_factor is not None else 1.0
+    burst_duration = args.burst_duration if args.burst_duration is not None else 1.0
+    burst_fraction = args.burst_fraction if args.burst_fraction is not None else 0.1
+    cycle_duration_str = args.cycle_duration if args.cycle_duration is not None else "1h"
+    peak_factor = args.peak_factor if args.peak_factor is not None else 2.0
+
+    return burst_factor, burst_duration, burst_fraction, cycle_duration_str, peak_factor
+
 def main():
     """
     Main command line entry point. Parses options, setups client services,
@@ -41,9 +64,12 @@ def main():
         default=False,
         help="Marks the metrics emitted for regression/alerting pipelines.",
     )
-    parser.add_argument("--burst-factor", type=float, default=1.0, help="Ratio of burst rate to average rate")
-    parser.add_argument("--burst-duration", type=float, default=1.0, help="Average duration of a burst in seconds")
-    parser.add_argument("--burst-fraction", type=float, default=0.1, help="Fraction of total time spent in the burst state")
+    parser.add_argument("--load-type", default="steady", choices=["steady", "spiky", "gradual"], help="Load type")
+    parser.add_argument("--cycle-duration", help="Duration of a full cycle for gradual load")
+    parser.add_argument("--peak-factor", type=float, help="Ratio of peak rate to average rate for gradual load")
+    parser.add_argument("--burst-factor", type=float, help="Ratio of burst rate to average rate")
+    parser.add_argument("--burst-duration", type=float, help="Average duration of a burst in seconds")
+    parser.add_argument("--burst-fraction", type=float, help="Fraction of total time spent in the burst state")
 
     # Workload Scenario Subcommands routing
     subparsers = parser.add_subparsers(dest="command", required=True, help="Workload scenario subcommands")
@@ -82,6 +108,9 @@ def main():
     rl_parser.add_argument("--num-rows", type=int, default=100000, help="Number of rows to dynamically generate")
 
     args = parser.parse_args()
+
+    # Validation and filling defaults
+    burst_factor, burst_duration, burst_fraction, cycle_duration_str, peak_factor = validate_and_fill_load_params(args)
 
     min_id = 1
     max_id = args.num_rows
@@ -129,6 +158,7 @@ def main():
     database = instance.database(args.database)
 
     # 3. Instantiate concrete designation workload task benchmark
+    cycle_duration_sec = parse_duration(cycle_duration_str)
     if args.command == "point-select":
         benchmark = PointSelectBenchmark(
             database=database,
@@ -142,9 +172,12 @@ def main():
             threads=args.threads,
             duration_sec=duration_sec,
             for_alerting=args.for_alerting,
-            burst_factor=args.burst_factor,
-            burst_duration=args.burst_duration,
-            burst_fraction=args.burst_fraction,
+            load_type=args.load_type,
+            cycle_duration_sec=cycle_duration_sec,
+            peak_factor=peak_factor,
+            burst_factor=burst_factor,
+            burst_duration=burst_duration,
+            burst_fraction=burst_fraction,
         )
     elif args.command == "select-update":
         benchmark = SelectAndUpdateBenchmark(
@@ -159,9 +192,12 @@ def main():
             threads=args.threads,
             duration_sec=duration_sec,
             for_alerting=args.for_alerting,
-            burst_factor=args.burst_factor,
-            burst_duration=args.burst_duration,
-            burst_fraction=args.burst_fraction,
+            load_type=args.load_type,
+            cycle_duration_sec=cycle_duration_sec,
+            peak_factor=peak_factor,
+            burst_factor=burst_factor,
+            burst_duration=burst_duration,
+            burst_fraction=burst_fraction,
         )
     else:
         benchmark = ReadLargeResultSetBenchmark(
@@ -177,9 +213,12 @@ def main():
             duration_sec=duration_sec,
             for_alerting=args.for_alerting,
             num_rows=args.num_rows,
-            burst_factor=args.burst_factor,
-            burst_duration=args.burst_duration,
-            burst_fraction=args.burst_fraction,
+            load_type=args.load_type,
+            cycle_duration_sec=cycle_duration_sec,
+            peak_factor=peak_factor,
+            burst_factor=burst_factor,
+            burst_duration=burst_duration,
+            burst_fraction=burst_fraction,
         )
 
     # 4. Register process lifecycle termination traps (SIGINT, SIGTERM)
