@@ -2,7 +2,7 @@ mod point_select;
 mod read_large_result_set;
 mod select_update;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ArgAction};
 use google_cloud_spanner::client::Spanner;
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,7 +27,7 @@ struct Args {
     table: Option<String>,
     #[arg(long, default_value = "inf")]
     duration: String,
-    #[arg(long, default_value_t = false)]
+    #[arg(long, default_value_t = false, action = ArgAction::Set)]
     for_alerting: bool,
     #[arg(long)]
     host: Option<String>,
