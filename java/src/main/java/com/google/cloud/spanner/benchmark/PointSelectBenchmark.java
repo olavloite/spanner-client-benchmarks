@@ -23,10 +23,14 @@ public class PointSelectBenchmark extends AbstractBenchmark {
                 .bind("id").to(randomId)
                 .build();
 
+        int dummy = 0;
         try (ResultSet resultSet = client.singleUse().executeQuery(statement)) {
             while (resultSet.next()) {
-                resultSet.getValue(0);
+                dummy += java.util.Objects.hashCode(resultSet.getValue(0));
             }
+        }
+        if (dummy == 0xDEADBEEF) {
+            System.out.println("This should rarely happen: " + dummy);
         }
     }
 

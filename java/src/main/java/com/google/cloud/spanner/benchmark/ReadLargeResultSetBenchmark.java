@@ -55,34 +55,41 @@ public class ReadLargeResultSetBenchmark extends AbstractBenchmark {
         try (ResultSet resultSet = client.singleUse().executeQuery(statement)) {
             if (resultSet.next()) {
                 // Decode first row fully
-                decodeRow(resultSet);
+                int dummy = decodeRow(resultSet);
 
                 // Measure iteration of remaining rows
                 long startTime = System.nanoTime();
                 while (resultSet.next()) {
-                    decodeRow(resultSet);
+                    dummy += decodeRow(resultSet);
                 }
                 long endTime = System.nanoTime();
                 long latencyNs = endTime - startTime;
                 long latencyUs = latencyNs / 1000;
                 latencyHistogram.record(latencyUs, getAttributes());
+
+                // Use dummy to prevent optimization
+                if (dummy == 0xDEADBEEF) {
+                    System.out.println("This should rarely happen: " + dummy);
+                }
             }
         }
     }
 
-    private void decodeRow(ResultSet resultSet) {
-        resultSet.getBoolean(0);
-        resultSet.getBytes(1);
-        resultSet.getDate(2);
-        resultSet.getFloat(3);
-        resultSet.getDouble(4);
-        resultSet.getInterval(5);
-        resultSet.getJson(6);
-        resultSet.getLong(7);
-        resultSet.getBigDecimal(8);
-        resultSet.getString(9);
-        resultSet.getTimestamp(10);
-        resultSet.getUuid(11);
+    private int decodeRow(ResultSet resultSet) {
+        int h = 0;
+        h = 31 * h + Boolean.hashCode(resultSet.getBoolean(0));
+        h = 31 * h + resultSet.getBytes(1).length();
+        h = 31 * h + java.util.Objects.hashCode(resultSet.getDate(2));
+        h = 31 * h + Float.hashCode(resultSet.getFloat(3));
+        h = 31 * h + Double.hashCode(resultSet.getDouble(4));
+        h = 31 * h + java.util.Objects.hashCode(resultSet.getInterval(5));
+        h = 31 * h + resultSet.getJson(6).length();
+        h = 31 * h + Long.hashCode(resultSet.getLong(7));
+        h = 31 * h + java.util.Objects.hashCode(resultSet.getBigDecimal(8));
+        h = 31 * h + resultSet.getString(9).length();
+        h = 31 * h + java.util.Objects.hashCode(resultSet.getTimestamp(10));
+        h = 31 * h + java.util.Objects.hashCode(resultSet.getUuid(11));
+        return h;
     }
 
     @Override
