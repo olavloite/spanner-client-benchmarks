@@ -1,11 +1,9 @@
 import { Database } from "@google-cloud/spanner";
 import { Histogram, Counter } from "@opentelemetry/api";
-
-export enum LoadType {
-  Steady = "steady",
-  Spiky = "spiky",
-  Gradual = "gradual",
-}
+import { Worker } from "worker_threads";
+import * as path from "path";
+import { LoadType } from "./load-type";
+export { LoadType };
 
 export interface IBenchmark {
   execute(database: Database, tableName: string, minId: number, maxId: number): Promise<void>;
@@ -40,6 +38,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
   private activeTasks = 0;
   private taskQueue: number[] = [];
   private isStopped = false;
+  private worker: Worker | null = null;
   private rBurst: number;
   private rNormal: number;
 
@@ -109,15 +108,6 @@ export abstract class AbstractBenchmark implements IBenchmark {
     console.log(`Starting ${this.getName()}`);
     console.log(`Parameters: TPS=${this.tps}, Max Workers=${this.threads}, MinID=${this.minId}, MaxID=${this.maxId}`);
 
-    const startTimeNs = process.hrtime.bigint();
-    let nextTaskTimeNs = startTimeNs;
-
-    const mu2 = 1.0 / this.burstDuration;
-    const mu1 = mu2 * this.burstFraction / (1.0 - this.burstFraction);
-
-    let inBurst = false;
-    let nextStateChangeTimeNs = startTimeNs + this.calculatePoissonDelayNs(mu1);
-
     let timeoutId: NodeJS.Timeout | null = null;
     if (this.durationMs !== null) {
       timeoutId = setTimeout(() => {
@@ -126,64 +116,42 @@ export abstract class AbstractBenchmark implements IBenchmark {
       }, this.durationMs);
     }
 
-    // High-precision recursive setImmediate scheduler loop
-    const scheduleLoop = () => {
-      if (this.isStopped) {
-        return;
+    const sab = new SharedArrayBuffer(4);
+    const int32Array = new Int32Array(sab);
+    
+    const workerPath = path.join(__dirname, 'scheduler-worker.js');
+    this.worker = new Worker(workerPath, {
+      workerData: {
+        tps: this.tps,
+        loadType: this.loadType,
+        burstFactor: this.burstFactor,
+        burstDuration: this.burstDuration,
+        burstFraction: this.burstFraction,
+        cycleDurationMs: this.cycleDurationMs,
+        peakFactor: this.peakFactor,
+        rBurst: this.rBurst,
+        rNormal: this.rNormal,
+        sab: sab,
       }
+    });
 
-      const nowNs = process.hrtime.bigint();
-
-      // Self-healing guard: if the process falls behind by more than 1 second (e.g. thread block/suspend),
-      // snap nextTaskTimeNs forward to prevent extreme memory spikes and infinite catch-up loops.
-      if (nowNs - nextTaskTimeNs > 1000000000n) {
-        console.warn("Scheduler fell behind by >1s. Resetting workload timeline to prevent OOM.");
-        nextTaskTimeNs = nowNs;
-      }
-
-      if (this.loadType === LoadType.Spiky) {
-        if (nowNs >= nextStateChangeTimeNs) {
-          inBurst = !inBurst;
-          const nextDelayNs = inBurst ? this.calculatePoissonDelayNs(mu2) : this.calculatePoissonDelayNs(mu1);
-          nextStateChangeTimeNs = nowNs + nextDelayNs;
+    this.worker.on('message', (msg) => {
+      if (msg.type === 'spawn') {
+        for (let i = 0; i < msg.count; i++) {
+          this.submitTask();
         }
       }
+    });
 
-      const currentRate = this.calculateCurrentRate(nowNs, startTimeNs, inBurst);
+    this.worker.on('error', (err) => {
+      console.error("Worker error:", err);
+    });
 
-      // Spawn all operations whose scheduled trigger time has arrived or passed
-      while (nowNs >= nextTaskTimeNs && !this.isStopped) {
-        this.submitTask();
-
-        const delayNs = this.calculatePoissonDelayNs(currentRate);
-        
-        if (this.loadType === LoadType.Spiky) {
-          const timeToStateChangeNs = nextStateChangeTimeNs - nextTaskTimeNs;
-          if (delayNs > timeToStateChangeNs) {
-            nextTaskTimeNs = nextStateChangeTimeNs;
-            break;
-          }
-        }
-
-        nextTaskTimeNs += delayNs;
+    this.worker.on('exit', (code) => {
+      if (code !== 0) {
+        console.error(`Worker stopped with exit code ${code}`);
       }
-
-      // Yield event loop slice or sleep depending on remaining time
-      if (!this.isStopped) {
-        const nextNowNs = process.hrtime.bigint();
-        const remainingNs = nextTaskTimeNs - nextNowNs;
-
-        if (remainingNs > 1000000n) { // More than 1ms remaining
-          const remainingMs = Number(remainingNs / 1000000n);
-          setTimeout(scheduleLoop, remainingMs);
-        } else {
-          setImmediate(scheduleLoop);
-        }
-      }
-    };
-
-    // Kick off the asynchronous scheduler
-    setImmediate(scheduleLoop);
+    });
 
     // Block and wait until the benchmark is stopped and all tasks are finished or cancelled
     return new Promise<void>((resolve) => {
@@ -203,6 +171,9 @@ export abstract class AbstractBenchmark implements IBenchmark {
    */
   public stop(): void {
     this.isStopped = true;
+    if (this.worker) {
+      this.worker.terminate();
+    }
   }
 
   /**
