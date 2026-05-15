@@ -15,6 +15,11 @@ COPY requirements.txt .
 COPY main.py .
 COPY src/ ./src/
 
+ARG USE_RELEASED_VERSION=false
+ARG CLIENT_BRANCH=main
+ENV USE_RELEASED_VERSION=$USE_RELEASED_VERSION
+ENV CLIENT_BRANCH=$CLIENT_BRANCH
+
 # Run build script to build Spanner client from source and install all dependencies
 RUN chmod +x build_app.sh && ./build_app.sh
 

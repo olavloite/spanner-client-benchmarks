@@ -31,6 +31,8 @@ struct Args {
     #[arg(long, default_value_t = false, action = ArgAction::Set)]
     for_alerting: bool,
     #[arg(long)]
+    benchmark_name: Option<String>,
+    #[arg(long)]
     host: Option<String>,
     #[arg(long, global = true, default_value_t = 100)]
     threads: usize,
@@ -248,6 +250,7 @@ async fn main() -> anyhow::Result<()> {
         KeyValue::new("benchmark_type", benchmark_type_str),
         KeyValue::new("tps", tps),
         KeyValue::new("for_alerting", args.for_alerting),
+        KeyValue::new("benchmark_name", args.benchmark_name.unwrap_or_else(|| "".to_string())),
         KeyValue::new("client", "rust-client"),
         KeyValue::new("load_type", format!("{:?}", args.load_type).to_lowercase()),
         KeyValue::new("burst_factor", burst_factor),

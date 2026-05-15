@@ -123,7 +123,8 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
 
                 Duration duration = AbstractBenchmark.parseDuration(parent.getDuration());
                 boolean forAlerting = parent.isForAlerting();
-                AbstractBenchmark benchmark = createBenchmark(client, latencyHistogram, operationCounter, errorCounter, duration, forAlerting);
+                String benchmarkName = parent.getBenchmarkName();
+                AbstractBenchmark benchmark = createBenchmark(client, latencyHistogram, operationCounter, errorCounter, duration, forAlerting, benchmarkName);
                 benchmark.run();
             }
         } catch (Exception e) {
@@ -131,5 +132,5 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
         }
     }
 
-    protected abstract AbstractBenchmark createBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, Duration duration, boolean forAlerting);
+    protected abstract AbstractBenchmark createBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, Duration duration, boolean forAlerting, String benchmarkName);
 }

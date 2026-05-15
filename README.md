@@ -122,6 +122,24 @@ This will:
 > [!TIP]
 > You can customize execution parameters (e.g., `PROJECT_ID`, `TPS`, `THREADS`, `DURATION`, etc.) by declaring environment variables before running the scripts.
 
+### 3. Running Experimental Branch Builds
+
+If you are testing experimental client library changes pushed to a specific GitHub branch, you can easily benchmark them by specifying `CLIENT_BRANCH` and `BENCHMARK_NAME`.
+
+```bash
+# Example: Test experimental changes on branch "feature/fast-decoder"
+export CLIENT_BRANCH="feature/fast-decoder"
+export BENCHMARK_NAME="exp-fast-decoder"
+export DURATION="1h"
+export BENCHMARK_TYPE="read-large-result-set"
+
+./run_benchmark.sh go
+```
+
+This will:
+- Clone the specific `feature/fast-decoder` branch from the upstream repository.
+- Include the attribute `benchmark_name="exp-fast-decoder"` in all emitted OpenTelemetry metrics, allowing you to easily filter and compare your experiment in Google Cloud Monitoring.
+
 ---
 
 ## Automated Cleanup

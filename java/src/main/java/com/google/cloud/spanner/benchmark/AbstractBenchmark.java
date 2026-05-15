@@ -34,7 +34,7 @@ public abstract class AbstractBenchmark {
 
     public AbstractBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter,
             LongCounter errorCounter, String tableName, long minId, long maxId, double tps, int threads,
-            Duration duration, boolean forAlerting, LoadType loadType, Duration cycleDuration, double peakFactor,
+            Duration duration, boolean forAlerting, String benchmarkName, LoadType loadType, Duration cycleDuration, double peakFactor,
             double burstFactor, double burstDuration, double burstFraction) {
         this.client = client;
         this.latencyHistogram = latencyHistogram;
@@ -58,6 +58,7 @@ public abstract class AbstractBenchmark {
                 .put("benchmark_type", getBenchmarkType())
                 .put("tps", tps)
                 .put("for_alerting", forAlerting)
+                .put("benchmark_name", benchmarkName != null ? benchmarkName : "")
                 .put("client", "java-client")
                 .put("load_type", this.loadType.name().toLowerCase())
                 .put("burst_factor", burstFactor)

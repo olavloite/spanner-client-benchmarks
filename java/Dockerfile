@@ -10,6 +10,11 @@ COPY resolve_spanner_dependencies.sh .
 COPY pom.xml .
 COPY src ./src
 
+ARG USE_RELEASED_VERSION=false
+ARG CLIENT_BRANCH=main
+ENV USE_RELEASED_VERSION=$USE_RELEASED_VERSION
+ENV CLIENT_BRANCH=$CLIENT_BRANCH
+
 # Run the build script
 RUN chmod +x build_app.sh && ./build_app.sh
 

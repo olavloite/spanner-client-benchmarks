@@ -64,6 +64,7 @@ def main():
         default=False,
         help="Marks the metrics emitted for regression/alerting pipelines.",
     )
+    parser.add_argument("--benchmark-name", default="", help="Optional name to identify this benchmark run in metrics")
     parser.add_argument("--load-type", default="steady", choices=["steady", "spiky", "gradual"], help="Load type")
     parser.add_argument("--cycle-duration", help="Duration of a full cycle for gradual load")
     parser.add_argument("--peak-factor", type=float, help="Ratio of peak rate to average rate for gradual load")
@@ -172,6 +173,7 @@ def main():
             threads=args.threads,
             duration_sec=duration_sec,
             for_alerting=args.for_alerting,
+            benchmark_name=args.benchmark_name,
             load_type=args.load_type,
             cycle_duration_sec=cycle_duration_sec,
             peak_factor=peak_factor,
@@ -192,6 +194,7 @@ def main():
             threads=args.threads,
             duration_sec=duration_sec,
             for_alerting=args.for_alerting,
+            benchmark_name=args.benchmark_name,
             load_type=args.load_type,
             cycle_duration_sec=cycle_duration_sec,
             peak_factor=peak_factor,
@@ -212,6 +215,7 @@ def main():
             threads=args.threads,
             duration_sec=duration_sec,
             for_alerting=args.for_alerting,
+            benchmark_name=args.benchmark_name,
             num_rows=args.num_rows,
             load_type=args.load_type,
             cycle_duration_sec=cycle_duration_sec,

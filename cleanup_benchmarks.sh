@@ -6,8 +6,8 @@ set -e
 PROJECT_ID="${PROJECT_ID:-appdev-soda-spanner-staging}"
 REGION="${REGION:-europe-north1}"
 
-# Calculate expiration date (2 hours ago)
-EXPIRATION_DATE=$(python3 -c "from datetime import datetime, timedelta; print((datetime.now() - timedelta(hours=2)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
+# Calculate expiration date (12 hours ago)
+EXPIRATION_DATE=$(python3 -c "from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc) - timedelta(hours=12)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
 
 echo "Cleaning up benchmark artifacts older than $EXPIRATION_DATE..."
 

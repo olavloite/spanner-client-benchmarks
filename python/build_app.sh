@@ -2,17 +2,17 @@
 
 # Exit on error
 set -e
-set -x
 
 USE_RELEASED_VERSION="${USE_RELEASED_VERSION:-false}"
+CLIENT_BRANCH="${CLIENT_BRANCH:-main}"
 
 # Store initial directory
 INIT_DIR="$(pwd)"
 
 if [ "$USE_RELEASED_VERSION" = "false" ]; then
   WORK_DIR="$(mktemp -d)"
-  echo "Cloning latest Spanner Python client source into: $WORK_DIR"
-  git clone --depth 1 --sparse --filter=blob:none https://github.com/googleapis/google-cloud-python.git "$WORK_DIR/python-repo"
+  echo "Cloning Spanner Python client source (branch $CLIENT_BRANCH) into: $WORK_DIR"
+  git clone --depth 1 --branch "$CLIENT_BRANCH" --sparse --filter=blob:none https://github.com/googleapis/google-cloud-python.git "$WORK_DIR/python-repo"
   cd "$WORK_DIR/python-repo"
   git sparse-checkout set packages/google-cloud-spanner
 

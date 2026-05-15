@@ -34,6 +34,7 @@ async function main() {
       (val) => val === undefined || val === "true" || val === "1",
       false
     )
+    .option("--benchmark-name <benchmarkName>", "Optional name to identify this benchmark run in metrics", "")
     .option("--load-type <loadType>", "Load type (steady, spiky, gradual)", "steady")
     .option("--cycle-duration <cycleDuration>", "Duration of a full cycle for gradual load")
     .option("--peak-factor <peakFactor>", "Ratio of peak rate to average rate for gradual load")
@@ -126,6 +127,7 @@ async function runBenchmarkAction(
   const host = globalOpts.host;
   const durationStr = globalOpts.duration;
   const forAlerting = globalOpts.forAlerting;
+  const benchmarkName = globalOpts.benchmarkName;
   const loadType = globalOpts.loadType as LoadType;
   const { burstFactor, burstDuration, burstFraction, cycleDurationStr, peakFactor } = validateAndFillLoadParams(loadType, globalOpts);
 
@@ -187,6 +189,7 @@ async function runBenchmarkAction(
       threads,
       parsedDurationMs,
       forAlerting,
+      benchmarkName,
       loadType,
       cycleDurationMs,
       peakFactor,
@@ -207,6 +210,7 @@ async function runBenchmarkAction(
       threads,
       parsedDurationMs,
       forAlerting,
+      benchmarkName,
       loadType,
       cycleDurationMs,
       peakFactor,
@@ -227,6 +231,7 @@ async function runBenchmarkAction(
       threads,
       parsedDurationMs,
       forAlerting,
+      benchmarkName,
       maxId,
       loadType,
       cycleDurationMs,

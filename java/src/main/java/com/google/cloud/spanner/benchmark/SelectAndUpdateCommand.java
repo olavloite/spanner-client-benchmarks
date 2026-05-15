@@ -10,7 +10,7 @@ import java.time.Duration;
 @Command(name = "select-update", description = "Runs select and update benchmark")
 public class SelectAndUpdateCommand extends AbstractBenchmarkCommand {
     @Override
-    protected AbstractBenchmark createBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, Duration duration, boolean forAlerting) {
-        return new SelectAndUpdateBenchmark(client, latencyHistogram, operationCounter, errorCounter, tableName, 1, numRows, tps, threads, duration, forAlerting, loadType, AbstractBenchmark.parseDuration(cycleDuration), peakFactor, burstFactor, burstDuration, burstFraction);
+    protected AbstractBenchmark createBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, Duration duration, boolean forAlerting, String benchmarkName) {
+        return new SelectAndUpdateBenchmark(client, latencyHistogram, operationCounter, errorCounter, tableName, 1, numRows, tps, threads, duration, forAlerting, benchmarkName, loadType, AbstractBenchmark.parseDuration(cycleDuration), peakFactor, burstFactor, burstDuration, burstFraction);
     }
 }

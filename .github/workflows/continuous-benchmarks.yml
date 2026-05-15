@@ -59,4 +59,5 @@ jobs:
           BENCHMARK_TYPE: ${{ matrix.benchmark_type }}
           DURATION: ${{ matrix.benchmark_type == 'read-large-result-set' && '1h' || '15h' }}
           FOR_ALERTING: 'true'
+          BENCHMARK_NAME: 'scheduled-main'
         run: ./run_benchmark.sh ${{ matrix.client }}

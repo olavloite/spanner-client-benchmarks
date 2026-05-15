@@ -29,8 +29,8 @@ public class ReadLargeResultSetBenchmark extends AbstractBenchmark {
     private final Statement statement;
     private final Attributes customAttributes;
 
-    public ReadLargeResultSetBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, String tableName, long minId, long maxId, double tps, int threads, Duration duration, boolean forAlerting, long numRows, LoadType loadType, Duration cycleDuration, double peakFactor, double burstFactor, double burstDuration, double burstFraction) {
-        super(client, latencyHistogram, operationCounter, errorCounter, tableName, minId, maxId, tps, threads, duration, forAlerting, loadType, cycleDuration, peakFactor, burstFactor, burstDuration, burstFraction);
+    public ReadLargeResultSetBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, String tableName, long minId, long maxId, double tps, int threads, Duration duration, boolean forAlerting, String benchmarkName, long numRows, LoadType loadType, Duration cycleDuration, double peakFactor, double burstFactor, double burstDuration, double burstFraction) {
+        super(client, latencyHistogram, operationCounter, errorCounter, tableName, minId, maxId, tps, threads, duration, forAlerting, benchmarkName, loadType, cycleDuration, peakFactor, burstFactor, burstDuration, burstFraction);
         this.customAttributes = super.getAttributes().toBuilder()
                 .put("num_rows", numRows)
                 .build();

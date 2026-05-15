@@ -1,0 +1,13 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+  - 'build'
+  - '--build-arg'
+  - 'USE_RELEASED_VERSION=${_USE_RELEASED_VERSION}'
+  - '--build-arg'
+  - 'CLIENT_BRANCH=${_CLIENT_BRANCH}'
+  - '-t'
+  - '${_IMAGE_NAME}'
+  - '.'
+images:
+- '${_IMAGE_NAME}'

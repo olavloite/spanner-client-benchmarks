@@ -35,6 +35,9 @@ public class BenchmarkApp implements Runnable {
     @Option(names = { "--for-alerting" }, description = "Marks the benchmark for alerting purposes.")
     private boolean forAlerting;
 
+    @Option(names = { "--benchmark-name" }, description = "Optional name to identify this benchmark run in metrics.")
+    private String benchmarkName;
+
     public static final String METER_NAME = "spanner-benchmark";
     public static final String LATENCY_NAME = "spanner_client_benchmarks/latency";
     public static final String OPERATION_COUNT_NAME = "spanner_client_benchmarks/operation_count";
@@ -73,6 +76,10 @@ public class BenchmarkApp implements Runnable {
 
     public boolean isForAlerting() {
         return forAlerting;
+    }
+
+    public String getBenchmarkName() {
+        return benchmarkName;
     }
 
     // Package-private so subcommands can access it

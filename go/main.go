@@ -58,6 +58,7 @@ func run(ctx context.Context, args []string) error {
 			&cli.StringFlag{Name: "table", Required: true, Usage: "Table name"},
 			&cli.StringFlag{Name: "duration", Value: "inf", Usage: "Duration of the benchmark (e.g. 60s, 5m, inf)"},
 			&cli.BoolFlag{Name: "for-alerting", Value: false, Usage: "Marks the benchmark for alerting purposes"},
+			&cli.StringFlag{Name: "benchmark-name", Usage: "Optional name to identify this benchmark run in metrics"},
 			&cli.StringFlag{Name: "host", Usage: "Custom Spanner host endpoint override"},
 			&cli.IntFlag{Name: "threads", Value: 100, Usage: "Number of parallel workers allowed"},
 			&cli.StringFlag{Name: "load-type", Value: "steady", Usage: "Load type (steady, spiky, gradual)"},
@@ -126,6 +127,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	table := cmd.String("table")
 	durationStr := cmd.String("duration")
 	forAlerting := cmd.Bool("for-alerting")
+	benchmarkName := cmd.String("benchmark-name")
 	host := cmd.String("host")
 	threads := cmd.Int("threads")
 	tps := cmd.Float("tps")
@@ -178,6 +180,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 		attribute.String("benchmark_type", b.Type()),
 		attribute.Float64("tps", tps),
 		attribute.Bool("for_alerting", forAlerting),
+		attribute.String("benchmark_name", benchmarkName),
 		attribute.String("client", "go-client"),
 		attribute.String("load_type", loadType.String()),
 		attribute.Float64("burst_factor", burstFactor),

@@ -60,15 +60,25 @@ JOB_NAME="${JOB_NAME:-spanner-$CLIENT_TYPE-benchmark-job-$SUFFIX}"
 
 # Build the image using Cloud Build
 echo "Building image with Cloud Build for $CLIENT_TYPE..."
-gcloud builds submit --project "$PROJECT_ID" --tag "$IMAGE_NAME" --polling-interval="$POLLING_INTERVAL" .
+gcloud builds submit --project "$PROJECT_ID" --config ../cloudbuild.yaml --substitutions="_IMAGE_NAME=$IMAGE_NAME,_USE_RELEASED_VERSION=${USE_RELEASED_VERSION:-false},_CLIENT_BRANCH=${CLIENT_BRANCH:-main}" --polling-interval="$POLLING_INTERVAL" .
 
-ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}$BENCHMARK_TYPE,--table=$TABLE_NAME"
+BENCHMARK_NAME_FLAG=""
+if [ -n "$BENCHMARK_NAME" ]; then
+  BENCHMARK_NAME_FLAG="--benchmark-name=$BENCHMARK_NAME,"
+fi
+
+ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}${BENCHMARK_NAME_FLAG}$BENCHMARK_TYPE,--table=$TABLE_NAME"
 if [ -n "$TPS" ]; then ARGS="${ARGS},--tps=$TPS"; fi
 if [ -n "$THREADS" ]; then ARGS="${ARGS},--threads=$THREADS"; fi
 if [ -n "$NUM_ROWS" ]; then ARGS="${ARGS},--num-rows=$NUM_ROWS"; fi
 if [ -n "$BURST_FACTOR" ]; then ARGS="${ARGS},--burst-factor=$BURST_FACTOR"; fi
 if [ -n "$BURST_DURATION" ]; then ARGS="${ARGS},--burst-duration=$BURST_DURATION"; fi
 if [ -n "$BURST_FRACTION" ]; then ARGS="${ARGS},--burst-fraction=$BURST_FRACTION"; fi
+
+ENV_FLAGS=""
+if [ "$SPANNER_DISABLE_BUILTIN_METRICS" = "true" ]; then
+  ENV_FLAGS="--set-env-vars=SPANNER_DISABLE_BUILTIN_METRICS=true"
+fi
 
 # Create or update the Cloud Run Job
 echo "Deploying Cloud Run Job..."
@@ -80,6 +90,7 @@ gcloud run jobs deploy "$JOB_NAME" \
   --memory "$MEMORY" \
   --task-timeout "$TASK_TIMEOUT" \
   --max-retries 0 \
+  $ENV_FLAGS \
   --args="$ARGS"
 
 echo "Executing Cloud Run Job..."

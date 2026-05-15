@@ -2,15 +2,17 @@
 
 # Exit on error
 set -e
-set -x
 
 # Store initial directory
 INIT_DIR="$(pwd)"
 
+USE_RELEASED_VERSION="${USE_RELEASED_VERSION:-false}"
+CLIENT_BRANCH="${CLIENT_BRANCH:-main}"
+
 if [ "$USE_RELEASED_VERSION" = "false" ]; then
   WORK_DIR="$(mktemp -d)"
-  echo "Cloning latest Spanner Go client source into: $WORK_DIR"
-  git clone --depth 1 --sparse --filter=blob:none https://github.com/googleapis/google-cloud-go.git "$WORK_DIR/spanner-repo"
+  echo "Cloning Spanner Go client source (branch $CLIENT_BRANCH) into: $WORK_DIR"
+  git clone --depth 1 --branch "$CLIENT_BRANCH" --sparse --filter=blob:none https://github.com/googleapis/google-cloud-go.git "$WORK_DIR/spanner-repo"
   cd "$WORK_DIR/spanner-repo"
   git sparse-checkout set spanner
 

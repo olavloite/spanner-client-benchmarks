@@ -2,17 +2,18 @@ FROM rust:slim-bookworm AS build
 WORKDIR /app
 
 # Install compilation prerequisites
-RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev git && rm -rf /var/lib/apt/lists/*
 
-# Pre-compile dependency cache
+COPY build_app.sh .
 COPY Cargo.toml ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release
-RUN rm -f target/release/deps/spanner_rust_benchmark*
-
-# Copy actual code and compile release binary
 COPY src ./src
-RUN cargo build --release
+
+ARG USE_RELEASED_VERSION=false
+ARG CLIENT_BRANCH=main
+ENV USE_RELEASED_VERSION=$USE_RELEASED_VERSION
+ENV CLIENT_BRANCH=$CLIENT_BRANCH
+
+RUN chmod +x build_app.sh && ./build_app.sh
 
 # Final slim runner stage
 FROM debian:bookworm-slim

@@ -20,8 +20,8 @@ public class ReadLargeResultSetCommand extends AbstractBenchmarkCommand {
 
     @Override
     protected AbstractBenchmark createBenchmark(DatabaseClient client, LongHistogram latencyHistogram,
-            LongCounter operationCounter, LongCounter errorCounter, Duration duration, boolean forAlerting) {
+            LongCounter operationCounter, LongCounter errorCounter, Duration duration, boolean forAlerting, String benchmarkName) {
         return new ReadLargeResultSetBenchmark(client, latencyHistogram, operationCounter, errorCounter, tableName, 1,
-                numRows, tps, threads, duration, forAlerting, numRows, loadType, AbstractBenchmark.parseDuration(cycleDuration), peakFactor, burstFactor, burstDuration, burstFraction);
+                numRows, tps, threads, duration, forAlerting, benchmarkName, numRows, loadType, AbstractBenchmark.parseDuration(cycleDuration), peakFactor, burstFactor, burstDuration, burstFraction);
     }
 }
