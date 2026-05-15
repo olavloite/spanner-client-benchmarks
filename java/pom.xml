@@ -14,7 +14,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <otel.version>1.32.0</otel.version>
         <otel.gcp.version>0.36.0</otel.gcp.version>
-        <spanner.version>6.117.0-SNAPSHOT</spanner.version>
+        <spanner.version>6.117.0</spanner.version>
     </properties>
 
     <dependencyManagement>
@@ -41,6 +41,37 @@
         <dependency>
             <groupId>com.google.cloud</groupId>
             <artifactId>google-cloud-spanner</artifactId>
+            <version>${spanner.version}</version>
+        </dependency>
+        <!-- Ensure transitive Spanner proto/grpc dependencies always match spanner.version rather than libraries-bom -->
+        <dependency>
+            <groupId>com.google.api.grpc</groupId>
+            <artifactId>proto-google-cloud-spanner-v1</artifactId>
+            <version>${spanner.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.api.grpc</groupId>
+            <artifactId>grpc-google-cloud-spanner-v1</artifactId>
+            <version>${spanner.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.api.grpc</groupId>
+            <artifactId>proto-google-cloud-spanner-admin-instance-v1</artifactId>
+            <version>${spanner.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.api.grpc</groupId>
+            <artifactId>grpc-google-cloud-spanner-admin-instance-v1</artifactId>
+            <version>${spanner.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.api.grpc</groupId>
+            <artifactId>proto-google-cloud-spanner-admin-database-v1</artifactId>
+            <version>${spanner.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.api.grpc</groupId>
+            <artifactId>grpc-google-cloud-spanner-admin-database-v1</artifactId>
             <version>${spanner.version}</version>
         </dependency>
 
