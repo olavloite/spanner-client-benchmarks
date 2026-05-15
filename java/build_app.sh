@@ -17,7 +17,7 @@ if [ "$USE_RELEASED_VERSION" = "false" ]; then
   cd "$WORK_DIR/spanner-repo"
   # Checkout all files in the repository root (e.g. license-checks.xml, pom.xml, checkstyle.xml)
   # but exclude all subdirectories except the ones we explicitly need
-  git sparse-checkout set "/*" "java-spanner" "sdk-platform-java" "java-common-protos" "java-iam" >/dev/null 2>&1
+  git sparse-checkout set "java-spanner" "sdk-platform-java" "java-common-protos" "java-iam" >/dev/null 2>&1
 
   # Build Spanner artifacts and dependencies from repo root
   echo "Building Spanner artifacts..."
