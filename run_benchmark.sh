@@ -68,6 +68,7 @@ if [ -n "$BENCHMARK_NAME" ]; then
 fi
 
 ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}${BENCHMARK_NAME_FLAG}$BENCHMARK_TYPE,--table=$TABLE_NAME"
+if [ -n "$LOAD_TYPE" ]; then ARGS="${ARGS},--load-type=$LOAD_TYPE"; fi
 if [ -n "$TPS" ]; then ARGS="${ARGS},--tps=$TPS"; fi
 if [ -n "$THREADS" ]; then ARGS="${ARGS},--threads=$THREADS"; fi
 if [ -n "$NUM_ROWS" ]; then ARGS="${ARGS},--num-rows=$NUM_ROWS"; fi

@@ -1,4 +1,4 @@
-name: Schedule Large Result Set Benchmarks
+name: Large Result Set Benchmarks
 
 on:
   schedule:

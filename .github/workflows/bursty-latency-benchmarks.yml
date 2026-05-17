@@ -1,8 +1,8 @@
-name: Schedule Bursty Latency Benchmarks
+name: Bursty Latency Benchmarks
 
 on:
   schedule:
-    # Schedule at 11:00 UTC to ensure no overlap with earlier morning benchmark runs
+    # Schedule at 11:00 UTC
     - cron: '0 11 * * *'
   workflow_dispatch:
 
@@ -12,6 +12,7 @@ jobs:
     with:
       benchmark_types: '["point-select"]'
       duration: '2h'
+      load_type: 'spiky'
       tps: '50'
       burst_factor: '4.0'
       burst_duration: '5.0'
@@ -25,6 +26,7 @@ jobs:
     with:
       benchmark_types: '["select-update"]'
       duration: '2h'
+      load_type: 'spiky'
       tps: '25'
       burst_factor: '4.0'
       burst_duration: '5.0'

@@ -44,7 +44,9 @@ public class BenchmarkApp implements Runnable {
     public static final String ERROR_COUNT_NAME = "spanner_client_benchmarks/error_count";
 
     public static void main(String[] args) {
-        int exitCode = new CommandLine(new BenchmarkApp()).execute(args);
+        int exitCode = new CommandLine(new BenchmarkApp())
+                .setCaseInsensitiveEnumValuesAllowed(true)
+                .execute(args);
         System.exit(exitCode);
     }
 

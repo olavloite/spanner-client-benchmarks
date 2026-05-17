@@ -1,4 +1,4 @@
-name: Schedule Latency Benchmarks
+name: Latency Benchmarks
 
 on:
   schedule:
