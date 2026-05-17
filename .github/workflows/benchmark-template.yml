@@ -11,6 +11,27 @@ on:
         description: 'Benchmark execution duration'
         required: true
         type: string
+      tps:
+        description: 'Benchmark target TPS (optional)'
+        required: false
+        type: string
+      burst_factor:
+        description: 'Burst factor (optional)'
+        required: false
+        type: string
+      burst_duration:
+        description: 'Burst duration in seconds (optional)'
+        required: false
+        type: string
+      burst_fraction:
+        description: 'Burst fraction (optional)'
+        required: false
+        type: string
+      benchmark_name:
+        description: 'Custom benchmark name identifier'
+        required: false
+        type: string
+        default: 'scheduled-main'
     secrets:
       GCP_SA_KEY:
         required: true
@@ -67,6 +88,10 @@ jobs:
         env:
           BENCHMARK_TYPE: ${{ matrix.benchmark_type }}
           DURATION: ${{ inputs.duration }}
+          TPS: ${{ inputs.tps }}
+          BURST_FACTOR: ${{ inputs.burst_factor }}
+          BURST_DURATION: ${{ inputs.burst_duration }}
+          BURST_FRACTION: ${{ inputs.burst_fraction }}
           FOR_ALERTING: 'true'
-          BENCHMARK_NAME: 'scheduled-main'
+          BENCHMARK_NAME: ${{ inputs.benchmark_name }}
         run: ./run_benchmark.sh ${{ matrix.client }}

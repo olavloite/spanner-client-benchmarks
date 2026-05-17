@@ -1,0 +1,34 @@
+name: Schedule Bursty Latency Benchmarks
+
+on:
+  schedule:
+    # Schedule at 11:00 UTC to ensure no overlap with earlier morning benchmark runs
+    - cron: '0 11 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-point-select:
+    uses: ./.github/workflows/benchmark-template.yml
+    with:
+      benchmark_types: '["point-select"]'
+      duration: '2h'
+      tps: '50'
+      burst_factor: '4.0'
+      burst_duration: '5.0'
+      burst_fraction: '0.1'
+      benchmark_name: 'scheduled-bursty-point-select'
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+
+  run-select-update:
+    uses: ./.github/workflows/benchmark-template.yml
+    with:
+      benchmark_types: '["select-update"]'
+      duration: '2h'
+      tps: '25'
+      burst_factor: '4.0'
+      burst_duration: '5.0'
+      burst_fraction: '0.1'
+      benchmark_name: 'scheduled-bursty-select-update'
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
