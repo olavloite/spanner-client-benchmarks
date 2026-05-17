@@ -72,40 +72,39 @@ def main():
     parser.add_argument("--burst-duration", type=float, help="Average duration of a burst in seconds")
     parser.add_argument("--burst-fraction", type=float, help="Fraction of total time spent in the burst state")
 
+    # Common workload flags for all subparsers
+    workload_parser = argparse.ArgumentParser(add_help=False)
+    workload_parser.add_argument("-t", "--table", required=True, help="Target database table name")
+    workload_parser.add_argument("--threads", type=int, default=100, help="ThreadPoolExecutor worker thread concurrency cap")
+    workload_parser.add_argument("--load-type", default="steady", choices=["steady", "spiky", "gradual"], help="Load type")
+    workload_parser.add_argument("--cycle-duration", help="Duration of a full cycle for gradual load")
+    workload_parser.add_argument("--peak-factor", type=float, help="Ratio of peak rate to average rate for gradual load")
+    workload_parser.add_argument("--burst-factor", type=float, help="Ratio of burst rate to average rate")
+    workload_parser.add_argument("--burst-duration", type=float, help="Average duration of a burst in seconds")
+    workload_parser.add_argument("--burst-fraction", type=float, help="Fraction of total time spent in the burst state")
+
     # Workload Scenario Subcommands routing
     subparsers = parser.add_subparsers(dest="command", required=True, help="Workload scenario subcommands")
 
     # Point-Select subparser
     ps_parser = subparsers.add_parser(
-        "point-select", help="Execute single point select statement workload scenario"
+        "point-select", parents=[workload_parser], help="Execute single point select statement workload scenario"
     )
-    ps_parser.add_argument("-t", "--table", required=True, help="Target database table name")
     ps_parser.add_argument("--tps", type=float, default=10.0, help="Target Transactions Per Second rate limit")
-    ps_parser.add_argument(
-        "--threads", type=int, default=100, help="ThreadPoolExecutor worker thread concurrency cap"
-    )
     ps_parser.add_argument("--num-rows", type=int, default=1000000, help="Number of rows in target database table")
 
     # Select-Update subparser
     su_parser = subparsers.add_parser(
-        "select-update", help="Execute read-modify-write transaction statement workload scenario"
+        "select-update", parents=[workload_parser], help="Execute read-modify-write transaction statement workload scenario"
     )
-    su_parser.add_argument("-t", "--table", required=True, help="Target database table name")
     su_parser.add_argument("--tps", type=float, default=10.0, help="Target Transactions Per Second rate limit")
-    su_parser.add_argument(
-        "--threads", type=int, default=100, help="ThreadPoolExecutor worker thread concurrency cap"
-    )
     su_parser.add_argument("--num-rows", type=int, default=1000000, help="Number of rows in target database table")
 
     # Read-Large subparser
     rl_parser = subparsers.add_parser(
-        "read-large-result-set", help="Execute dynamic large result set iteration scenario"
+        "read-large-result-set", parents=[workload_parser], help="Execute dynamic large result set iteration scenario"
     )
-    rl_parser.add_argument("-t", "--table", required=True, help="Target database table name")
     rl_parser.add_argument("--tps", type=float, default=0.05, help="Target Transactions Per Second rate limit")
-    rl_parser.add_argument(
-        "--threads", type=int, default=100, help="ThreadPoolExecutor worker thread concurrency cap"
-    )
     rl_parser.add_argument("--num-rows", type=int, default=100000, help="Number of rows to dynamically generate")
 
     args = parser.parse_args()
