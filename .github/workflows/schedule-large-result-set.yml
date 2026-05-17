@@ -1,0 +1,15 @@
+name: Schedule Large Result Set Benchmarks
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  run:
+    uses: ./.github/workflows/benchmark-template.yml
+    with:
+      benchmark_types: '["read-large-result-set"]'
+      duration: '1h'
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}

@@ -1,18 +1,27 @@
-name: Nightly Spanner Client Benchmarks
+name: Benchmark Template
 
 on:
-  schedule:
-    - cron: '49 5 * * *'
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      benchmark_types:
+        description: 'JSON array of benchmark types'
+        required: true
+        type: string
+      duration:
+        description: 'Benchmark execution duration'
+        required: true
+        type: string
+    secrets:
+      GCP_SA_KEY:
+        required: true
 
 env:
   PROJECT_ID: appdev-soda-spanner-staging
   INSTANCE_ID: knut-test-ycsb
   DATABASE_ID: spring-data-jpa
   REGION: europe-north1
-  DURATION: 15h
   CPU: 2
-  MEMORY: 8Gi
+  MEMORY: 4Gi
   SKIP_CLEANUP: 'true'
 
 jobs:
@@ -41,7 +50,7 @@ jobs:
       fail-fast: false
       matrix:
         client: [java, go, node, python, rust]
-        benchmark_type: [point-select, select-update, read-large-result-set]
+        benchmark_type: ${{ fromJSON(inputs.benchmark_types) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -57,7 +66,7 @@ jobs:
       - name: Deploy and Execute Benchmark Preset
         env:
           BENCHMARK_TYPE: ${{ matrix.benchmark_type }}
-          DURATION: ${{ matrix.benchmark_type == 'read-large-result-set' && '1h' || '15h' }}
+          DURATION: ${{ inputs.duration }}
           FOR_ALERTING: 'true'
           BENCHMARK_NAME: 'scheduled-main'
         run: ./run_benchmark.sh ${{ matrix.client }}
