@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { ValueType } from "@opentelemetry/api";
-import { setupMetrics, LATENCY_NAME, READ_LATENCY_NAME, OPERATION_COUNT_NAME, ERROR_COUNT_NAME } from "./src/metrics/otel";
+import { setupMetrics, LATENCY_NAME, READ_LATENCY_NAME, OPERATION_COUNT_NAME, ERROR_COUNT_NAME, MEMORY_USAGE_NAME, CPU_UTILIZATION_NAME } from "./src/metrics/otel";
 import { createSpannerClient } from "./src/spanner/client";
 import { PointSelectBenchmark } from "./src/benchmarks/point-select";
 import { SelectAndUpdateBenchmark } from "./src/benchmarks/select-update";
@@ -35,6 +35,7 @@ async function main() {
       false
     )
     .option("--benchmark-name <benchmarkName>", "Optional name to identify this benchmark run in metrics", "")
+    .option("--resource-probe-interval <resourceProbeInterval>", "Interval for probing resource usage (e.g. 10s, 1m). Set to 0 to disable", "10s")
     .option("--load-type <loadType>", "Load type (steady, spiky, gradual)", "steady")
     .option("--cycle-duration <cycleDuration>", "Duration of a full cycle for gradual load")
     .option("--peak-factor <peakFactor>", "Ratio of peak rate to average rate for gradual load")
@@ -167,6 +168,16 @@ async function runBenchmarkAction(
     valueType: ValueType.INT,
   });
 
+  const memoryUsageHistogram = meter.createHistogram(MEMORY_USAGE_NAME, {
+    description: "Active memory usage in bytes",
+    unit: "By",
+  });
+
+  const cpuUtilizationHistogram = meter.createHistogram(CPU_UTILIZATION_NAME, {
+    description: "Process CPU utilization",
+    unit: "1",
+  });
+
   // 2. Bootstrap Google Cloud Spanner Client
   const spanner = createSpannerClient(projectId, host);
   const instance = spanner.instance(instanceId);
@@ -182,6 +193,9 @@ async function runBenchmarkAction(
       latencyHistogram,
       operationCounter,
       errorCounter,
+      memoryUsageHistogram,
+      cpuUtilizationHistogram,
+      globalOpts.resourceProbeInterval,
       tableName,
       minId,
       maxId,
@@ -203,6 +217,9 @@ async function runBenchmarkAction(
       latencyHistogram,
       operationCounter,
       errorCounter,
+      memoryUsageHistogram,
+      cpuUtilizationHistogram,
+      globalOpts.resourceProbeInterval,
       tableName,
       minId,
       maxId,
@@ -224,6 +241,9 @@ async function runBenchmarkAction(
       latencyHistogram,
       operationCounter,
       errorCounter,
+      memoryUsageHistogram,
+      cpuUtilizationHistogram,
+      globalOpts.resourceProbeInterval,
       tableName,
       minId,
       maxId,

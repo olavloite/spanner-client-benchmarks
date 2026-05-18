@@ -3,7 +3,7 @@ import os
 import signal
 import sys
 from src.config.duration import parse_duration
-from src.metrics.otel import setup_metrics, LATENCY_NAME, READ_LATENCY_NAME, OPERATION_COUNT_NAME, ERROR_COUNT_NAME
+from src.metrics.otel import setup_metrics, LATENCY_NAME, READ_LATENCY_NAME, OPERATION_COUNT_NAME, ERROR_COUNT_NAME, MEMORY_USAGE_NAME, CPU_UTILIZATION_NAME
 
 def validate_and_fill_load_params(args):
     if args.load_type == "steady":
@@ -65,6 +65,7 @@ def main():
         help="Marks the metrics emitted for regression/alerting pipelines.",
     )
     parser.add_argument("--benchmark-name", default="", help="Optional name to identify this benchmark run in metrics")
+    parser.add_argument("--resource-probe-interval", default="10s", help="Interval for probing resource usage (e.g. 10s, 1m). Set to 0 to disable.")
     parser.add_argument("--load-type", default="steady", choices=["steady", "spiky", "gradual"], help="Load type")
     parser.add_argument("--cycle-duration", help="Duration of a full cycle for gradual load")
     parser.add_argument("--peak-factor", type=float, help="Ratio of peak rate to average rate for gradual load")
@@ -147,6 +148,18 @@ def main():
         unit="1",
     )
 
+    memory_usage_histogram = meter.create_histogram(
+        name=MEMORY_USAGE_NAME,
+        description="Active memory usage in bytes",
+        unit="By",
+    )
+
+    cpu_utilization_histogram = meter.create_histogram(
+        name=CPU_UTILIZATION_NAME,
+        description="Process CPU utilization",
+        unit="1",
+    )
+
     # 2. Initialize the Google Cloud Spanner Client driver
     from src.spanner.client import create_spanner_client
     from src.benchmarks.point_select import PointSelectBenchmark
@@ -165,6 +178,9 @@ def main():
             latency_histogram=latency_histogram,
             operation_counter=operation_counter,
             error_counter=error_counter,
+            memory_usage_histogram=memory_usage_histogram,
+            cpu_utilization_histogram=cpu_utilization_histogram,
+            resource_probe_interval_str=args.resource_probe_interval,
             table_name=args.table,
             min_id=min_id,
             max_id=max_id,
@@ -186,6 +202,9 @@ def main():
             latency_histogram=latency_histogram,
             operation_counter=operation_counter,
             error_counter=error_counter,
+            memory_usage_histogram=memory_usage_histogram,
+            cpu_utilization_histogram=cpu_utilization_histogram,
+            resource_probe_interval_str=args.resource_probe_interval,
             table_name=args.table,
             min_id=min_id,
             max_id=max_id,
@@ -207,6 +226,9 @@ def main():
             latency_histogram=latency_histogram,
             operation_counter=operation_counter,
             error_counter=error_counter,
+            memory_usage_histogram=memory_usage_histogram,
+            cpu_utilization_histogram=cpu_utilization_histogram,
+            resource_probe_interval_str=args.resource_probe_interval,
             table_name=args.table,
             min_id=min_id,
             max_id=max_id,

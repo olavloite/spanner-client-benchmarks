@@ -17,8 +17,11 @@ import java.time.Duration;
 import static com.google.cloud.spanner.benchmark.BenchmarkApp.LATENCY_NAME;
 import static com.google.cloud.spanner.benchmark.BenchmarkApp.OPERATION_COUNT_NAME;
 import static com.google.cloud.spanner.benchmark.BenchmarkApp.ERROR_COUNT_NAME;
+import static com.google.cloud.spanner.benchmark.BenchmarkApp.MEMORY_USAGE_NAME;
+import static com.google.cloud.spanner.benchmark.BenchmarkApp.CPU_UTILIZATION_NAME;
 import static com.google.cloud.spanner.benchmark.BenchmarkApp.METER_NAME;
 import static com.google.cloud.spanner.benchmark.BenchmarkApp.initializeOpenTelemetry;
+import io.opentelemetry.api.metrics.DoubleHistogram;
 
 public abstract class AbstractBenchmarkCommand implements Runnable {
     @ParentCommand
@@ -110,6 +113,17 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
                     .setUnit("1")
                     .build();
 
+            LongHistogram memoryUsageHistogram = meter.histogramBuilder(MEMORY_USAGE_NAME)
+                    .ofLongs()
+                    .setDescription("Active memory usage in bytes")
+                    .setUnit("By")
+                    .build();
+
+            DoubleHistogram cpuUtilizationHistogram = meter.histogramBuilder(CPU_UTILIZATION_NAME)
+                    .setDescription("Process CPU utilization")
+                    .setUnit("1")
+                    .build();
+
             // Initialize Spanner
             SpannerOptions.Builder spannerOptionsBuilder = SpannerOptions.newBuilder().setProjectId(parent.getProjectId());
             if (parent.getHost() != null) {
@@ -124,7 +138,7 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
                 Duration duration = AbstractBenchmark.parseDuration(parent.getDuration());
                 boolean forAlerting = parent.isForAlerting();
                 String benchmarkName = parent.getBenchmarkName();
-                AbstractBenchmark benchmark = createBenchmark(client, latencyHistogram, operationCounter, errorCounter, duration, forAlerting, benchmarkName);
+                AbstractBenchmark benchmark = createBenchmark(client, latencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, parent.getResourceProbeInterval(), duration, forAlerting, benchmarkName);
                 benchmark.run();
             }
         } catch (Exception e) {
@@ -132,5 +146,5 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
         }
     }
 
-    protected abstract AbstractBenchmark createBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, Duration duration, boolean forAlerting, String benchmarkName);
+    protected abstract AbstractBenchmark createBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter, LongCounter errorCounter, LongHistogram memoryUsageHistogram, DoubleHistogram cpuUtilizationHistogram, String resourceProbeInterval, Duration duration, boolean forAlerting, String benchmarkName);
 }

@@ -1,4 +1,5 @@
 import time
+from typing import Optional
 from google.cloud import spanner
 from google.cloud.spanner_v1.database import Database
 from opentelemetry.metrics import Histogram, Counter
@@ -26,6 +27,9 @@ class ReadLargeResultSetBenchmark(AbstractBenchmark):
         latency_histogram: Histogram,
         operation_counter: Counter,
         error_counter: Counter,
+        memory_usage_histogram: Optional[Histogram],
+        cpu_utilization_histogram: Optional[Histogram],
+        resource_probe_interval_str: str,
         table_name: str,
         min_id: int,
         max_id: int,
@@ -47,6 +51,9 @@ class ReadLargeResultSetBenchmark(AbstractBenchmark):
             latency_histogram,
             operation_counter,
             error_counter,
+            memory_usage_histogram,
+            cpu_utilization_histogram,
+            resource_probe_interval_str,
             table_name,
             min_id,
             max_id,

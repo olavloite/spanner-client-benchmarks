@@ -28,6 +28,9 @@ class AbstractBenchmark(abc.ABC):
         latency_histogram: Histogram,
         operation_counter: Counter,
         error_counter: Counter,
+        memory_usage_histogram: Optional[Histogram],
+        cpu_utilization_histogram: Optional[Histogram],
+        resource_probe_interval_str: str,
         table_name: str,
         min_id: int,
         max_id: int,
@@ -47,6 +50,9 @@ class AbstractBenchmark(abc.ABC):
         self.latency_histogram = latency_histogram
         self.operation_counter = operation_counter
         self.error_counter = error_counter
+        self.memory_usage_histogram = memory_usage_histogram
+        self.cpu_utilization_histogram = cpu_utilization_histogram
+        self.resource_probe_interval_str = resource_probe_interval_str
         self.table_name = table_name
         self.min_id = min_id
         self.max_id = max_id
@@ -114,6 +120,7 @@ class AbstractBenchmark(abc.ABC):
             target=self._workload_generator, name="TPS-WorkloadGenerator", daemon=True
         )
         self._generator_thread.start()
+        self._start_resource_monitoring()
 
         # Wait loop for duration expiration
         start_wait = time.perf_counter()
@@ -254,3 +261,38 @@ class AbstractBenchmark(abc.ABC):
             angle = (2.0 * math.pi * (elapsed_sec % cycle_duration_sec)) / cycle_duration_sec
             return self.tps + amplitude * math.cos(angle - math.pi)
         return self.tps
+
+    def _start_resource_monitoring(self) -> None:
+        if self.resource_probe_interval_str and self.resource_probe_interval_str not in ("0", "0s"):
+            from src.config.duration import parse_duration
+            probe_interval_sec = parse_duration(self.resource_probe_interval_str)
+            if probe_interval_sec > 0:
+                self._last_cpu_time = time.process_time()
+                self._last_wall_time = time.perf_counter()
+                def _loop():
+                    while not self.is_stopped:
+                        time.sleep(probe_interval_sec)
+                        if self.is_stopped:
+                            break
+                        self._probe_resource_usage()
+                resource_thread = threading.Thread(target=_loop, name="ResourceMonitor", daemon=True)
+                resource_thread.start()
+
+    def _probe_resource_usage(self) -> None:
+        import resource
+        try:
+            usage = resource.getrusage(resource.RUSAGE_SELF)
+            if self.memory_usage_histogram:
+                self.memory_usage_histogram.record(int(usage.ru_maxrss), self.attributes)
+            
+            now_cpu_time = time.process_time()
+            now_wall_time = time.perf_counter()
+            elapsed_wall = now_wall_time - self._last_wall_time
+            if elapsed_wall > 0 and self.cpu_utilization_histogram:
+                cpu_util = (now_cpu_time - self._last_cpu_time) / elapsed_wall
+                self.cpu_utilization_histogram.record(float(cpu_util), self.attributes)
+            
+            self._last_cpu_time = now_cpu_time
+            self._last_wall_time = now_wall_time
+        except Exception:
+            pass

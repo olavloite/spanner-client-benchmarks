@@ -14,6 +14,8 @@ export const LATENCY_NAME = "spanner_client_benchmarks/latency";
 export const READ_LATENCY_NAME = "spanner_client_benchmarks/read_latency";
 export const OPERATION_COUNT_NAME = "spanner_client_benchmarks/operation_count";
 export const ERROR_COUNT_NAME = "spanner_client_benchmarks/error_count";
+export const MEMORY_USAGE_NAME = "spanner_client_benchmarks/memory_usage";
+export const CPU_UTILIZATION_NAME = "spanner_client_benchmarks/cpu_utilization";
 
 export interface MetricSetupResult {
   meter: Meter;
@@ -72,6 +74,22 @@ export function setupMetrics(projectId: string, isEmulator: boolean): MetricSetu
     aggregation: new ExplicitBucketHistogramAggregation(readLatencyBoundaries),
   });
 
+  const memoryUsageView = new View({
+    instrumentName: MEMORY_USAGE_NAME,
+    instrumentType: InstrumentType.HISTOGRAM,
+    aggregation: new ExplicitBucketHistogramAggregation([
+      10e6, 25e6, 50e6, 100e6, 200e6, 300e6, 400e6, 500e6, 750e6, 1e9, 1.5e9, 2e9, 3e9, 5e9, 10e9,
+    ]),
+  });
+
+  const cpuUtilizationView = new View({
+    instrumentName: CPU_UTILIZATION_NAME,
+    instrumentType: InstrumentType.HISTOGRAM,
+    aggregation: new ExplicitBucketHistogramAggregation([
+      0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0,
+    ]),
+  });
+
   // Set up standard resource tags (keeps it under Generic Node like Go and Java)
   const resource = new Resource({
     "cloud.project.id": projectId,
@@ -79,7 +97,7 @@ export function setupMetrics(projectId: string, isEmulator: boolean): MetricSetu
 
   const provider = new MeterProvider({
     resource: resource,
-    views: [latencyView, readLatencyView],
+    views: [latencyView, readLatencyView, memoryUsageView, cpuUtilizationView],
   });
 
   provider.addMetricReader(reader);

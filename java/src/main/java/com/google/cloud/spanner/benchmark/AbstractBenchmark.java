@@ -3,12 +3,15 @@ package com.google.cloud.spanner.benchmark;
 import com.google.cloud.spanner.DatabaseClient;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.LongHistogram;
+import io.opentelemetry.api.metrics.DoubleHistogram;
 import io.opentelemetry.api.common.Attributes;
 import javax.annotation.Nonnull;
 
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ThreadLocalRandom;
 
 public abstract class AbstractBenchmark {
@@ -32,14 +35,23 @@ public abstract class AbstractBenchmark {
     protected final double peakFactor;
     private final Attributes attributes; // Pre-created attributes
 
+    protected final LongHistogram memoryUsageHistogram;
+    protected final DoubleHistogram cpuUtilizationHistogram;
+    protected final String resourceProbeInterval;
+    private ScheduledExecutorService resourceMonitorExecutor;
+
     public AbstractBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter,
-            LongCounter errorCounter, String tableName, long minId, long maxId, double tps, int threads,
+            LongCounter errorCounter, LongHistogram memoryUsageHistogram, DoubleHistogram cpuUtilizationHistogram,
+            String resourceProbeInterval, String tableName, long minId, long maxId, double tps, int threads,
             Duration duration, boolean forAlerting, String benchmarkName, LoadType loadType, Duration cycleDuration, double peakFactor,
             double burstFactor, double burstDuration, double burstFraction) {
         this.client = client;
         this.latencyHistogram = latencyHistogram;
         this.operationCounter = operationCounter;
         this.errorCounter = errorCounter;
+        this.memoryUsageHistogram = memoryUsageHistogram;
+        this.cpuUtilizationHistogram = cpuUtilizationHistogram;
+        this.resourceProbeInterval = resourceProbeInterval;
         this.tableName = tableName;
         this.minId = minId;
         this.maxId = maxId;
@@ -82,6 +94,8 @@ public abstract class AbstractBenchmark {
         System.out.println("Starting " + getBenchmarkName() + " with TPS: " + tps + ", threads: " + threads);
         ExecutorService executor = Executors.newFixedThreadPool(threads);
 
+        startResourceMonitoring();
+
         Thread generatorThread = new Thread(() -> {
             loadType.run(this, executor);
         }, "TPS-Generator");
@@ -96,10 +110,16 @@ public abstract class AbstractBenchmark {
             }
             System.out.println("Benchmark duration reached. Stopping...");
             generatorThread.interrupt();
+            if (resourceMonitorExecutor != null) {
+                resourceMonitorExecutor.shutdownNow();
+            }
             executor.shutdownNow();
         } catch (InterruptedException e) {
             System.out.println("Benchmark interrupted.");
             generatorThread.interrupt();
+            if (resourceMonitorExecutor != null) {
+                resourceMonitorExecutor.shutdownNow();
+            }
             executor.shutdownNow();
         }
     }
@@ -122,6 +142,34 @@ public abstract class AbstractBenchmark {
                 operationCounter.add(1, getAttributes());
             }
         });
+    }
+
+    private void startResourceMonitoring() {
+        if (resourceProbeInterval != null && !resourceProbeInterval.isEmpty()) {
+            Duration probeDuration = parseDuration(resourceProbeInterval);
+            if (probeDuration != null && probeDuration.toMillis() > 0) {
+                resourceMonitorExecutor = Executors.newSingleThreadScheduledExecutor();
+                resourceMonitorExecutor.scheduleAtFixedRate(this::probeResourceUsage, 0, probeDuration.toMillis(), TimeUnit.MILLISECONDS);
+            }
+        }
+    }
+
+    private void probeResourceUsage() {
+        try {
+            long usedMemory = java.lang.management.ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+            if (memoryUsageHistogram != null) {
+                memoryUsageHistogram.record(usedMemory, getAttributes());
+            }
+            java.lang.management.OperatingSystemMXBean osBean = java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+            if (osBean instanceof com.sun.management.OperatingSystemMXBean) {
+                double cpuLoad = ((com.sun.management.OperatingSystemMXBean) osBean).getProcessCpuLoad();
+                if (cpuLoad >= 0 && cpuUtilizationHistogram != null) {
+                    cpuUtilizationHistogram.record(cpuLoad, getAttributes());
+                }
+            }
+        } catch (Exception e) {
+            // Ignore exceptions in resource monitoring
+        }
     }
 
     protected abstract void executeOperation() throws Exception;
