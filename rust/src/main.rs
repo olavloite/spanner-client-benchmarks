@@ -119,9 +119,13 @@ async fn setup_metrics(project_id: &str) -> anyhow::Result<(BenchmarkMetrics, Sd
                     .build()
                     .unwrap())
             } else if i.name() == "spanner_client_benchmarks/memory_usage" {
+                const MB: f64 = 1024.0 * 1024.0;
                 Some(Stream::builder()
                     .with_aggregation(Aggregation::ExplicitBucketHistogram {
-                        boundaries: vec![10e6, 25e6, 50e6, 100e6, 200e6, 300e6, 400e6, 500e6, 750e6, 1e9, 1.5e9, 2e9, 3e9, 5e9, 10e9],
+                        boundaries: vec![
+                            2.5 * MB, 5.0 * MB, 7.5 * MB, 10.0 * MB, 20.0 * MB, 30.0 * MB, 40.0 * MB, 50.0 * MB, 60.0 * MB, 70.0 * MB, 80.0 * MB, 90.0 * MB, 100.0 * MB,
+                            200.0 * MB, 300.0 * MB, 400.0 * MB, 500.0 * MB, 750.0 * MB, 1000.0 * MB, 1500.0 * MB, 2000.0 * MB, 3000.0 * MB, 5000.0 * MB, 10000.0 * MB
+                        ],
                         record_min_max: true,
                     })
                     .build()
@@ -129,7 +133,7 @@ async fn setup_metrics(project_id: &str) -> anyhow::Result<(BenchmarkMetrics, Sd
             } else if i.name() == "spanner_client_benchmarks/cpu_utilization" {
                 Some(Stream::builder()
                     .with_aggregation(Aggregation::ExplicitBucketHistogram {
-                        boundaries: vec![0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0],
+                        boundaries: vec![0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0],
                         record_min_max: true,
                     })
                     .build()

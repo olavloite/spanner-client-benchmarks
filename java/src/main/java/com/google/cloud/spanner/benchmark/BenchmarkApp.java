@@ -99,6 +99,8 @@ public class BenchmarkApp implements Runnable {
             return OpenTelemetry.noop();
         }
 
+        double MB = 1024.0 * 1024.0;
+
         return OpenTelemetrySdk.builder()
                 .setMeterProvider(SdkMeterProvider.builder()
                         .registerMetricReader(PeriodicMetricReader.create(
@@ -140,7 +142,8 @@ public class BenchmarkApp implements Runnable {
                                         .setAggregation(
                                                 Aggregation.explicitBucketHistogram(
                                                         java.util.List.of(
-                                                                10_000_000.0, 25_000_000.0, 50_000_000.0, 100_000_000.0, 200_000_000.0, 300_000_000.0, 400_000_000.0, 500_000_000.0, 750_000_000.0, 1_000_000_000.0, 1_500_000_000.0, 2_000_000_000.0, 3_000_000_000.0, 5_000_000_000.0, 10_000_000_000.0
+                                                                2.5 * MB, 5.0 * MB, 7.5 * MB, 10.0 * MB, 20.0 * MB, 30.0 * MB, 40.0 * MB, 50.0 * MB, 60.0 * MB, 70.0 * MB, 80.0 * MB, 90.0 * MB, 100.0 * MB,
+                                                                200.0 * MB, 300.0 * MB, 400.0 * MB, 500.0 * MB, 750.0 * MB, 1000.0 * MB, 1500.0 * MB, 2000.0 * MB, 3000.0 * MB, 5000.0 * MB, 10000.0 * MB
                                                         )))
                                         .build())
                         .registerView(
@@ -151,7 +154,7 @@ public class BenchmarkApp implements Runnable {
                                         .setAggregation(
                                                 Aggregation.explicitBucketHistogram(
                                                         java.util.List.of(
-                                                                0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0
+                                                                0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0
                                                         )))
                                         .build())
                         .build())
