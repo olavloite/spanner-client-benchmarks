@@ -280,10 +280,13 @@ class AbstractBenchmark(abc.ABC):
 
     def _probe_resource_usage(self) -> None:
         import resource
+        import sys
         try:
             usage = resource.getrusage(resource.RUSAGE_SELF)
+            # On macOS (darwin), ru_maxrss is in bytes. On Linux (e.g. Cloud Run), it is in kilobytes.
+            max_rss = usage.ru_maxrss if sys.platform == "darwin" else usage.ru_maxrss * 1024
             if self.memory_usage_histogram:
-                self.memory_usage_histogram.record(int(usage.ru_maxrss), self.attributes)
+                self.memory_usage_histogram.record(int(max_rss), self.attributes)
             
             now_cpu_time = time.process_time()
             now_wall_time = time.perf_counter()
