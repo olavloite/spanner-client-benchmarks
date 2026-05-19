@@ -3,6 +3,7 @@ import { Histogram, Counter } from "@opentelemetry/api";
 import { Worker } from "worker_threads";
 import * as path from "path";
 import { LoadType } from "./load-type";
+import { parseDuration } from "../config/duration";
 export { LoadType };
 
 export interface IBenchmark {
@@ -42,11 +43,20 @@ export abstract class AbstractBenchmark implements IBenchmark {
   private rBurst: number;
   private rNormal: number;
 
+  private memoryUsageHistogram: Histogram | null = null;
+  private cpuUtilizationHistogram: Histogram | null = null;
+  private resourceProbeIntervalStr: string = "10s";
+  private lastCpuUsage: NodeJS.CpuUsage | null = null;
+  private lastWallTime: bigint = 0n;
+
   constructor(
     database: Database,
     latencyHistogram: Histogram,
     operationCounter: Counter,
     errorCounter: Counter,
+    memoryUsageHistogram: Histogram | null,
+    cpuUtilizationHistogram: Histogram | null,
+    resourceProbeIntervalStr: string,
     tableName: string,
     minId: number,
     maxId: number,
@@ -66,6 +76,9 @@ export abstract class AbstractBenchmark implements IBenchmark {
     this.latencyHistogram = latencyHistogram;
     this.operationCounter = operationCounter;
     this.errorCounter = errorCounter;
+    this.memoryUsageHistogram = memoryUsageHistogram;
+    this.cpuUtilizationHistogram = cpuUtilizationHistogram;
+    this.resourceProbeIntervalStr = resourceProbeIntervalStr;
     this.tableName = tableName;
     this.minId = minId;
     this.maxId = maxId;
@@ -110,12 +123,15 @@ export abstract class AbstractBenchmark implements IBenchmark {
     console.log(`Starting ${this.getName()}`);
     console.log(`Parameters: TPS=${this.tps}, Max Workers=${this.threads}, MinID=${this.minId}, MaxID=${this.maxId}`);
 
+    this.startResourceMonitoring();
+
     let timeoutId: NodeJS.Timeout | null = null;
-    if (this.durationMs !== null) {
+    const durationMs = this.durationMs;
+    if (durationMs !== null) {
       timeoutId = setTimeout(() => {
         console.log("Benchmark duration reached. Stopping workload generator...");
         this.stop();
-      }, this.durationMs);
+      }, durationMs);
     }
 
     const sab = new SharedArrayBuffer(4);
@@ -258,4 +274,41 @@ export abstract class AbstractBenchmark implements IBenchmark {
     }
     return this.tps;
   }
+
+  private startResourceMonitoring(): void {
+    if (this.resourceProbeIntervalStr && this.resourceProbeIntervalStr !== "0" && this.resourceProbeIntervalStr !== "0s") {
+      const intervalMs = parseDuration(this.resourceProbeIntervalStr);
+      if (intervalMs !== null && intervalMs > 0) {
+        this.lastCpuUsage = process.cpuUsage();
+        this.lastWallTime = process.hrtime.bigint();
+        setInterval(() => this.probeResourceUsage(), intervalMs);
+      }
+    }
+  }
+
+  private probeResourceUsage(): void {
+    if (this.isStopped) return;
+    try {
+      const mem = process.memoryUsage();
+      if (this.memoryUsageHistogram) {
+        this.memoryUsageHistogram.record(mem.heapUsed, this.attributes);
+      }
+
+      if (this.lastCpuUsage && this.lastWallTime > 0n) {
+        const nowCpuUsage = process.cpuUsage(this.lastCpuUsage);
+        const nowWallTime = process.hrtime.bigint();
+        const elapsedWallSec = Number(nowWallTime - this.lastWallTime) / 1e9;
+
+        if (elapsedWallSec > 0 && this.cpuUtilizationHistogram) {
+          const totalCpuSec = (nowCpuUsage.user + nowCpuUsage.system) / 1e6;
+          const cpuUtil = totalCpuSec / elapsedWallSec;
+          this.cpuUtilizationHistogram.record(cpuUtil, this.attributes);
+        }
+
+        this.lastCpuUsage = process.cpuUsage();
+        this.lastWallTime = nowWallTime;
+      }
+    } catch (e) {}
+  }
 }
+

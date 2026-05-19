@@ -11,6 +11,8 @@ LATENCY_NAME = "spanner_client_benchmarks/latency"
 READ_LATENCY_NAME = "spanner_client_benchmarks/read_latency"
 OPERATION_COUNT_NAME = "spanner_client_benchmarks/operation_count"
 ERROR_COUNT_NAME = "spanner_client_benchmarks/error_count"
+MEMORY_USAGE_NAME = "spanner_client_benchmarks/memory_usage"
+CPU_UTILIZATION_NAME = "spanner_client_benchmarks/cpu_utilization"
 
 def setup_metrics(project_id: str, is_emulator: bool) -> Tuple[metrics.Meter, Callable[[], None]]:
     """
@@ -54,13 +56,31 @@ def setup_metrics(project_id: str, is_emulator: bool) -> Tuple[metrics.Meter, Ca
         aggregation=ExplicitBucketHistogramAggregation(boundaries=read_latency_boundaries),
     )
 
+    MB = 1024.0 * 1024.0
+    memory_usage_view = View(
+        instrument_name=MEMORY_USAGE_NAME,
+        aggregation=ExplicitBucketHistogramAggregation(
+            boundaries=[
+                2.5 * MB, 5.0 * MB, 7.5 * MB, 10.0 * MB, 20.0 * MB, 30.0 * MB, 40.0 * MB, 50.0 * MB, 60.0 * MB, 70.0 * MB, 80.0 * MB, 90.0 * MB, 100.0 * MB,
+                200.0 * MB, 300.0 * MB, 400.0 * MB, 500.0 * MB, 750.0 * MB, 1000.0 * MB, 1500.0 * MB, 2000.0 * MB, 3000.0 * MB, 5000.0 * MB, 10000.0 * MB
+            ]
+        ),
+    )
+
+    cpu_utilization_view = View(
+        instrument_name=CPU_UTILIZATION_NAME,
+        aggregation=ExplicitBucketHistogramAggregation(
+            boundaries=[0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0]
+        ),
+    )
+
     # Define basic project resource tags (lands metrics under 'Generic Node' in Stackdriver for 1-to-1 parity)
     resource = Resource.create({"cloud.project.id": project_id})
 
     # Build MeterProvider with readers, views, and resource constraints
     provider = MeterProvider(
         metric_readers=[reader],
-        views=[latency_view, read_latency_view],
+        views=[latency_view, read_latency_view, memory_usage_view, cpu_utilization_view],
         resource=resource
     )
 

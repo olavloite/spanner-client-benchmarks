@@ -38,10 +38,15 @@ public class BenchmarkApp implements Runnable {
     @Option(names = { "--benchmark-name" }, description = "Optional name to identify this benchmark run in metrics.")
     private String benchmarkName;
 
+    @Option(names = { "--resource-probe-interval" }, description = "Interval for probing resource usage (e.g. 10s, 1m). Set to 0 to disable.", defaultValue = "10s")
+    private String resourceProbeInterval;
+
     public static final String METER_NAME = "spanner-benchmark";
     public static final String LATENCY_NAME = "spanner_client_benchmarks/latency";
     public static final String OPERATION_COUNT_NAME = "spanner_client_benchmarks/operation_count";
     public static final String ERROR_COUNT_NAME = "spanner_client_benchmarks/error_count";
+    public static final String MEMORY_USAGE_NAME = "spanner_client_benchmarks/memory_usage";
+    public static final String CPU_UTILIZATION_NAME = "spanner_client_benchmarks/cpu_utilization";
 
     public static void main(String[] args) {
         int exitCode = new CommandLine(new BenchmarkApp())
@@ -84,11 +89,17 @@ public class BenchmarkApp implements Runnable {
         return benchmarkName;
     }
 
+    public String getResourceProbeInterval() {
+        return resourceProbeInterval;
+    }
+
     // Package-private so subcommands can access it
     static OpenTelemetry initializeOpenTelemetry(String projectId, String host) {
         if (host != null && host.startsWith("http://localhost:")) {
             return OpenTelemetry.noop();
         }
+
+        double MB = 1024.0 * 1024.0;
 
         return OpenTelemetrySdk.builder()
                 .setMeterProvider(SdkMeterProvider.builder()
@@ -121,6 +132,29 @@ public class BenchmarkApp implements Runnable {
                                                                 1000000.0, 1250000.0, 1500000.0, 1750000.0, 2000000.0, 2250000.0, 2500000.0, 2750000.0, 3000000.0, 3250000.0, 3500000.0, 3750000.0, 4000000.0, 4250000.0, 4500000.0, 4750000.0, 5000000.0,
                                                                 5500000.0, 6000000.0, 6500000.0, 7000000.0, 7500000.0, 8000000.0, 8500000.0, 9000000.0, 9500000.0, 10000000.0,
                                                                 12500000.0, 15000000.0, 20000000.0, 30000000.0
+                                                        )))
+                                        .build())
+                        .registerView(
+                                InstrumentSelector.builder()
+                                        .setName(MEMORY_USAGE_NAME)
+                                        .build(),
+                                View.builder()
+                                        .setAggregation(
+                                                Aggregation.explicitBucketHistogram(
+                                                        java.util.List.of(
+                                                                2.5 * MB, 5.0 * MB, 7.5 * MB, 10.0 * MB, 20.0 * MB, 30.0 * MB, 40.0 * MB, 50.0 * MB, 60.0 * MB, 70.0 * MB, 80.0 * MB, 90.0 * MB, 100.0 * MB,
+                                                                200.0 * MB, 300.0 * MB, 400.0 * MB, 500.0 * MB, 750.0 * MB, 1000.0 * MB, 1500.0 * MB, 2000.0 * MB, 3000.0 * MB, 5000.0 * MB, 10000.0 * MB
+                                                        )))
+                                        .build())
+                        .registerView(
+                                InstrumentSelector.builder()
+                                        .setName(CPU_UTILIZATION_NAME)
+                                        .build(),
+                                View.builder()
+                                        .setAggregation(
+                                                Aggregation.explicitBucketHistogram(
+                                                        java.util.List.of(
+                                                                0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0
                                                         )))
                                         .build())
                         .build())

@@ -7,6 +7,7 @@ import (
 
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -30,6 +31,8 @@ const (
 	readLatencyName    = "spanner_client_benchmarks/read_latency"
 	operationCountName = "spanner_client_benchmarks/operation_count"
 	errorCountName     = "spanner_client_benchmarks/error_count"
+	memoryUsageName    = "spanner_client_benchmarks/memory_usage"
+	cpuUtilizationName = "spanner_client_benchmarks/cpu_utilization"
 )
 
 type Benchmark interface {
@@ -60,6 +63,7 @@ func run(ctx context.Context, args []string) error {
 			&cli.BoolFlag{Name: "for-alerting", Value: false, Usage: "Marks the benchmark for alerting purposes"},
 			&cli.StringFlag{Name: "benchmark-name", Usage: "Optional name to identify this benchmark run in metrics"},
 			&cli.StringFlag{Name: "host", Usage: "Custom Spanner host endpoint override"},
+			&cli.StringFlag{Name: "resource-probe-interval", Value: "10s", Usage: "Interval for probing resource usage (e.g. 10s, 1m). Set to 0 to disable"},
 			&cli.IntFlag{Name: "threads", Value: 100, Usage: "Number of parallel workers allowed"},
 			&cli.StringFlag{Name: "load-type", Value: "steady", Usage: "Load type (steady, spiky, gradual)"},
 			&cli.StringFlag{Name: "cycle-duration", Usage: "Duration of a full cycle for gradual load"},
@@ -128,6 +132,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	durationStr := cmd.String("duration")
 	forAlerting := cmd.Bool("for-alerting")
 	benchmarkName := cmd.String("benchmark-name")
+	resourceProbeInterval := cmd.String("resource-probe-interval")
 	host := cmd.String("host")
 	threads := cmd.Int("threads")
 	tps := cmd.Float("tps")
@@ -151,7 +156,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	}
 
 	// Setup Metrics
-	latencyHistogram, readLatencyHistogram, operationCounter, errorCounter, cleanupMetrics, err := setupMetrics(runCtx, project, host)
+	latencyHistogram, readLatencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cleanupMetrics, err := setupMetrics(runCtx, project, host)
 	if err != nil {
 		return fmt.Errorf("failed to initialize metrics: %w", err)
 	}
@@ -214,22 +219,24 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	}
 
 	// Run loop
-	runBenchmark(durationCtx, b, client, latencyHistogram, operationCounter, errorCounter, table, tps, threads, 1, numRows, attributes, loadType, cycleDurationStr, peakFactor, burstFactor, burstDuration, burstFraction)
+	runBenchmark(durationCtx, b, client, latencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, resourceProbeInterval, table, tps, threads, 1, numRows, attributes, loadType, cycleDurationStr, peakFactor, burstFactor, burstDuration, burstFraction)
 
 	return nil
 }
 
-func setupMetrics(ctx context.Context, projectID string, host string) (metric.Float64Histogram, metric.Float64Histogram, metric.Int64Counter, metric.Int64Counter, func(), error) {
+func setupMetrics(ctx context.Context, projectID string, host string) (metric.Float64Histogram, metric.Float64Histogram, metric.Int64Counter, metric.Int64Counter, metric.Float64Histogram, metric.Float64Histogram, func(), error) {
 	if os.Getenv("SPANNER_EMULATOR_HOST") != "" || (host != "" && (strings.Contains(host, "localhost:") || strings.Contains(host, "127.0.0.1:"))) {
 		h, _ := noop.NewMeterProvider().Meter("").Float64Histogram("")
 		rh, _ := noop.NewMeterProvider().Meter("").Float64Histogram("")
 		o, _ := noop.NewMeterProvider().Meter("").Int64Counter("")
 		e, _ := noop.NewMeterProvider().Meter("").Int64Counter("")
-		return h, rh, o, e, func() {}, nil
+		mh, _ := noop.NewMeterProvider().Meter("").Float64Histogram("")
+		ch, _ := noop.NewMeterProvider().Meter("").Float64Histogram("")
+		return h, rh, o, e, mh, ch, func() {}, nil
 	}
 	exporter, err := mexporter.New(mexporter.WithProjectID(projectID))
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, nil, err
 	}
 	meterProvider := sdkmetric.NewMeterProvider(
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(60*time.Second))),
@@ -243,7 +250,7 @@ func setupMetrics(ctx context.Context, projectID string, host string) (metric.Fl
 		metric.WithExplicitBucketBoundaries(500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 3500.0, 4000.0, 4500.0, 5000.0, 6000.0, 7000.0, 8000.0, 9000.0, 10000.0, 12000.0, 14000.0, 16000.0, 18000.0, 20000.0, 25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0),
 	)
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, nil, err
 	}
 
 	readLatencyHistogram, err := meter.Float64Histogram(readLatencyName,
@@ -257,7 +264,7 @@ func setupMetrics(ctx context.Context, projectID string, host string) (metric.Fl
 		),
 	)
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, nil, err
 	}
 
 	operationCounter, err := meter.Int64Counter(operationCountName,
@@ -265,7 +272,7 @@ func setupMetrics(ctx context.Context, projectID string, host string) (metric.Fl
 		metric.WithUnit("1"),
 	)
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, nil, err
 	}
 
 	errorCounter, err := meter.Int64Counter(errorCountName,
@@ -273,14 +280,33 @@ func setupMetrics(ctx context.Context, projectID string, host string) (metric.Fl
 		metric.WithUnit("1"),
 	)
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, nil, err
+	}
+
+	MB := 1024.0 * 1024.0
+	memoryUsageHistogram, err := meter.Float64Histogram(memoryUsageName,
+		metric.WithDescription("Active memory usage in bytes"),
+		metric.WithUnit("By"),
+		metric.WithExplicitBucketBoundaries(2.5*MB, 5.0*MB, 7.5*MB, 10.0*MB, 20.0*MB, 30.0*MB, 40.0*MB, 50.0*MB, 60.0*MB, 70.0*MB, 80.0*MB, 90.0*MB, 100.0*MB, 200.0*MB, 300.0*MB, 400.0*MB, 500.0*MB, 750.0*MB, 1000.0*MB, 1500.0*MB, 2000.0*MB, 3000.0*MB, 5000.0*MB, 10000.0*MB),
+	)
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, nil, err
+	}
+
+	cpuUtilizationHistogram, err := meter.Float64Histogram(cpuUtilizationName,
+		metric.WithDescription("Process CPU utilization"),
+		metric.WithUnit("1"),
+		metric.WithExplicitBucketBoundaries(0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0),
+	)
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, nil, err
 	}
 
 	cleanup := func() {
 		meterProvider.Shutdown(ctx)
 	}
 
-	return latencyHistogram, readLatencyHistogram, operationCounter, errorCounter, cleanup, nil
+	return latencyHistogram, readLatencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cleanup, nil
 }
 
 func createSpannerClient(ctx context.Context, project, instance, database, host string) (*spanner.Client, error) {
@@ -292,9 +318,11 @@ func createSpannerClient(ctx context.Context, project, instance, database, host 
 	return spanner.NewClient(ctx, databaseName, clientOpts...)
 }
 
-func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, latencyHistogram metric.Float64Histogram, operationCounter metric.Int64Counter, errorCounter metric.Int64Counter, tableName string, targetTPS float64, concurrentThreads int, minId, maxId int64, attributes metric.MeasurementOption, loadType LoadType, cycleDurationStr string, peakFactor, burstFactor, burstDuration, burstFraction float64) {
+func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, latencyHistogram metric.Float64Histogram, operationCounter metric.Int64Counter, errorCounter metric.Int64Counter, memoryUsageHistogram metric.Float64Histogram, cpuUtilizationHistogram metric.Float64Histogram, resourceProbeIntervalStr string, tableName string, targetTPS float64, concurrentThreads int, minId, maxId int64, attributes metric.MeasurementOption, loadType LoadType, cycleDurationStr string, peakFactor, burstFactor, burstDuration, burstFraction float64) {
 	tasks := make(chan struct{}, 1000000) // large buffered channel to simulate unbounded queue
 	wg := &sync.WaitGroup{}
+
+	startResourceMonitoring(ctx, memoryUsageHistogram, cpuUtilizationHistogram, resourceProbeIntervalStr, attributes)
 
 	// Start worker goroutines
 	for i := 0; i < concurrentThreads; i++ {
@@ -331,6 +359,54 @@ func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, late
 	}
 
 	generator.Run(ctx, b, client, latencyHistogram, operationCounter, errorCounter, tableName, targetTPS, concurrentThreads, minId, maxId, attributes, cycleDurationStr, peakFactor, burstFactor, burstDuration, burstFraction, tasks, wg)
+}
+
+func startResourceMonitoring(ctx context.Context, memoryUsageHistogram metric.Float64Histogram, cpuUtilizationHistogram metric.Float64Histogram, resourceProbeIntervalStr string, attributes metric.MeasurementOption) {
+	if resourceProbeIntervalStr != "0" && resourceProbeIntervalStr != "0s" && resourceProbeIntervalStr != "" {
+		interval := ParseDuration(resourceProbeIntervalStr)
+		if interval > 0 {
+			go func() {
+				ticker := time.NewTicker(interval)
+				defer ticker.Stop()
+				var lastUtime int64
+				var lastStime int64
+				var lastWall time.Time
+				initialized := false
+
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case now := <-ticker.C:
+						probeResourceUsage(ctx, memoryUsageHistogram, cpuUtilizationHistogram, attributes, now, &lastUtime, &lastStime, &lastWall, &initialized)
+					}
+				}
+			}()
+		}
+	}
+}
+
+func probeResourceUsage(ctx context.Context, memoryUsageHistogram metric.Float64Histogram, cpuUtilizationHistogram metric.Float64Histogram, attributes metric.MeasurementOption, now time.Time, lastUtime *int64, lastStime *int64, lastWall *time.Time, initialized *bool) {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	memoryUsageHistogram.Record(ctx, float64(m.Alloc), attributes)
+
+	var rusage syscall.Rusage
+	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &rusage); err == nil {
+		utime := int64(rusage.Utime.Sec)*1e6 + int64(rusage.Utime.Usec)
+		stime := int64(rusage.Stime.Sec)*1e6 + int64(rusage.Stime.Usec)
+		if *initialized {
+			elapsedWall := now.Sub(*lastWall).Seconds()
+			if elapsedWall > 0 {
+				cpuUtil := (float64((utime-*lastUtime)+(stime-*lastStime)) / 1e6) / elapsedWall
+				cpuUtilizationHistogram.Record(ctx, cpuUtil, attributes)
+			}
+		}
+		*lastUtime = utime
+		*lastStime = stime
+		*lastWall = now
+		*initialized = true
+	}
 }
 
 

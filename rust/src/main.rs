@@ -48,6 +48,8 @@ struct Args {
     burst_duration: Option<f64>,
     #[arg(long, global = true)]
     burst_fraction: Option<f64>,
+    #[arg(long, global = true, default_value = "10s")]
+    resource_probe_interval: String,
     #[command(subcommand)]
     command: Commands,
 }
@@ -81,6 +83,8 @@ pub(crate) struct BenchmarkMetrics {
     read_latency: Histogram<f64>,
     operation_count: Counter<u64>,
     error_count: Counter<u64>,
+    memory_usage: Histogram<f64>,
+    cpu_utilization: Histogram<f64>,
 }
 
 async fn setup_metrics(project_id: &str) -> anyhow::Result<(BenchmarkMetrics, SdkMeterProvider)> {
@@ -114,6 +118,26 @@ async fn setup_metrics(project_id: &str) -> anyhow::Result<(BenchmarkMetrics, Sd
                     })
                     .build()
                     .unwrap())
+            } else if i.name() == "spanner_client_benchmarks/memory_usage" {
+                const MB: f64 = 1024.0 * 1024.0;
+                Some(Stream::builder()
+                    .with_aggregation(Aggregation::ExplicitBucketHistogram {
+                        boundaries: vec![
+                            2.5 * MB, 5.0 * MB, 7.5 * MB, 10.0 * MB, 20.0 * MB, 30.0 * MB, 40.0 * MB, 50.0 * MB, 60.0 * MB, 70.0 * MB, 80.0 * MB, 90.0 * MB, 100.0 * MB,
+                            200.0 * MB, 300.0 * MB, 400.0 * MB, 500.0 * MB, 750.0 * MB, 1000.0 * MB, 1500.0 * MB, 2000.0 * MB, 3000.0 * MB, 5000.0 * MB, 10000.0 * MB
+                        ],
+                        record_min_max: true,
+                    })
+                    .build()
+                    .unwrap())
+            } else if i.name() == "spanner_client_benchmarks/cpu_utilization" {
+                Some(Stream::builder()
+                    .with_aggregation(Aggregation::ExplicitBucketHistogram {
+                        boundaries: vec![0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0],
+                        record_min_max: true,
+                    })
+                    .build()
+                    .unwrap())
             } else {
                 None
             }
@@ -142,7 +166,17 @@ async fn setup_metrics(project_id: &str) -> anyhow::Result<(BenchmarkMetrics, Sd
         .with_unit("1")
         .build();
 
-    Ok((BenchmarkMetrics { latency, read_latency, operation_count, error_count }, provider))
+    let memory_usage = meter.f64_histogram("spanner_client_benchmarks/memory_usage")
+        .with_description("Active memory usage in bytes")
+        .with_unit("By")
+        .build();
+
+    let cpu_utilization = meter.f64_histogram("spanner_client_benchmarks/cpu_utilization")
+        .with_description("Process CPU utilization")
+        .with_unit("1")
+        .build();
+
+    Ok((BenchmarkMetrics { latency, read_latency, operation_count, error_count, memory_usage, cpu_utilization }, provider))
 }
 
 pub(crate) fn run_task(
@@ -181,6 +215,43 @@ pub(crate) fn run_task(
         }
     }
     .boxed()
+}
+
+fn start_resource_monitoring(
+    probe_interval_str: &str,
+    metrics: BenchmarkMetrics,
+    attributes: Vec<KeyValue>,
+) {
+    if probe_interval_str != "0" && probe_interval_str != "0s" && !probe_interval_str.is_empty() {
+        if let Some(probe_duration) = load_type::parse_duration(probe_interval_str) {
+            if probe_duration.as_millis() > 0 {
+                tokio::spawn(async move {
+                    run_resource_monitor_loop(probe_duration, metrics, attributes).await;
+                });
+            }
+        }
+    }
+}
+
+async fn run_resource_monitor_loop(
+    probe_duration: std::time::Duration,
+    metrics: BenchmarkMetrics,
+    attributes: Vec<KeyValue>,
+) {
+    let mut sys = sysinfo::System::new();
+    if let Ok(pid) = sysinfo::get_current_pid() {
+        let mut interval = tokio::time::interval(probe_duration);
+        loop {
+            interval.tick().await;
+            sys.refresh_all();
+            if let Some(process) = sys.process(pid) {
+                let memory = process.memory() as f64;
+                let cpu = (process.cpu_usage() / 100.0) as f64;
+                metrics.memory_usage.record(memory, &attributes);
+                metrics.cpu_utilization.record(cpu, &attributes);
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -264,6 +335,8 @@ async fn main() -> anyhow::Result<()> {
         "Starting Spanner Rust Benchmark preset: {:?} for duration: {}, target TPS: {}, threads: {}",
         args.command, args.duration, tps, args.threads
     );
+
+    start_resource_monitoring(&args.resource_probe_interval, metrics.clone(), attributes.clone());
 
     let semaphore = Arc::new(Semaphore::new(args.threads));
     let table = args.table.clone().expect("--table is required");
