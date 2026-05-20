@@ -67,14 +67,18 @@ if [ -n "$BENCHMARK_NAME" ]; then
   BENCHMARK_NAME_FLAG="--benchmark-name=$BENCHMARK_NAME,"
 fi
 
-ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}${BENCHMARK_NAME_FLAG}$BENCHMARK_TYPE,--table=$TABLE_NAME"
-if [ -n "$LOAD_TYPE" ]; then ARGS="${ARGS},--load-type=$LOAD_TYPE"; fi
-if [ -n "$TPS" ]; then ARGS="${ARGS},--tps=$TPS"; fi
-if [ -n "$THREADS" ]; then ARGS="${ARGS},--threads=$THREADS"; fi
-if [ -n "$NUM_ROWS" ]; then ARGS="${ARGS},--num-rows=$NUM_ROWS"; fi
-if [ -n "$BURST_FACTOR" ]; then ARGS="${ARGS},--burst-factor=$BURST_FACTOR"; fi
-if [ -n "$BURST_DURATION" ]; then ARGS="${ARGS},--burst-duration=$BURST_DURATION"; fi
-if [ -n "$BURST_FRACTION" ]; then ARGS="${ARGS},--burst-fraction=$BURST_FRACTION"; fi
+if [ "$BENCHMARK_TYPE" = "tpcc" ] || [ "$BENCHMARK_TYPE" = "tpcc-init" ]; then
+  ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}${BENCHMARK_NAME_FLAG}$BENCHMARK_TYPE,--warehouses=${WAREHOUSES:-1000},--items=${ITEMS:-1000000}"
+else
+  ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}${BENCHMARK_NAME_FLAG}$BENCHMARK_TYPE,--table=$TABLE_NAME"
+  if [ -n "$LOAD_TYPE" ]; then ARGS="${ARGS},--load-type=$LOAD_TYPE"; fi
+  if [ -n "$TPS" ]; then ARGS="${ARGS},--tps=$TPS"; fi
+  if [ -n "$THREADS" ]; then ARGS="${ARGS},--threads=$THREADS"; fi
+  if [ -n "$NUM_ROWS" ]; then ARGS="${ARGS},--num-rows=$NUM_ROWS"; fi
+  if [ -n "$BURST_FACTOR" ]; then ARGS="${ARGS},--burst-factor=$BURST_FACTOR"; fi
+  if [ -n "$BURST_DURATION" ]; then ARGS="${ARGS},--burst-duration=$BURST_DURATION"; fi
+  if [ -n "$BURST_FRACTION" ]; then ARGS="${ARGS},--burst-fraction=$BURST_FRACTION"; fi
+fi
 
 ENV_FLAGS=""
 if [ "$SPANNER_DISABLE_BUILTIN_METRICS" = "true" ]; then

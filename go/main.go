@@ -58,7 +58,7 @@ func run(ctx context.Context, args []string) error {
 			&cli.StringFlag{Name: "project", Required: true, Usage: "Google Cloud Project ID"},
 			&cli.StringFlag{Name: "instance", Required: true, Usage: "Spanner Instance ID"},
 			&cli.StringFlag{Name: "database", Required: true, Usage: "Spanner Database ID"},
-			&cli.StringFlag{Name: "table", Required: true, Usage: "Table name"},
+			&cli.StringFlag{Name: "table", Usage: "Table name (required for non-tpcc benchmarks)"},
 			&cli.StringFlag{Name: "duration", Value: "inf", Usage: "Duration of the benchmark (e.g. 60s, 5m, inf)"},
 			&cli.BoolFlag{Name: "for-alerting", Value: false, Usage: "Marks the benchmark for alerting purposes"},
 			&cli.StringFlag{Name: "benchmark-name", Usage: "Optional name to identify this benchmark run in metrics"},
@@ -106,10 +106,50 @@ func run(ctx context.Context, args []string) error {
 					return executeBenchmark(ctx, cmd, "read-large-result-set")
 				},
 			},
+			{
+				Name:  "tpcc",
+				Usage: "Runs closed-loop TPC-C benchmark",
+				Flags: []cli.Flag{
+					&cli.IntFlag{Name: "warehouses", Value: 1, Usage: "Scale factor (number of warehouses)"},
+					&cli.IntFlag{Name: "clients", Value: 10, Usage: "Number of parallel worker clients"},
+					&cli.IntFlag{Name: "items", Value: 100000, Usage: "Number of items in catalog"},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					return executeTPCCBenchmark(ctx, cmd)
+				},
+			},
 		},
 	}
 
 	return app.Run(ctx, args)
+}
+
+type GlobalConfig struct {
+	Project               string
+	Instance              string
+	Database              string
+	Table                 string
+	DurationStr           string
+	ForAlerting           bool
+	BenchmarkName         string
+	ResourceProbeInterval string
+	Host                  string
+	Threads               int
+}
+
+func parseGlobalConfig(cmd *cli.Command) GlobalConfig {
+	return GlobalConfig{
+		Project:               cmd.String("project"),
+		Instance:              cmd.String("instance"),
+		Database:              cmd.String("database"),
+		Table:                 cmd.String("table"),
+		DurationStr:           cmd.String("duration"),
+		ForAlerting:           cmd.Bool("for-alerting"),
+		BenchmarkName:         cmd.String("benchmark-name"),
+		ResourceProbeInterval: cmd.String("resource-probe-interval"),
+		Host:                  cmd.String("host"),
+		Threads:               int(cmd.Int("threads")),
+	}
 }
 
 func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType string) error {
@@ -125,16 +165,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	}()
 
 	// Retrieve global and subcommand-specific flags
-	project := cmd.String("project")
-	instance := cmd.String("instance")
-	database := cmd.String("database")
-	table := cmd.String("table")
-	durationStr := cmd.String("duration")
-	forAlerting := cmd.Bool("for-alerting")
-	benchmarkName := cmd.String("benchmark-name")
-	resourceProbeInterval := cmd.String("resource-probe-interval")
-	host := cmd.String("host")
-	threads := cmd.Int("threads")
+	cfg := parseGlobalConfig(cmd)
 	tps := cmd.Float("tps")
 	numRows := int64(cmd.Int("num-rows"))
 	loadTypeStr := cmd.String("load-type")
@@ -156,7 +187,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	}
 
 	// Setup Metrics
-	latencyHistogram, readLatencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cleanupMetrics, err := setupMetrics(runCtx, project, host)
+	latencyHistogram, readLatencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cleanupMetrics, err := setupMetrics(runCtx, cfg.Project, cfg.Host)
 	if err != nil {
 		return fmt.Errorf("failed to initialize metrics: %w", err)
 	}
@@ -175,7 +206,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	}
 
 	// Setup client
-	client, err := createSpannerClient(runCtx, project, instance, database, host)
+	client, err := createSpannerClient(runCtx, cfg.Project, cfg.Instance, cfg.Database, cfg.Host)
 	if err != nil {
 		return fmt.Errorf("failed to build Spanner client: %w", err)
 	}
@@ -184,8 +215,8 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	attributeList := []attribute.KeyValue{
 		attribute.String("benchmark_type", b.Type()),
 		attribute.Float64("tps", tps),
-		attribute.Bool("for_alerting", forAlerting),
-		attribute.String("benchmark_name", benchmarkName),
+		attribute.Bool("for_alerting", cfg.ForAlerting),
+		attribute.String("benchmark_name", cfg.BenchmarkName),
 		attribute.String("client", "go-client"),
 		attribute.String("load_type", loadType.String()),
 		attribute.Float64("burst_factor", burstFactor),
@@ -193,6 +224,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 		attribute.Float64("burst_fraction", burstFraction),
 		attribute.Int64("cycle_duration_ms", ParseDuration(cycleDurationStr).Milliseconds()),
 		attribute.Float64("peak_factor", peakFactor),
+		attribute.String("transaction_type", "none"),
 	}
 	if benchmarkType == "read-large-result-set" {
 		attributeList = append(attributeList, attribute.Int64("num_rows", numRows))
@@ -201,12 +233,12 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 
 	runCtx = context.WithValue(runCtx, MetricAttributesKey, attributes)
 
-	fmt.Printf("Starting %s for %s, target TPS: %.2f, workers: %d\n", b.Name(), durationStr, tps, threads)
+	fmt.Printf("Starting %s for %s, target TPS: %.2f, workers: %d\n", b.Name(), cfg.DurationStr, tps, cfg.Threads)
 
 	// Setup duration context timeout if not infinite
 	var durationCtx context.Context
-	if durationStr != "inf" && durationStr != "infinite" {
-		duration := ParseDuration(durationStr)
+	if cfg.DurationStr != "inf" && cfg.DurationStr != "infinite" {
+		duration := ParseDuration(cfg.DurationStr)
 		if duration > 0 {
 			var durationCancel context.CancelFunc
 			durationCtx, durationCancel = context.WithTimeout(runCtx, duration)
@@ -219,7 +251,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	}
 
 	// Run loop
-	runBenchmark(durationCtx, b, client, latencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, resourceProbeInterval, table, tps, threads, 1, numRows, attributes, loadType, cycleDurationStr, peakFactor, burstFactor, burstDuration, burstFraction)
+	runBenchmark(durationCtx, b, client, latencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cfg.ResourceProbeInterval, cfg.Table, tps, cfg.Threads, 1, numRows, attributes, loadType, cycleDurationStr, peakFactor, burstFactor, burstDuration, burstFraction)
 
 	return nil
 }

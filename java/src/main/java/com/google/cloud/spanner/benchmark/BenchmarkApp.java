@@ -1,20 +1,23 @@
 package com.google.cloud.spanner.benchmark;
 
-import io.opentelemetry.api.OpenTelemetry;
 import com.google.cloud.opentelemetry.metric.GoogleCloudMetricExporter;
 import com.google.cloud.opentelemetry.metric.MetricConfiguration;
+import com.google.cloud.spanner.benchmark.tpcc.TpccCommand;
+import com.google.cloud.spanner.benchmark.tpcc.TpccInitCommand;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
-import io.opentelemetry.sdk.metrics.SdkMeterProvider;
-import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader;
-import io.opentelemetry.sdk.metrics.InstrumentSelector;
-import io.opentelemetry.sdk.metrics.View;
 import io.opentelemetry.sdk.metrics.Aggregation;
+import io.opentelemetry.sdk.metrics.InstrumentSelector;
+import io.opentelemetry.sdk.metrics.SdkMeterProvider;
+import io.opentelemetry.sdk.metrics.View;
+import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
 @Command(name = "BenchmarkApp", mixinStandardHelpOptions = true, version = "1.0", description = "Runs Spanner client benchmarks.", subcommands = {
-        PointSelectCommand.class, SelectAndUpdateCommand.class, ReadLargeResultSetCommand.class })
+        PointSelectCommand.class, SelectAndUpdateCommand.class, ReadLargeResultSetCommand.class, TpccInitCommand.class, TpccCommand.class })
 public class BenchmarkApp implements Runnable {
 
     @Option(names = { "-p", "--project" }, description = "Google Cloud Project ID", required = true)
@@ -51,6 +54,7 @@ public class BenchmarkApp implements Runnable {
     public static void main(String[] args) {
         int exitCode = new CommandLine(new BenchmarkApp())
                 .setCaseInsensitiveEnumValuesAllowed(true)
+                .setAllowSubcommandsAsOptionParameters(true)
                 .execute(args);
         System.exit(exitCode);
     }
@@ -93,8 +97,8 @@ public class BenchmarkApp implements Runnable {
         return resourceProbeInterval;
     }
 
-    // Package-private so subcommands can access it
-    static OpenTelemetry initializeOpenTelemetry(String projectId, String host) {
+    // Public so subcommands in subpackages can access it
+    public static OpenTelemetry initializeOpenTelemetry(String projectId, String host) {
         if (host != null && host.startsWith("http://localhost:")) {
             return OpenTelemetry.noop();
         }
@@ -159,5 +163,32 @@ public class BenchmarkApp implements Runnable {
                                         .build())
                         .build())
                 .buildAndRegisterGlobal();
+    }
+
+    public static BenchmarkMetrics createBenchmarkMetrics(Meter meter, String latencyMetricName) {
+        return new BenchmarkMetrics(
+                meter.histogramBuilder(latencyMetricName)
+                        .ofLongs()
+                        .setDescription("Query latency in microseconds")
+                        .setUnit("us")
+                        .build(),
+                meter.counterBuilder(OPERATION_COUNT_NAME)
+                        .setDescription("Total number of benchmark operations executed")
+                        .setUnit("1")
+                        .build(),
+                meter.counterBuilder(ERROR_COUNT_NAME)
+                        .setDescription("Total number of benchmark operations that failed with an error")
+                        .setUnit("1")
+                        .build(),
+                meter.histogramBuilder(MEMORY_USAGE_NAME)
+                        .ofLongs()
+                        .setDescription("Active memory usage in bytes")
+                        .setUnit("By")
+                        .build(),
+                meter.histogramBuilder(CPU_UTILIZATION_NAME)
+                        .setDescription("Process CPU utilization")
+                        .setUnit("1")
+                        .build()
+        );
     }
 }

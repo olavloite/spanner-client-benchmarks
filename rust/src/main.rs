@@ -2,6 +2,7 @@ mod load_type;
 mod point_select;
 mod read_large_result_set;
 mod select_update;
+mod tpcc;
 
 use clap::{Parser, Subcommand, ArgAction};
 use futures::FutureExt;
@@ -73,6 +74,14 @@ pub(crate) enum Commands {
         tps: f64,
         #[arg(long, default_value_t = 100000)]
         num_rows: i64,
+    },
+    Tpcc {
+        #[arg(long, default_value_t = 1)]
+        warehouses: i64,
+        #[arg(long, default_value_t = 10)]
+        clients: usize,
+        #[arg(long, default_value_t = 100000)]
+        items: i64,
     },
 }
 
@@ -200,6 +209,7 @@ pub(crate) fn run_task(
             Commands::ReadLargeResultSet { num_rows, .. } => {
                 read_large_result_set::execute_read_large_result_set(db_client, num_rows, metrics.read_latency.clone(), attributes.clone()).await
             }
+            Commands::Tpcc { .. } => unreachable!(),
         };
         let duration_us = start.elapsed().as_micros() as f64;
 
@@ -300,21 +310,35 @@ async fn main() -> anyhow::Result<()> {
         .build()
         .await?;
 
-    // Extract subcommand parameters
+    let duration = load_type::parse_duration(&args.duration);
+    let (metrics, _meter_provider) = setup_metrics(&args.project).await?;
+
+    if let Commands::Tpcc { warehouses, clients, items } = args.command {
+        let base_attributes = vec![
+            KeyValue::new("benchmark_type", "tpcc"),
+            KeyValue::new("for_alerting", args.for_alerting),
+            KeyValue::new("benchmark_name", args.benchmark_name.unwrap_or_else(|| "".to_string())),
+            KeyValue::new("client", "rust-client"),
+            KeyValue::new("concurrent_clients", clients as i64),
+        ];
+        start_resource_monitoring(&args.resource_probe_interval, metrics.clone(), base_attributes.clone());
+        tpcc::run_tpcc_benchmark(db_client, warehouses, clients, items, duration, metrics, base_attributes).await?;
+        return Ok(());
+    }
+
+    // Extract subcommand parameters for standard benchmarks
     let (tps, _num_rows) = match args.command {
         Commands::PointSelect { tps, num_rows } => (tps, num_rows),
         Commands::SelectUpdate { tps, num_rows } => (tps, num_rows),
         Commands::ReadLargeResultSet { tps, num_rows } => (tps, num_rows),
+        Commands::Tpcc { .. } => unreachable!(),
     };
-
-    let duration = load_type::parse_duration(&args.duration);
-
-    let (metrics, _meter_provider) = setup_metrics(&args.project).await?;
 
     let benchmark_type_str = match &args.command {
         Commands::PointSelect { .. } => "point-select",
         Commands::SelectUpdate { .. } => "select-update",
         Commands::ReadLargeResultSet { .. } => "read-large-result-set",
+        Commands::Tpcc { .. } => unreachable!(),
     };
 
     let attributes = vec![
@@ -329,6 +353,7 @@ async fn main() -> anyhow::Result<()> {
         KeyValue::new("burst_fraction", burst_fraction),
         KeyValue::new("cycle_duration_ms", cycle_duration.as_millis() as i64),
         KeyValue::new("peak_factor", peak_factor),
+        KeyValue::new("transaction_type", "none"),
     ];
 
     println!(
