@@ -82,6 +82,18 @@ async function main() {
       await runBenchmarkAction("read-large-result-set", globalOptions, subCommandOptions);
     });
 
+  // TPC-C Workload Subcommand
+  program
+    .command("tpcc")
+    .description("Execute closed-loop TPC-C benchmark")
+    .option("--warehouses <warehouses>", "Scale factor (number of warehouses)", "1")
+    .option("--clients <clients>", "Number of parallel worker clients", "10")
+    .option("--items <items>", "Number of items in catalog", "100000")
+    .action(async (subCommandOptions) => {
+      const globalOptions = program.opts();
+      await runBenchmarkAction("tpcc", globalOptions, subCommandOptions);
+    });
+
   await program.parseAsync(process.argv);
 }
 
@@ -118,7 +130,7 @@ function validateAndFillLoadParams(loadType: LoadType, globalOpts: any) {
  * Orchestrates the initialization and lifecycle of the benchmark execution.
  */
 async function runBenchmarkAction(
-  type: "point-select" | "select-update" | "read-large-result-set",
+  type: "point-select" | "select-update" | "read-large-result-set" | "tpcc",
   globalOpts: any,
   subOpts: any
 ) {
@@ -134,12 +146,12 @@ async function runBenchmarkAction(
 
   const cycleDurationMs = parseDuration(cycleDurationStr);
 
-  const tableName = subOpts.table;
-  const numRows = parseInt(subOpts.numRows, 10);
+  const tableName = subOpts.table || "";
+  const numRows = subOpts.numRows ? parseInt(subOpts.numRows, 10) : 1000000;
   const minId = 1;
   const maxId = numRows;
-  const tps = parseFloat(subOpts.tps);
-  const threads = parseInt(subOpts.threads, 10);
+  const tps = subOpts.tps ? parseFloat(subOpts.tps) : 10.0;
+  const threads = subOpts.threads ? parseInt(subOpts.threads, 10) : 100;
 
   // Discover if running in an emulator environment
   const isEmulator =
@@ -184,7 +196,8 @@ async function runBenchmarkAction(
   const database = instance.database(databaseId);
 
   // 3. Instantiate the designated concrete benchmark workload task
-  let benchmark: AbstractBenchmark;
+  const { TpccBenchmarkRunner } = require("./src/benchmarks/tpcc/benchmark");
+  let benchmark: any;
   const parsedDurationMs = parseDuration(durationStr);
 
   if (type === "point-select") {
@@ -235,7 +248,7 @@ async function runBenchmarkAction(
       burstDuration,
       burstFraction
     );
-  } else {
+  } else if (type === "read-large-result-set") {
     benchmark = new ReadLargeResultSetBenchmark(
       database,
       latencyHistogram,
@@ -260,6 +273,27 @@ async function runBenchmarkAction(
       burstDuration,
       burstFraction
     );
+  } else if (type === "tpcc") {
+    const warehouses = parseInt(subOpts.warehouses, 10);
+    const clients = parseInt(subOpts.clients, 10);
+    const items = parseInt(subOpts.items, 10);
+    benchmark = new TpccBenchmarkRunner(
+      database,
+      latencyHistogram,
+      operationCounter,
+      errorCounter,
+      memoryUsageHistogram,
+      cpuUtilizationHistogram,
+      warehouses,
+      clients,
+      items,
+      parsedDurationMs,
+      forAlerting,
+      benchmarkName
+    );
+  } else {
+    console.error(`Error: Unsupported benchmark type: '${type}'. Valid options are: 'point-select', 'select-update', 'read-large-result-set', 'tpcc'.`);
+    process.exit(1);
   }
 
   // 4. Wire Up Graceful Process Termination Signals (SIGINT, SIGTERM)

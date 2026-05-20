@@ -83,6 +83,7 @@ class AbstractBenchmark(abc.ABC):
             "burst_fraction": self.burst_fraction,
             "cycle_duration_ms": (self.cycle_duration_sec * 1000) if self.cycle_duration_sec else 0,
             "peak_factor": self.peak_factor,
+            "transaction_type": "none",
         }
 
         self.is_stopped = False
@@ -123,6 +124,8 @@ class AbstractBenchmark(abc.ABC):
         self._start_resource_monitoring()
 
         # Wait loop for duration expiration
+        # TODO: Consider refactoring this busy-polling wait loop to use threading.Event().wait(duration_sec)
+        # for instant wakeup handling upon graceful termination without loop sleeping overhead.
         start_wait = time.perf_counter()
         try:
             if self.duration_sec is not None:

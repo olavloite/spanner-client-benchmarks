@@ -108,13 +108,19 @@ def main():
     rl_parser.add_argument("--tps", type=float, default=0.05, help="Target Transactions Per Second rate limit")
     rl_parser.add_argument("--num-rows", type=int, default=100000, help="Number of rows to dynamically generate")
 
+    # TPC-C subparser
+    tpcc_parser = subparsers.add_parser("tpcc", help="Execute closed-loop TPC-C benchmark")
+    tpcc_parser.add_argument("--warehouses", type=int, default=1, help="Scale factor (number of warehouses)")
+    tpcc_parser.add_argument("--clients", type=int, default=10, help="Number of parallel worker clients")
+    tpcc_parser.add_argument("--items", type=int, default=100000, help="Number of items in catalog")
+
     args = parser.parse_args()
 
     # Validation and filling defaults
     burst_factor, burst_duration, burst_fraction, cycle_duration_str, peak_factor = validate_and_fill_load_params(args)
 
     min_id = 1
-    max_id = args.num_rows
+    max_id = getattr(args, "num_rows", 1000000)
 
     # Convert human-readable duration into float seconds
     duration_sec = parse_duration(args.duration)
@@ -165,6 +171,7 @@ def main():
     from src.benchmarks.point_select import PointSelectBenchmark
     from src.benchmarks.select_update import SelectAndUpdateBenchmark
     from src.benchmarks.read_large_result_set import ReadLargeResultSetBenchmark
+    from src.benchmarks.tpcc.benchmark import TpccBenchmarkRunner
 
     spanner_client = create_spanner_client(args.project, host)
     instance = spanner_client.instance(args.instance)
@@ -220,7 +227,7 @@ def main():
             burst_duration=burst_duration,
             burst_fraction=burst_fraction,
         )
-    else:
+    elif args.command == "read-large-result-set":
         benchmark = ReadLargeResultSetBenchmark(
             database=database,
             latency_histogram=latency_histogram,
@@ -245,6 +252,24 @@ def main():
             burst_duration=burst_duration,
             burst_fraction=burst_fraction,
         )
+    elif args.command == "tpcc":
+        benchmark = TpccBenchmarkRunner(
+            database=database,
+            latency_histogram=latency_histogram,
+            operation_counter=operation_counter,
+            error_counter=error_counter,
+            memory_usage_histogram=memory_usage_histogram,
+            cpu_utilization_histogram=cpu_utilization_histogram,
+            scale_factor=args.warehouses,
+            clients=args.clients,
+            items=args.items,
+            duration_sec=duration_sec,
+            for_alerting=args.for_alerting,
+            benchmark_name=args.benchmark_name,
+        )
+    else:
+        print(f"Error: Unsupported benchmark type: '{args.command}'. Valid options are: 'point-select', 'select-update', 'read-large-result-set', 'tpcc'.", file=sys.stderr)
+        sys.exit(1)
 
     # 4. Register process lifecycle termination traps (SIGINT, SIGTERM)
     is_terminating = False

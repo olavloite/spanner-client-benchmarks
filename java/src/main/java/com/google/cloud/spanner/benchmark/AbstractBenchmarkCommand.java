@@ -1,27 +1,21 @@
 package com.google.cloud.spanner.benchmark;
 
+import com.google.cloud.NoCredentials;
 import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.DatabaseId;
 import com.google.cloud.spanner.Spanner;
 import com.google.cloud.spanner.SpannerOptions;
 import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.metrics.DoubleHistogram;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.LongHistogram;
 import io.opentelemetry.api.metrics.Meter;
-import com.google.cloud.NoCredentials;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParentCommand;
-
 import java.time.Duration;
-
 import static com.google.cloud.spanner.benchmark.BenchmarkApp.LATENCY_NAME;
-import static com.google.cloud.spanner.benchmark.BenchmarkApp.OPERATION_COUNT_NAME;
-import static com.google.cloud.spanner.benchmark.BenchmarkApp.ERROR_COUNT_NAME;
-import static com.google.cloud.spanner.benchmark.BenchmarkApp.MEMORY_USAGE_NAME;
-import static com.google.cloud.spanner.benchmark.BenchmarkApp.CPU_UTILIZATION_NAME;
 import static com.google.cloud.spanner.benchmark.BenchmarkApp.METER_NAME;
 import static com.google.cloud.spanner.benchmark.BenchmarkApp.initializeOpenTelemetry;
-import io.opentelemetry.api.metrics.DoubleHistogram;
 
 public abstract class AbstractBenchmarkCommand implements Runnable {
     @ParentCommand
@@ -96,33 +90,7 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
             // Initialize OpenTelemetry
             OpenTelemetry openTelemetry = initializeOpenTelemetry(parent.getProjectId(), parent.getHost());
             Meter meter = openTelemetry.getMeter(METER_NAME);
-
-            LongHistogram latencyHistogram = meter.histogramBuilder(getMetricName())
-                    .ofLongs()
-                    .setDescription("Query latency in microseconds")
-                    .setUnit("us")
-                    .build();
-
-            LongCounter operationCounter = meter.counterBuilder(OPERATION_COUNT_NAME)
-                    .setDescription("Total number of benchmark operations executed")
-                    .setUnit("1")
-                    .build();
-
-            LongCounter errorCounter = meter.counterBuilder(ERROR_COUNT_NAME)
-                    .setDescription("Total number of benchmark operations that failed with an error")
-                    .setUnit("1")
-                    .build();
-
-            LongHistogram memoryUsageHistogram = meter.histogramBuilder(MEMORY_USAGE_NAME)
-                    .ofLongs()
-                    .setDescription("Active memory usage in bytes")
-                    .setUnit("By")
-                    .build();
-
-            DoubleHistogram cpuUtilizationHistogram = meter.histogramBuilder(CPU_UTILIZATION_NAME)
-                    .setDescription("Process CPU utilization")
-                    .setUnit("1")
-                    .build();
+            BenchmarkMetrics metrics = BenchmarkApp.createBenchmarkMetrics(meter, getMetricName());
 
             // Initialize Spanner
             SpannerOptions.Builder spannerOptionsBuilder = SpannerOptions.newBuilder().setProjectId(parent.getProjectId());
@@ -138,7 +106,7 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
                 Duration duration = AbstractBenchmark.parseDuration(parent.getDuration());
                 boolean forAlerting = parent.isForAlerting();
                 String benchmarkName = parent.getBenchmarkName();
-                AbstractBenchmark benchmark = createBenchmark(client, latencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, parent.getResourceProbeInterval(), duration, forAlerting, benchmarkName);
+                AbstractBenchmark benchmark = createBenchmark(client, metrics.latencyHistogram, metrics.operationCounter, metrics.errorCounter, metrics.memoryUsageHistogram, metrics.cpuUtilizationHistogram, parent.getResourceProbeInterval(), duration, forAlerting, benchmarkName);
                 benchmark.run();
             }
         } catch (Exception e) {

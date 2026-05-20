@@ -78,6 +78,7 @@ public abstract class AbstractBenchmark {
                 .put("burst_fraction", burstFraction)
                 .put("cycle_duration_ms", cycleDuration != null ? cycleDuration.toMillis() : 0)
                 .put("peak_factor", peakFactor)
+                .put("transaction_type", "none")
                 .build();
     }
 

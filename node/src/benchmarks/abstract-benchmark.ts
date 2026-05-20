@@ -109,6 +109,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
       burst_fraction: this.burstFraction,
       cycle_duration_ms: this.cycleDurationMs || 0,
       peak_factor: this.peakFactor,
+      transaction_type: "none",
     };
   }
 
