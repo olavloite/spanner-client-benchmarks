@@ -48,6 +48,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
   private resourceProbeIntervalStr: string = "10s";
   private lastCpuUsage: NodeJS.CpuUsage | null = null;
   private lastWallTime: bigint = 0n;
+  private resourceIntervalId: NodeJS.Timeout | null = null;
 
   constructor(
     database: Database,
@@ -190,8 +191,13 @@ export abstract class AbstractBenchmark implements IBenchmark {
    */
   public stop(): void {
     this.isStopped = true;
+    this.taskQueue = [];
     if (this.worker) {
       this.worker.terminate();
+    }
+    if (this.resourceIntervalId) {
+      clearInterval(this.resourceIntervalId);
+      this.resourceIntervalId = null;
     }
   }
 
@@ -282,7 +288,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
       if (intervalMs !== null && intervalMs > 0) {
         this.lastCpuUsage = process.cpuUsage();
         this.lastWallTime = process.hrtime.bigint();
-        setInterval(() => this.probeResourceUsage(), intervalMs);
+        this.resourceIntervalId = setInterval(() => this.probeResourceUsage(), intervalMs);
       }
     }
   }
