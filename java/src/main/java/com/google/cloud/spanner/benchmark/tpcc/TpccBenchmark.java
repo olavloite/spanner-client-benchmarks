@@ -7,6 +7,7 @@ import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.LongHistogram;
 import io.opentelemetry.api.metrics.DoubleHistogram;
+import com.google.cloud.spanner.benchmark.AbstractBenchmark;
 
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
@@ -31,13 +32,21 @@ public class TpccBenchmark {
     private final Attributes deliveryAttributes;
     private final Attributes stockLevelAttributes;
 
+    private final LongHistogram memoryUsageHistogram;
+    private final DoubleHistogram cpuUtilizationHistogram;
+    private final String resourceProbeInterval;
+    private java.util.concurrent.ScheduledExecutorService resourceMonitorExecutor;
+
     public TpccBenchmark(DatabaseClient client, LongHistogram latencyHistogram, LongCounter operationCounter,
                          LongCounter errorCounter, LongHistogram memoryUsageHistogram, DoubleHistogram cpuUtilizationHistogram,
-                         int scaleFactor, int clients, int items, Duration duration, boolean forAlerting, String benchmarkName) {
+                         String resourceProbeInterval, int scaleFactor, int clients, int items, Duration duration, boolean forAlerting, String benchmarkName) {
         this.client = client;
         this.latencyHistogram = latencyHistogram;
         this.operationCounter = operationCounter;
         this.errorCounter = errorCounter;
+        this.memoryUsageHistogram = memoryUsageHistogram;
+        this.cpuUtilizationHistogram = cpuUtilizationHistogram;
+        this.resourceProbeInterval = resourceProbeInterval;
         this.scaleFactor = scaleFactor;
         this.clients = clients;
         this.items = items;
@@ -58,6 +67,8 @@ public class TpccBenchmark {
 
     public void run() {
         System.out.println("Starting TPC-C Benchmark with Scale Factor (Warehouses): " + scaleFactor + ", Parallel Clients: " + clients + ", Items: " + items);
+        
+        startResourceMonitoring();
         
         // Assert database capacity
         try (ResultSet rs = client.singleUse().executeQuery(Statement.of("SELECT COUNT(*) FROM warehouse"))) {
@@ -122,11 +133,45 @@ public class TpccBenchmark {
                 Thread.sleep(Long.MAX_VALUE);
             }
             System.out.println("TPC-C duration complete. Shutting down pool...");
+            if (resourceMonitorExecutor != null) {
+                resourceMonitorExecutor.shutdownNow();
+            }
             executor.shutdownNow();
             executor.awaitTermination(1, TimeUnit.MINUTES);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            if (resourceMonitorExecutor != null) {
+                resourceMonitorExecutor.shutdownNow();
+            }
             executor.shutdownNow();
+        }
+    }
+
+    private void startResourceMonitoring() {
+        if (resourceProbeInterval != null && !resourceProbeInterval.isEmpty()) {
+            Duration probeDuration = AbstractBenchmark.parseDuration(resourceProbeInterval);
+            if (probeDuration != null && probeDuration.toMillis() > 0) {
+                resourceMonitorExecutor = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+                resourceMonitorExecutor.scheduleAtFixedRate(this::probeResourceUsage, 0, probeDuration.toMillis(), TimeUnit.MILLISECONDS);
+            }
+        }
+    }
+
+    private void probeResourceUsage() {
+        try {
+            long usedMemory = java.lang.management.ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+            if (memoryUsageHistogram != null) {
+                memoryUsageHistogram.record(usedMemory, baseAttributes);
+            }
+            java.lang.management.OperatingSystemMXBean osBean = java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+            if (osBean instanceof com.sun.management.OperatingSystemMXBean) {
+                double cpuLoad = ((com.sun.management.OperatingSystemMXBean) osBean).getProcessCpuLoad();
+                if (cpuLoad >= 0 && cpuUtilizationHistogram != null) {
+                    cpuUtilizationHistogram.record(cpuLoad, baseAttributes);
+                }
+            }
+        } catch (Exception e) {
+            // Ignore exceptions in resource monitoring
         }
     }
 }

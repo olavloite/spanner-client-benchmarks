@@ -136,8 +136,10 @@ func executeTPCCBenchmark(ctx context.Context, cmd *cli.Command) error {
 					}
 
 					if err != nil {
-						log.Printf("TPC-C transaction %s failed: %v", txType, err)
-						errorCounter.Add(runCtx, 1, attr)
+						if durationCtx.Err() == nil {
+							log.Printf("TPC-C transaction %s failed: %v", txType, err)
+							errorCounter.Add(runCtx, 1, attr)
+						}
 					} else {
 						latencyHistogram.Record(runCtx, float64(time.Since(start).Microseconds()), attr)
 					}

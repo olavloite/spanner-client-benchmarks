@@ -284,6 +284,7 @@ async function runBenchmarkAction(
       errorCounter,
       memoryUsageHistogram,
       cpuUtilizationHistogram,
+      globalOpts.resourceProbeInterval,
       warehouses,
       clients,
       items,

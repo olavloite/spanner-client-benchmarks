@@ -54,7 +54,7 @@ public class TpccCommand implements Runnable {
                 String benchmarkName = parent.getBenchmarkName();
 
                 TpccBenchmark benchmark = new TpccBenchmark(client, metrics.latencyHistogram, metrics.operationCounter, metrics.errorCounter,
-                        metrics.memoryUsageHistogram, metrics.cpuUtilizationHistogram, warehouses, clients, items, duration, forAlerting, benchmarkName);
+                        metrics.memoryUsageHistogram, metrics.cpuUtilizationHistogram, parent.getResourceProbeInterval(), warehouses, clients, items, duration, forAlerting, benchmarkName);
                 benchmark.run();
             }
         } catch (Exception e) {

@@ -15,11 +15,23 @@ ERROR_COUNT_NAME = "spanner_client_benchmarks/error_count"
 MEMORY_USAGE_NAME = "spanner_client_benchmarks/memory_usage"
 CPU_UTILIZATION_NAME = "spanner_client_benchmarks/cpu_utilization"
 
+_testing_meter_provider = None
+
+def set_testing_meter_provider(provider):
+    global _testing_meter_provider
+    _testing_meter_provider = provider
+
 def setup_metrics(project_id: str, is_emulator: bool, benchmark_name: str = None) -> Tuple[metrics.Meter, Callable[[], None]]:
     """
     Initializes OpenTelemetry metrics provider, binding a custom View for explicit
     histogram bucket boundaries and exporting metrics directly to Google Cloud Monitoring.
     """
+    global _testing_meter_provider
+    if _testing_meter_provider is not None:
+        metrics.set_meter_provider(_testing_meter_provider)
+        meter = _testing_meter_provider.get_meter(METER_NAME)
+        return meter, lambda: None
+
     if is_emulator:
         print("Spanner Emulator or localhost detected. Initializing No-op metrics.")
         # metrics.get_meter with a default empty provider is a pure no-op (parity with Go/Java/Node)

@@ -166,7 +166,10 @@ pub fn parse_duration(duration_str: &str) -> Option<Duration> {
     if duration_str == "inf" || duration_str == "infinite" {
         return None;
     }
-    if duration_str.ends_with('s') {
+    if duration_str.ends_with("ms") {
+        let millis = duration_str[..duration_str.len() - 2].parse::<u64>().ok()?;
+        Some(Duration::from_millis(millis))
+    } else if duration_str.ends_with('s') {
         let secs = duration_str[..duration_str.len() - 1].parse::<u64>().ok()?;
         Some(Duration::from_secs(secs))
     } else if duration_str.ends_with('m') {

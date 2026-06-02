@@ -267,8 +267,15 @@ func getLatencyBuckets() []float64 {
 	return buckets
 }
 
+var testingMeterProvider metric.MeterProvider
+
 func setupMetrics(ctx context.Context, projectID string, host string, benchmarkName string) (metric.Float64Histogram, metric.Float64Histogram, metric.Int64Counter, metric.Int64Counter, metric.Float64Histogram, metric.Float64Histogram, func(), error) {
-	if os.Getenv("SPANNER_EMULATOR_HOST") != "" || (host != "" && (strings.Contains(host, "localhost:") || strings.Contains(host, "127.0.0.1:"))) {
+	var meterProvider metric.MeterProvider
+	cleanup := func() {}
+
+	if testingMeterProvider != nil {
+		meterProvider = testingMeterProvider
+	} else if os.Getenv("SPANNER_EMULATOR_HOST") != "" || (host != "" && (strings.Contains(host, "localhost:") || strings.Contains(host, "127.0.0.1:"))) {
 		h, _ := noop.NewMeterProvider().Meter("").Float64Histogram("")
 		rh, _ := noop.NewMeterProvider().Meter("").Float64Histogram("")
 		o, _ := noop.NewMeterProvider().Meter("").Int64Counter("")
@@ -276,33 +283,38 @@ func setupMetrics(ctx context.Context, projectID string, host string, benchmarkN
 		mh, _ := noop.NewMeterProvider().Meter("").Float64Histogram("")
 		ch, _ := noop.NewMeterProvider().Meter("").Float64Histogram("")
 		return h, rh, o, e, mh, ch, func() {}, nil
-	}
-	exporter, err := mexporter.New(mexporter.WithProjectID(projectID))
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, nil, err
-	}
+	} else {
+		exporter, err := mexporter.New(mexporter.WithProjectID(projectID))
+		if err != nil {
+			return nil, nil, nil, nil, nil, nil, nil, err
+		}
 
-	svcName := benchmarkName
-	if svcName == "" {
-		svcName = "spanner-benchmark"
-	}
-	res, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			"",
-			attribute.String("service.name", svcName),
-			attribute.String("service.instance.id", uuid.New().String()),
-		),
-	)
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, nil, err
-	}
+		svcName := benchmarkName
+		if svcName == "" {
+			svcName = "spanner-benchmark"
+		}
+		res, err := resource.Merge(
+			resource.Default(),
+			resource.NewWithAttributes(
+				"",
+				attribute.String("service.name", svcName),
+				attribute.String("service.instance.id", uuid.New().String()),
+			),
+		)
+		if err != nil {
+			return nil, nil, nil, nil, nil, nil, nil, err
+		}
 
-	meterProvider := sdkmetric.NewMeterProvider(
-		sdkmetric.WithResource(res),
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(60*time.Second))),
-	)
-	otel.SetMeterProvider(meterProvider)
+		sdkProvider := sdkmetric.NewMeterProvider(
+			sdkmetric.WithResource(res),
+			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(60*time.Second))),
+		)
+		otel.SetMeterProvider(sdkProvider)
+		meterProvider = sdkProvider
+		cleanup = func() {
+			_ = sdkProvider.Shutdown(ctx)
+		}
+	}
 
 	meter := meterProvider.Meter(meterName)
 	latencyHistogram, err := meter.Float64Histogram(latencyName,
@@ -363,10 +375,6 @@ func setupMetrics(ctx context.Context, projectID string, host string, benchmarkN
 		return nil, nil, nil, nil, nil, nil, nil, err
 	}
 
-	cleanup := func() {
-		meterProvider.Shutdown(ctx)
-	}
-
 	return latencyHistogram, readLatencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cleanup, nil
 }
 
@@ -406,8 +414,10 @@ func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, late
 					}
 					operationCounter.Add(ctx, 1, attributes)
 					if err != nil {
-						log.Printf("Operation failed: %v", err)
-						errorCounter.Add(ctx, 1, attributes)
+						if ctx.Err() == nil {
+							log.Printf("Operation failed: %v", err)
+							errorCounter.Add(ctx, 1, attributes)
+						}
 					}
 				}
 			}
