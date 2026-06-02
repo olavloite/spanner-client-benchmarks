@@ -5,6 +5,7 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.exporter.cloud_monitoring import CloudMonitoringMetricsExporter
 from opentelemetry.sdk.resources import Resource
 from typing import Tuple, Callable
+import uuid
 
 METER_NAME = "spanner-benchmark"
 LATENCY_NAME = "spanner_client_benchmarks/latency"
@@ -14,7 +15,7 @@ ERROR_COUNT_NAME = "spanner_client_benchmarks/error_count"
 MEMORY_USAGE_NAME = "spanner_client_benchmarks/memory_usage"
 CPU_UTILIZATION_NAME = "spanner_client_benchmarks/cpu_utilization"
 
-def setup_metrics(project_id: str, is_emulator: bool) -> Tuple[metrics.Meter, Callable[[], None]]:
+def setup_metrics(project_id: str, is_emulator: bool, benchmark_name: str = None) -> Tuple[metrics.Meter, Callable[[], None]]:
     """
     Initializes OpenTelemetry metrics provider, binding a custom View for explicit
     histogram bucket boundaries and exporting metrics directly to Google Cloud Monitoring.
@@ -31,12 +32,15 @@ def setup_metrics(project_id: str, is_emulator: bool) -> Tuple[metrics.Meter, Ca
     # Periodic metric reader flushes data every 60 seconds (matching parity specifications)
     reader = PeriodicExportingMetricReader(exporter, export_interval_millis=60000)
 
-    # Explicit bucket boundaries matching Java, Go, and Node exactly (in microseconds)
-    explicit_boundaries = [
-        500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 3500.0, 4000.0, 4500.0, 5000.0,
-        6000.0, 7000.0, 8000.0, 9000.0, 10000.0, 12000.0, 14000.0, 16000.0, 18000.0, 20000.0,
-        25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0,
-    ]
+    def get_latency_buckets():
+        buckets = [float(i) for i in range(50, 5050, 50)]
+        buckets.extend([
+            6000.0, 7000.0, 8000.0, 9000.0, 10000.0, 12000.0, 14000.0, 16000.0, 18000.0, 20000.0,
+            25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0
+        ])
+        return buckets
+
+    explicit_boundaries = get_latency_buckets()
 
     read_latency_boundaries = [
         50000.0, 100000.0, 250000.0, 500000.0, 750000.0,
@@ -75,7 +79,13 @@ def setup_metrics(project_id: str, is_emulator: bool) -> Tuple[metrics.Meter, Ca
     )
 
     # Define basic project resource tags (lands metrics under 'Generic Node' in Stackdriver for 1-to-1 parity)
-    resource = Resource.create({"cloud.project.id": project_id})
+    service_name = benchmark_name or "spanner-benchmark"
+    instance_id = str(uuid.uuid4())
+    resource = Resource.create({
+        "cloud.project.id": project_id,
+        "service.name": service_name,
+        "service.instance.id": instance_id,
+    })
 
     # Build MeterProvider with readers, views, and resource constraints
     provider = MeterProvider(

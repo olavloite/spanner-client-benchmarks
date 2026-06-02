@@ -11,9 +11,11 @@ CLIENT_BRANCH="${CLIENT_BRANCH:-main}"
 
 if [ "$USE_RELEASED_VERSION" = "false" ]; then
   WORK_DIR="$(mktemp -d)"
-  echo "Cloning Spanner Go client source (branch $CLIENT_BRANCH) into: $WORK_DIR"
-  git clone --depth 1 --branch "$CLIENT_BRANCH" --sparse --filter=blob:none https://github.com/googleapis/google-cloud-go.git "$WORK_DIR/spanner-repo"
+  echo "Cloning Spanner Go client source into: $WORK_DIR"
+  git clone --sparse --filter=blob:none https://github.com/googleapis/google-cloud-go.git "$WORK_DIR/spanner-repo"
   cd "$WORK_DIR/spanner-repo"
+  echo "Checking out Spanner Go client branch/commit $CLIENT_BRANCH..."
+  git checkout "$CLIENT_BRANCH"
   git sparse-checkout set spanner
 
   # Return to initial directory where benchmark go.mod resides

@@ -132,7 +132,7 @@ def main():
     )
 
     # 1. Setup OpenTelemetry metrics provider and instruments
-    meter, shutdown_metrics = setup_metrics(args.project, is_emulator)
+    meter, shutdown_metrics = setup_metrics(args.project, is_emulator, args.benchmark_name)
 
     # Create shared metrics instruments (us unit matching standard spec)
     metric_name = READ_LATENCY_NAME if args.command == "read-large-result-set" else LATENCY_NAME

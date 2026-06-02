@@ -96,20 +96,45 @@ pub(crate) struct BenchmarkMetrics {
     cpu_utilization: Histogram<f64>,
 }
 
-async fn setup_metrics(project_id: &str) -> anyhow::Result<(BenchmarkMetrics, SdkMeterProvider)> {
+fn get_latency_buckets() -> Vec<f64> {
+    let mut buckets = Vec::with_capacity(120);
+    for i in 1..=100 {
+        buckets.push(i as f64 * 50.0);
+    }
+    buckets.extend_from_slice(&[
+        6000.0, 7000.0, 8000.0, 9000.0, 10000.0, 12000.0, 14000.0, 16000.0, 18000.0, 20000.0,
+        25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0,
+    ]);
+    buckets
+}
+
+async fn setup_metrics(
+    project_id: &str,
+    benchmark_name: Option<String>,
+) -> anyhow::Result<(BenchmarkMetrics, SdkMeterProvider)> {
     let config = GCPMetricsExporterConfig {
         project_id: Some(project_id.to_string()),
         ..Default::default()
     };
     let exporter = GCPMetricsExporter::init(config).await.map_err(|e| anyhow::anyhow!("{:?}", e))?;
 
+    let service_name = benchmark_name.unwrap_or_else(|| "spanner-benchmark".to_string());
+    let instance_id = uuid::Uuid::new_v4().to_string();
+    let resource = opentelemetry_sdk::Resource::builder_empty()
+        .with_attributes(vec![
+            KeyValue::new("service.name", service_name),
+            KeyValue::new("service.instance.id", instance_id),
+        ])
+        .build();
+
     let provider = SdkMeterProvider::builder()
+        .with_resource(resource)
         .with_reader(opentelemetry_sdk::metrics::periodic_reader_with_async_runtime::PeriodicReader::builder(exporter, opentelemetry_sdk::runtime::Tokio).build())
         .with_view(|i: &Instrument| {
             if i.name() == "spanner_client_benchmarks/latency" {
                 Some(Stream::builder()
                     .with_aggregation(Aggregation::ExplicitBucketHistogram {
-                        boundaries: vec![500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 3500.0, 4000.0, 4500.0, 5000.0, 6000.0, 7000.0, 8000.0, 9000.0, 10000.0, 12000.0, 14000.0, 16000.0, 18000.0, 20000.0, 25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0],
+                        boundaries: get_latency_buckets(),
                         record_min_max: true,
                     })
                     .build()
@@ -311,7 +336,7 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     let duration = load_type::parse_duration(&args.duration);
-    let (metrics, _meter_provider) = setup_metrics(&args.project).await?;
+    let (metrics, _meter_provider) = setup_metrics(&args.project, args.benchmark_name.clone()).await?;
 
     if let Commands::Tpcc { warehouses, clients, items } = args.command {
         let base_attributes = vec![

@@ -10,6 +10,9 @@ import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.metrics.Aggregation;
 import io.opentelemetry.sdk.metrics.InstrumentSelector;
 import io.opentelemetry.sdk.metrics.SdkMeterProvider;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.sdk.resources.Resource;
 import io.opentelemetry.sdk.metrics.View;
 import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader;
 import picocli.CommandLine;
@@ -98,15 +101,22 @@ public class BenchmarkApp implements Runnable {
     }
 
     // Public so subcommands in subpackages can access it
-    public static OpenTelemetry initializeOpenTelemetry(String projectId, String host) {
+    public static OpenTelemetry initializeOpenTelemetry(String projectId, String host, String benchmarkName) {
         if (host != null && host.startsWith("http://localhost:")) {
             return OpenTelemetry.noop();
         }
 
         double MB = 1024.0 * 1024.0;
 
+        Resource resource = Resource.getDefault().merge(
+                Resource.builder()
+                        .put(AttributeKey.stringKey("service.name"), benchmarkName != null && !benchmarkName.isEmpty() ? benchmarkName : "spanner-benchmark")
+                        .put(AttributeKey.stringKey("service.instance.id"), java.util.UUID.randomUUID().toString())
+                        .build());
+
         return OpenTelemetrySdk.builder()
                 .setMeterProvider(SdkMeterProvider.builder()
+                        .setResource(resource)
                         .registerMetricReader(PeriodicMetricReader.create(
                                 GoogleCloudMetricExporter.createWithConfiguration(MetricConfiguration.builder()
                                         .setProjectId(projectId)
@@ -118,11 +128,8 @@ public class BenchmarkApp implements Runnable {
                                 View.builder()
                                         .setAggregation(
                                                 Aggregation.explicitBucketHistogram(
-                                                        java.util.List.of(
-                                                                500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 3500.0, 4000.0, 4500.0, 5000.0,
-                                                                6000.0, 7000.0, 8000.0, 9000.0, 10000.0, 12000.0, 14000.0, 16000.0, 18000.0, 20000.0,
-                                                                25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0
-                                                        )))
+                                                        getLatencyBuckets()
+                                                ))
                                         .build())
                         .registerView(
                                 InstrumentSelector.builder()
@@ -190,5 +197,17 @@ public class BenchmarkApp implements Runnable {
                         .setUnit("1")
                         .build()
         );
+    }
+
+    private static java.util.List<Double> getLatencyBuckets() {
+        java.util.List<Double> buckets = new java.util.ArrayList<>();
+        for (double i = 50.0; i <= 5000.0; i += 50.0) {
+            buckets.add(i);
+        }
+        buckets.addAll(java.util.List.of(
+            6000.0, 7000.0, 8000.0, 9000.0, 10000.0, 12000.0, 14000.0, 16000.0, 18000.0, 20000.0,
+            25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0
+        ));
+        return buckets;
     }
 }

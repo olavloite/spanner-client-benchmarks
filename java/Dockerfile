@@ -1,8 +1,8 @@
 FROM maven:3.9.6-eclipse-temurin-17 AS build
 WORKDIR /app
 
-# Install git
-RUN apt-get update && apt-get install -y git
+# Install git and python3
+RUN apt-get update && apt-get install -y git python3
 
 # Copy the build script and source code
 COPY build_app.sh .

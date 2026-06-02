@@ -88,7 +88,7 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
 
         try {
             // Initialize OpenTelemetry
-            OpenTelemetry openTelemetry = initializeOpenTelemetry(parent.getProjectId(), parent.getHost());
+            OpenTelemetry openTelemetry = initializeOpenTelemetry(parent.getProjectId(), parent.getHost(), parent.getBenchmarkName());
             Meter meter = openTelemetry.getMeter(METER_NAME);
             BenchmarkMetrics metrics = BenchmarkApp.createBenchmarkMetrics(meter, getMetricName());
 

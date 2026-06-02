@@ -15,7 +15,9 @@ import (
 
 	"cloud.google.com/go/spanner"
 	mexporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
+	"github.com/google/uuid"
 	"github.com/urfave/cli/v3"
+	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -187,7 +189,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	}
 
 	// Setup Metrics
-	latencyHistogram, readLatencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cleanupMetrics, err := setupMetrics(runCtx, cfg.Project, cfg.Host)
+	latencyHistogram, readLatencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cleanupMetrics, err := setupMetrics(runCtx, cfg.Project, cfg.Host, cfg.BenchmarkName)
 	if err != nil {
 		return fmt.Errorf("failed to initialize metrics: %w", err)
 	}
@@ -256,7 +258,16 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	return nil
 }
 
-func setupMetrics(ctx context.Context, projectID string, host string) (metric.Float64Histogram, metric.Float64Histogram, metric.Int64Counter, metric.Int64Counter, metric.Float64Histogram, metric.Float64Histogram, func(), error) {
+func getLatencyBuckets() []float64 {
+	buckets := make([]float64, 0, 120)
+	for i := 50.0; i <= 5000.0; i += 50.0 {
+		buckets = append(buckets, i)
+	}
+	buckets = append(buckets, 6000.0, 7000.0, 8000.0, 9000.0, 10000.0, 12000.0, 14000.0, 16000.0, 18000.0, 20000.0, 25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0)
+	return buckets
+}
+
+func setupMetrics(ctx context.Context, projectID string, host string, benchmarkName string) (metric.Float64Histogram, metric.Float64Histogram, metric.Int64Counter, metric.Int64Counter, metric.Float64Histogram, metric.Float64Histogram, func(), error) {
 	if os.Getenv("SPANNER_EMULATOR_HOST") != "" || (host != "" && (strings.Contains(host, "localhost:") || strings.Contains(host, "127.0.0.1:"))) {
 		h, _ := noop.NewMeterProvider().Meter("").Float64Histogram("")
 		rh, _ := noop.NewMeterProvider().Meter("").Float64Histogram("")
@@ -270,7 +281,25 @@ func setupMetrics(ctx context.Context, projectID string, host string) (metric.Fl
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, nil, err
 	}
+
+	svcName := benchmarkName
+	if svcName == "" {
+		svcName = "spanner-benchmark"
+	}
+	res, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			"",
+			attribute.String("service.name", svcName),
+			attribute.String("service.instance.id", uuid.New().String()),
+		),
+	)
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, nil, err
+	}
+
 	meterProvider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithResource(res),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(60*time.Second))),
 	)
 	otel.SetMeterProvider(meterProvider)
@@ -279,7 +308,7 @@ func setupMetrics(ctx context.Context, projectID string, host string) (metric.Fl
 	latencyHistogram, err := meter.Float64Histogram(latencyName,
 		metric.WithDescription("Query latency in microseconds"),
 		metric.WithUnit("us"),
-		metric.WithExplicitBucketBoundaries(500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 3500.0, 4000.0, 4500.0, 5000.0, 6000.0, 7000.0, 8000.0, 9000.0, 10000.0, 12000.0, 14000.0, 16000.0, 18000.0, 20000.0, 25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0),
+		metric.WithExplicitBucketBoundaries(getLatencyBuckets()...),
 	)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, nil, err

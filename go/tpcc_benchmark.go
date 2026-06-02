@@ -33,7 +33,7 @@ func executeTPCCBenchmark(ctx context.Context, cmd *cli.Command) error {
 	clients := int(cmd.Int("clients"))
 	items := int(cmd.Int("items"))
 
-	latencyHistogram, _, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cleanupMetrics, err := setupMetrics(runCtx, cfg.Project, cfg.Host)
+	latencyHistogram, _, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cleanupMetrics, err := setupMetrics(runCtx, cfg.Project, cfg.Host, cfg.BenchmarkName)
 	if err != nil {
 		return fmt.Errorf("failed to initialize metrics: %w", err)
 	}
