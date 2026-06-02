@@ -159,7 +159,7 @@ async function runBenchmarkAction(
     (!!host && (host.includes("localhost:") || host.includes("127.0.0.1:")));
 
   // 1. Bootstrap OpenTelemetry Metrics Exporter
-  const { meter, shutdown: shutdownMetrics } = setupMetrics(projectId, isEmulator);
+  const { meter, shutdown: shutdownMetrics } = setupMetrics(projectId, isEmulator, benchmarkName);
 
   // Create the shared metric instruments (us units match Go/Java)
   const metricName = type === "read-large-result-set" ? READ_LATENCY_NAME : LATENCY_NAME;

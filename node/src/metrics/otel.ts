@@ -8,6 +8,7 @@ import {
 } from "@opentelemetry/sdk-metrics";
 import { MetricExporter } from "@google-cloud/opentelemetry-cloud-monitoring-exporter";
 import { Resource } from "@opentelemetry/resources";
+import * as crypto from "crypto";
 
 export const METER_NAME = "spanner-benchmark";
 export const LATENCY_NAME = "spanner_client_benchmarks/latency";
@@ -26,7 +27,7 @@ export interface MetricSetupResult {
  * Initializes the OpenTelemetry metrics provider and exports to Google Cloud Monitoring.
  * Returns the meter instance and a shutdown cleanup hook.
  */
-export function setupMetrics(projectId: string, isEmulator: boolean): MetricSetupResult {
+export function setupMetrics(projectId: string, isEmulator: boolean, benchmarkName?: string): MetricSetupResult {
   if (isEmulator) {
     console.log("Spanner Emulator or localhost detected. Initializing No-op metric provider.");
     const noopMeter = metrics.getMeter(METER_NAME);
@@ -47,12 +48,19 @@ export function setupMetrics(projectId: string, isEmulator: boolean): MetricSetu
     exportIntervalMillis: 60000,
   });
 
-  // Explicit bucket boundaries matching Java, Go, and Python exactly (in microseconds)
-  const explicitBoundaries = [
-    500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 3500.0, 4000.0, 4500.0, 5000.0,
-    6000.0, 7000.0, 8000.0, 9000.0, 10000.0, 12000.0, 14000.0, 16000.0, 18000.0, 20000.0,
-    25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0,
-  ];
+  const getLatencyBuckets = (): number[] => {
+    const buckets: number[] = [];
+    for (let i = 50.0; i <= 5000.0; i += 50.0) {
+      buckets.push(i);
+    }
+    buckets.push(
+      6000.0, 7000.0, 8000.0, 9000.0, 10000.0, 12000.0, 14000.0, 16000.0, 18000.0, 20000.0,
+      25000.0, 30000.0, 40000.0, 50000.0, 75000.0, 100000.0, 150000.0, 200000.0
+    );
+    return buckets;
+  };
+
+  const explicitBoundaries = getLatencyBuckets();
 
   const readLatencyBoundaries = [
     50000.0, 100000.0, 250000.0, 500000.0, 750000.0,
@@ -93,8 +101,12 @@ export function setupMetrics(projectId: string, isEmulator: boolean): MetricSetu
   });
 
   // Set up standard resource tags (keeps it under Generic Node like Go and Java)
+  const serviceName = benchmarkName || "spanner-benchmark";
+  const instanceId = crypto.randomUUID();
   const resource = new Resource({
     "cloud.project.id": projectId,
+    "service.name": serviceName,
+    "service.instance.id": instanceId,
   });
 
   const provider = new MeterProvider({
