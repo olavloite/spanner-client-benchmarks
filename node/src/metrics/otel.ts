@@ -2,12 +2,12 @@ import { metrics, Meter } from "@opentelemetry/api";
 import {
   MeterProvider,
   PeriodicExportingMetricReader,
-  View,
   InstrumentType,
-  ExplicitBucketHistogramAggregation,
+  AggregationType,
+  ViewOptions,
 } from "@opentelemetry/sdk-metrics";
 import { MetricExporter } from "@google-cloud/opentelemetry-cloud-monitoring-exporter";
-import { Resource } from "@opentelemetry/resources";
+import { resourceFromAttributes } from "@opentelemetry/resources";
 import * as crypto from "crypto";
 
 export const METER_NAME = "spanner-benchmark";
@@ -17,6 +17,12 @@ export const OPERATION_COUNT_NAME = "spanner_client_benchmarks/operation_count";
 export const ERROR_COUNT_NAME = "spanner_client_benchmarks/error_count";
 export const MEMORY_USAGE_NAME = "spanner_client_benchmarks/memory_usage";
 export const CPU_UTILIZATION_NAME = "spanner_client_benchmarks/cpu_utilization";
+
+let testingMeterProvider: any = null;
+
+export function setTestingMeterProvider(provider: any) {
+  testingMeterProvider = provider;
+}
 
 export interface MetricSetupResult {
   meter: Meter;
@@ -28,6 +34,15 @@ export interface MetricSetupResult {
  * Returns the meter instance and a shutdown cleanup hook.
  */
 export function setupMetrics(projectId: string, isEmulator: boolean, benchmarkName?: string): MetricSetupResult {
+  if (testingMeterProvider) {
+    metrics.setGlobalMeterProvider(testingMeterProvider);
+    const meter = testingMeterProvider.getMeter(METER_NAME);
+    return {
+      meter,
+      shutdown: async () => {},
+    };
+  }
+
   if (isEmulator) {
     console.log("Spanner Emulator or localhost detected. Initializing No-op metric provider.");
     const noopMeter = metrics.getMeter(METER_NAME);
@@ -70,40 +85,52 @@ export function setupMetrics(projectId: string, isEmulator: boolean, benchmarkNa
   ];
 
   // Register custom view to apply explicit bucket histogram aggregation to the benchmark latency instrument
-  const latencyView = new View({
+  const latencyView: ViewOptions = {
     instrumentName: LATENCY_NAME,
     instrumentType: InstrumentType.HISTOGRAM,
-    aggregation: new ExplicitBucketHistogramAggregation(explicitBoundaries),
-  });
+    aggregation: {
+      type: AggregationType.EXPLICIT_BUCKET_HISTOGRAM,
+      options: { boundaries: explicitBoundaries }
+    },
+  };
 
-  const readLatencyView = new View({
+  const readLatencyView: ViewOptions = {
     instrumentName: READ_LATENCY_NAME,
     instrumentType: InstrumentType.HISTOGRAM,
-    aggregation: new ExplicitBucketHistogramAggregation(readLatencyBoundaries),
-  });
+    aggregation: {
+      type: AggregationType.EXPLICIT_BUCKET_HISTOGRAM,
+      options: { boundaries: readLatencyBoundaries }
+    },
+  };
 
   const MB = 1024.0 * 1024.0;
-  const memoryUsageView = new View({
+  const memoryUsageView: ViewOptions = {
     instrumentName: MEMORY_USAGE_NAME,
     instrumentType: InstrumentType.HISTOGRAM,
-    aggregation: new ExplicitBucketHistogramAggregation([
-      2.5 * MB, 5.0 * MB, 7.5 * MB, 10.0 * MB, 20.0 * MB, 30.0 * MB, 40.0 * MB, 50.0 * MB, 60.0 * MB, 70.0 * MB, 80.0 * MB, 90.0 * MB, 100.0 * MB,
-      200.0 * MB, 300.0 * MB, 400.0 * MB, 500.0 * MB, 750.0 * MB, 1000.0 * MB, 1500.0 * MB, 2000.0 * MB, 3000.0 * MB, 5000.0 * MB, 10000.0 * MB,
-    ]),
-  });
+    aggregation: {
+      type: AggregationType.EXPLICIT_BUCKET_HISTOGRAM,
+      options: { boundaries: [
+        2.5 * MB, 5.0 * MB, 7.5 * MB, 10.0 * MB, 20.0 * MB, 30.0 * MB, 40.0 * MB, 50.0 * MB, 60.0 * MB, 70.0 * MB, 80.0 * MB, 90.0 * MB, 100.0 * MB,
+        200.0 * MB, 300.0 * MB, 400.0 * MB, 500.0 * MB, 750.0 * MB, 1000.0 * MB, 1500.0 * MB, 2000.0 * MB, 3000.0 * MB, 5000.0 * MB, 10000.0 * MB,
+      ] }
+    },
+  };
 
-  const cpuUtilizationView = new View({
+  const cpuUtilizationView: ViewOptions = {
     instrumentName: CPU_UTILIZATION_NAME,
     instrumentType: InstrumentType.HISTOGRAM,
-    aggregation: new ExplicitBucketHistogramAggregation([
-      0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0,
-    ]),
-  });
+    aggregation: {
+      type: AggregationType.EXPLICIT_BUCKET_HISTOGRAM,
+      options: { boundaries: [
+        0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0,
+      ] }
+    },
+  };
 
   // Set up standard resource tags (keeps it under Generic Node like Go and Java)
   const serviceName = benchmarkName || "spanner-benchmark";
   const instanceId = crypto.randomUUID();
-  const resource = new Resource({
+  const resource = resourceFromAttributes({
     "cloud.project.id": projectId,
     "service.name": serviceName,
     "service.instance.id": instanceId,
@@ -112,9 +139,8 @@ export function setupMetrics(projectId: string, isEmulator: boolean, benchmarkNa
   const provider = new MeterProvider({
     resource: resource,
     views: [latencyView, readLatencyView, memoryUsageView, cpuUtilizationView],
+    readers: [reader],
   });
-
-  provider.addMetricReader(reader);
 
   // Set global meter provider
   metrics.setGlobalMeterProvider(provider);

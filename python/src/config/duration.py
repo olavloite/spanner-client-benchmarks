@@ -13,7 +13,7 @@ def parse_duration(duration_str: Optional[str]) -> Optional[float]:
     if duration_str_lower in ("inf", "infinite"):
         return None
 
-    match = re.match(r"^(\d+)(s|m|h)$", duration_str_lower)
+    match = re.match(r"^(\d+)(ms|s|m|h)$", duration_str_lower)
     if not match:
         # If it's just digits, default to seconds (matching Java and Node behavior)
         if duration_str_lower.isdigit():
@@ -23,7 +23,9 @@ def parse_duration(duration_str: Optional[str]) -> Optional[float]:
     value = int(match.group(1))
     unit = match.group(2)
 
-    if unit == "s":
+    if unit == "ms":
+        return float(value) / 1000.0
+    elif unit == "s":
         return float(value)
     elif unit == "m":
         return float(value * 60)

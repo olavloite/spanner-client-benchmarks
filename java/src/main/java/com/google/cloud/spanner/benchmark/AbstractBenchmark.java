@@ -131,8 +131,10 @@ public abstract class AbstractBenchmark {
             try {
                 executeOperation();
             } catch (Exception e) {
-                System.err.println("Operation failed: " + e.getMessage());
-                errorCounter.add(1, getAttributes());
+                if (!Thread.currentThread().isInterrupted() && !(e.getMessage() != null && (e.getMessage().contains("Interrupted") || e.getMessage().contains("CANCELLED: Interrupted") || e.getMessage().contains("InterruptedIOException")))) {
+                    System.err.println("Operation failed: " + e.getMessage());
+                    errorCounter.add(1, getAttributes());
+                }
             } finally {
                 if (shouldMeasureEntireMethod()) {
                     long endTime = System.nanoTime();

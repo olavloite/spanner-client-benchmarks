@@ -7,7 +7,7 @@ export function parseDuration(durationStr: string | undefined): number | null {
     return null;
   }
 
-  const regex = /^(\d+)(s|m|h)$/i;
+  const regex = /^(\d+)(ms|s|m|h)$/i;
   const match = durationStr.match(regex);
 
   if (!match) {
@@ -22,6 +22,8 @@ export function parseDuration(durationStr: string | undefined): number | null {
   const unit = match[2].toLowerCase();
 
   switch (unit) {
+    case "ms":
+      return value;
     case "s":
       return value * 1000;
     case "m":

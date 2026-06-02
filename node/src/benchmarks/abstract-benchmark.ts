@@ -315,7 +315,9 @@ export abstract class AbstractBenchmark implements IBenchmark {
         this.lastCpuUsage = process.cpuUsage();
         this.lastWallTime = nowWallTime;
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error("ERROR IN probeResourceUsage:", e);
+    }
   }
 }
 

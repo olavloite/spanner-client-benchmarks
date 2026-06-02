@@ -5,6 +5,12 @@ import sys
 from src.config.duration import parse_duration
 from src.metrics.otel import setup_metrics, LATENCY_NAME, READ_LATENCY_NAME, OPERATION_COUNT_NAME, ERROR_COUNT_NAME, MEMORY_USAGE_NAME, CPU_UTILIZATION_NAME
 
+def _safe_call(action):
+    try:
+        action()
+    except Exception:
+        pass
+
 def validate_and_fill_load_params(args):
     if args.load_type == "steady":
         if args.cycle_duration is not None or args.peak_factor is not None or args.burst_factor is not None or args.burst_duration is not None or args.burst_fraction is not None:
@@ -260,6 +266,7 @@ def main():
             error_counter=error_counter,
             memory_usage_histogram=memory_usage_histogram,
             cpu_utilization_histogram=cpu_utilization_histogram,
+            resource_probe_interval_str=args.resource_probe_interval,
             scale_factor=args.warehouses,
             clients=args.clients,
             items=args.items,
@@ -302,6 +309,13 @@ def main():
         if not is_terminating:
             is_terminating = True
             shutdown_metrics()
+        
+        # Close all Spanner client transports and pool cleanly to release threads
+        _safe_call(lambda: database.pool.close())
+        _safe_call(lambda: database.spanner_api.transport.close())
+        _safe_call(lambda: spanner_client.database_admin_api.transport.close())
+        _safe_call(lambda: spanner_client.instance_admin_api.transport.close())
+        _safe_call(lambda: spanner_client.close())
 
 if __name__ == "__main__":
     main()

@@ -17,6 +17,7 @@ class TpccBenchmarkRunner:
         error_counter: Counter,
         memory_usage_histogram: Histogram,
         cpu_utilization_histogram: Histogram,
+        resource_probe_interval_str: str,
         scale_factor: int,
         clients: int,
         items: int,
@@ -30,6 +31,7 @@ class TpccBenchmarkRunner:
         self.error_counter = error_counter
         self.memory_usage_histogram = memory_usage_histogram
         self.cpu_utilization_histogram = cpu_utilization_histogram
+        self.resource_probe_interval_str = resource_probe_interval_str
         self.scale_factor = scale_factor
         self.clients = clients
         self.items = items
@@ -50,8 +52,47 @@ class TpccBenchmarkRunner:
         self.attr_stock_level = dict(self.base_attributes, transaction_type="stock_level")
         self.is_stopped = False
 
+    def _start_resource_monitoring(self) -> None:
+        if self.resource_probe_interval_str and self.resource_probe_interval_str not in ("0", "0s"):
+            from src.config.duration import parse_duration
+            probe_interval_sec = parse_duration(self.resource_probe_interval_str)
+            if probe_interval_sec > 0:
+                self._last_cpu_time = time.process_time()
+                self._last_wall_time = time.perf_counter()
+                def _loop():
+                    while not self.is_stopped:
+                        time.sleep(probe_interval_sec)
+                        if self.is_stopped:
+                            break
+                        self._probe_resource_usage()
+                resource_thread = threading.Thread(target=_loop, name="ResourceMonitor", daemon=True)
+                resource_thread.start()
+
+    def _probe_resource_usage(self) -> None:
+        import resource
+        import sys
+        try:
+            usage = resource.getrusage(resource.RUSAGE_SELF)
+            max_rss = usage.ru_maxrss if sys.platform == "darwin" else usage.ru_maxrss * 1024
+            if self.memory_usage_histogram:
+                self.memory_usage_histogram.record(int(max_rss), self.base_attributes)
+            
+            now_cpu_time = time.process_time()
+            now_wall_time = time.perf_counter()
+            elapsed_wall = now_wall_time - self._last_wall_time
+            if elapsed_wall > 0 and self.cpu_utilization_histogram:
+                cpu_util = (now_cpu_time - self._last_cpu_time) / elapsed_wall
+                self.cpu_utilization_histogram.record(float(cpu_util), self.base_attributes)
+            
+            self._last_cpu_time = now_cpu_time
+            self._last_wall_time = now_wall_time
+        except Exception:
+            pass
+
     def run(self) -> None:
         print(f"Starting TPC-C Benchmark with Scale Factor (Warehouses): {self.scale_factor}, Parallel Clients: {self.clients}, Items: {self.items}")
+
+        self._start_resource_monitoring()
 
         # Assert database capacity
         with self.database.snapshot(multi_use=False) as snapshot:

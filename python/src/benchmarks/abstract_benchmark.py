@@ -141,14 +141,14 @@ class AbstractBenchmark(abc.ABC):
             print("Benchmark interrupted by user keyboard event.")
             self.stop()
 
-        # Do not wait forever for active workers to complete to avoid hitting Cloud Run timeout.
-        # Instead, wait for a maximum of 2 minutes.
-        self._executor.shutdown(wait=False)
-        
-        start_wait = time.perf_counter()
-        while self._outstanding_tasks > 0 and time.perf_counter() - start_wait < 120:
-            time.sleep(1)
+        # Cleanly shutdown the executor and cancel any queued futures to release threads.
+        try:
+            self._executor.shutdown(wait=True, cancel_futures=True)
+        except TypeError:
+            # Fallback for Python < 3.9
+            self._executor.shutdown(wait=True)
             
+        # For Cloud Run deployment, call os._exit(0) directly unless mocked in tests.
         import os
         os._exit(0)
 

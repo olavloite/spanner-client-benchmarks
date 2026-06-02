@@ -100,8 +100,17 @@ public class BenchmarkApp implements Runnable {
         return resourceProbeInterval;
     }
 
+    private static OpenTelemetry testingOpenTelemetry;
+
+    public static void setTestingOpenTelemetry(OpenTelemetry openTelemetry) {
+        testingOpenTelemetry = openTelemetry;
+    }
+
     // Public so subcommands in subpackages can access it
     public static OpenTelemetry initializeOpenTelemetry(String projectId, String host, String benchmarkName) {
+        if (testingOpenTelemetry != null) {
+            return testingOpenTelemetry;
+        }
         if (host != null && host.startsWith("http://localhost:")) {
             return OpenTelemetry.noop();
         }

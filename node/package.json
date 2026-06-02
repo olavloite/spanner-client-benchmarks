@@ -8,12 +8,13 @@
     "start": "ts-node index.ts"
   },
   "dependencies": {
-    "@google-cloud/spanner": "^7.2.0",
+    "@google-cloud/spanner": "^8.7.1",
     "@google-cloud/opentelemetry-cloud-monitoring-exporter": "^0.21.0",
-    "@opentelemetry/api": "^1.7.0",
-    "@opentelemetry/resources": "^1.19.0",
-    "@opentelemetry/sdk-metrics": "^1.19.0",
-    "@opentelemetry/semantic-conventions": "^1.19.0",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/core": "^2.7.1",
+    "@opentelemetry/resources": "^2.7.1",
+    "@opentelemetry/sdk-metrics": "^2.7.1",
+    "@opentelemetry/semantic-conventions": "^1.28.0",
     "commander": "^11.1.0"
   },
   "devDependencies": {
