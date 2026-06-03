@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -36,6 +37,16 @@ const (
 	memoryUsageName    = "spanner_client_benchmarks/memory_usage"
 	cpuUtilizationName = "spanner_client_benchmarks/cpu_utilization"
 )
+
+var cpuLimit = func() float64 {
+	limit := float64(runtime.NumCPU())
+	if limitStr := os.Getenv("BENCHMARK_CPU_LIMIT"); limitStr != "" {
+		if val, err := strconv.ParseFloat(limitStr, 64); err == nil && val > 0 {
+			limit = val
+		}
+	}
+	return limit
+}()
 
 type Benchmark interface {
 	Execute(ctx context.Context, client *spanner.Client, tableName string, minId, maxId int64) error
@@ -470,7 +481,7 @@ func probeResourceUsage(ctx context.Context, memoryUsageHistogram metric.Float64
 			elapsedWall := now.Sub(*lastWall).Seconds()
 			if elapsedWall > 0 {
 				cpuUtil := (float64((utime-*lastUtime)+(stime-*lastStime)) / 1e6) / elapsedWall
-				cpuUtilizationHistogram.Record(ctx, cpuUtil, attributes)
+				cpuUtilizationHistogram.Record(ctx, cpuUtil/cpuLimit, attributes)
 			}
 		}
 		*lastUtime = utime

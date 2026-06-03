@@ -1,3 +1,4 @@
+import os
 import random
 import sys
 import threading
@@ -14,6 +15,24 @@ from .transactions import (
     execute_payment,
     execute_stock_level,
 )
+
+
+def _get_cpu_limit() -> float:
+    limit_str = os.environ.get("BENCHMARK_CPU_LIMIT")
+    if limit_str:
+        try:
+            limit = float(limit_str)
+            if limit > 0:
+                return limit
+        except ValueError:
+            pass
+    try:
+        return float(len(os.sched_getaffinity(0)))
+    except AttributeError:
+        return float(os.cpu_count() or 1)
+
+
+CPU_LIMIT = _get_cpu_limit()
 
 
 class TpccBenchmarkRunner:
@@ -106,7 +125,7 @@ class TpccBenchmarkRunner:
             if elapsed_wall > 0 and self.cpu_utilization_histogram:
                 cpu_util = (now_cpu_time - self._last_cpu_time) / elapsed_wall
                 self.cpu_utilization_histogram.record(
-                    float(cpu_util), self.base_attributes
+                    float(cpu_util / CPU_LIMIT), self.base_attributes
                 )
 
             self._last_cpu_time = now_cpu_time

@@ -2,9 +2,23 @@ import {Database} from '@google-cloud/spanner';
 import {Histogram, Counter} from '@opentelemetry/api';
 import {Worker} from 'worker_threads';
 import * as path from 'path';
+import * as os from 'os';
 import {LoadType} from './load-type';
 import {parseDuration} from '../config/duration';
 export {LoadType};
+
+const CPU_LIMIT = (() => {
+  let limit = os.availableParallelism
+    ? os.availableParallelism()
+    : os.cpus().length;
+  if (process.env.BENCHMARK_CPU_LIMIT) {
+    const parsed = parseFloat(process.env.BENCHMARK_CPU_LIMIT);
+    if (!isNaN(parsed) && parsed > 0) {
+      limit = parsed;
+    }
+  }
+  return limit;
+})();
 
 export interface IBenchmark {
   execute(
@@ -349,7 +363,10 @@ export abstract class AbstractBenchmark implements IBenchmark {
         if (elapsedWallSec > 0 && this.cpuUtilizationHistogram) {
           const totalCpuSec = (nowCpuUsage.user + nowCpuUsage.system) / 1e6;
           const cpuUtil = totalCpuSec / elapsedWallSec;
-          this.cpuUtilizationHistogram.record(cpuUtil, this.attributes);
+          this.cpuUtilizationHistogram.record(
+            cpuUtil / CPU_LIMIT,
+            this.attributes
+          );
         }
 
         this.lastCpuUsage = process.cpuUsage();
