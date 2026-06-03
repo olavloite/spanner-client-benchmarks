@@ -112,7 +112,7 @@ fn get_latency_buckets() -> Vec<f64> {
 async fn setup_metrics(
     project_id: &str,
     benchmark_name: Option<String>,
-) -> anyhow::Result<(BenchmarkMetrics, SdkMeterProvider)> {
+) -> anyhow::Result<(BenchmarkMetrics, SdkMeterProvider, bool)> {
     if let Some(provider) = TEST_METER_PROVIDER.get() {
         let meter = provider.meter("spanner-benchmark");
         let latency = meter.f64_histogram("spanner_client_benchmarks/latency")
@@ -139,7 +139,7 @@ async fn setup_metrics(
             .with_description("Process CPU utilization")
             .with_unit("1")
             .build();
-        return Ok((BenchmarkMetrics { latency, read_latency, operation_count, error_count, memory_usage, cpu_utilization }, provider.clone()));
+        return Ok((BenchmarkMetrics { latency, read_latency, operation_count, error_count, memory_usage, cpu_utilization }, provider.clone(), false));
     }
 
     let config = GCPMetricsExporterConfig {
@@ -150,7 +150,7 @@ async fn setup_metrics(
 
     let service_name = benchmark_name.unwrap_or_else(|| "spanner-benchmark".to_string());
     let instance_id = uuid::Uuid::new_v4().to_string();
-    let resource = opentelemetry_sdk::Resource::builder_empty()
+    let resource = opentelemetry_sdk::Resource::builder()
         .with_attributes(vec![
             KeyValue::new("service.name", service_name),
             KeyValue::new("service.instance.id", instance_id),
@@ -240,7 +240,7 @@ async fn setup_metrics(
         .with_unit("1")
         .build();
 
-    Ok((BenchmarkMetrics { latency, read_latency, operation_count, error_count, memory_usage, cpu_utilization }, provider))
+    Ok((BenchmarkMetrics { latency, read_latency, operation_count, error_count, memory_usage, cpu_utilization }, provider, true))
 }
 
 pub fn run_task(
@@ -364,7 +364,7 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         .await?;
 
     let duration = load_type::parse_duration(&args.duration);
-    let (metrics, _meter_provider) = setup_metrics(&args.project, args.benchmark_name.clone()).await?;
+    let (metrics, _meter_provider, is_owned_provider) = setup_metrics(&args.project, args.benchmark_name.clone()).await?;
 
     if let Commands::Tpcc { warehouses, clients, items } = args.command {
         let base_attributes = vec![
@@ -378,6 +378,9 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         let res = tpcc::run_tpcc_benchmark(db_client, warehouses, clients, items, duration, metrics, base_attributes).await;
         if let Some(handle) = monitor_handle {
             handle.abort();
+        }
+        if is_owned_provider {
+            let _ = _meter_provider.shutdown();
         }
         return res;
     }
@@ -452,5 +455,8 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
     }
 
     println!("Benchmark completed successfully.");
+    if is_owned_provider {
+        let _ = _meter_provider.shutdown();
+    }
     Ok(())
 }

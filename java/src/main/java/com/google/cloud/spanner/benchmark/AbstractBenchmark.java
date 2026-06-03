@@ -131,7 +131,7 @@ public abstract class AbstractBenchmark {
             try {
                 executeOperation();
             } catch (Exception e) {
-                if (!Thread.currentThread().isInterrupted() && !(e.getMessage() != null && (e.getMessage().contains("Interrupted") || e.getMessage().contains("CANCELLED: Interrupted") || e.getMessage().contains("InterruptedIOException")))) {
+                if (!Thread.currentThread().isInterrupted() && !isCancellationOrInterruption(e)) {
                     System.err.println("Operation failed: " + e.getMessage());
                     errorCounter.add(1, getAttributes());
                 }
@@ -145,6 +145,26 @@ public abstract class AbstractBenchmark {
                 operationCounter.add(1, getAttributes());
             }
         });
+    }
+
+    private static boolean isCancellationOrInterruption(Throwable e) {
+        if (e == null) {
+            return false;
+        }
+        if (e instanceof InterruptedException || e instanceof java.io.InterruptedIOException) {
+            return true;
+        }
+        if (e instanceof com.google.cloud.spanner.SpannerException) {
+            com.google.cloud.spanner.SpannerException se = (com.google.cloud.spanner.SpannerException) e;
+            if (se.getErrorCode() == com.google.cloud.spanner.ErrorCode.CANCELLED) {
+                return true;
+            }
+        }
+        String message = e.getMessage();
+        if (message != null && (message.contains("Interrupted") || message.contains("CANCELLED") || message.contains("InterruptedIOException"))) {
+            return true;
+        }
+        return isCancellationOrInterruption(e.getCause());
     }
 
     private void startResourceMonitoring() {
