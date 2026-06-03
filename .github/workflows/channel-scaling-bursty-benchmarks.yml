@@ -19,7 +19,7 @@ jobs:
       burst_duration: '5.0'
       burst_fraction: '0.25'
       cpu: '8'
-      memory: '2Gi'
+      memory: '4Gi'
       benchmark_name: 'channel-scaling-bursty-point-select'
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
@@ -36,7 +36,7 @@ jobs:
       burst_duration: '5.0'
       burst_fraction: '0.25'
       cpu: '8'
-      memory: '2Gi'
+      memory: '4Gi'
       benchmark_name: 'channel-scaling-bursty-select-update'
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
