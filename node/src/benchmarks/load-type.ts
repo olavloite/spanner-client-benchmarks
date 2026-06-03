@@ -1,5 +1,5 @@
 export enum LoadType {
-  Steady = "steady",
-  Spiky = "spiky",
-  Gradual = "gradual",
+  Steady = 'steady',
+  Spiky = 'spiky',
+  Gradual = 'gradual',
 }

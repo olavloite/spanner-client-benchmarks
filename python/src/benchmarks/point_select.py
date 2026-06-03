@@ -1,7 +1,10 @@
 import random
+
 from google.cloud import spanner
 from google.cloud.spanner_v1.database import Database
+
 from .abstract_benchmark import AbstractBenchmark
+
 
 class PointSelectBenchmark(AbstractBenchmark):
     """
@@ -31,7 +34,7 @@ class PointSelectBenchmark(AbstractBenchmark):
                 params={"id": random_id},
                 param_types={"id": spanner.param_types.INT64},
             )
-            
+
             # Fully iterate row results to consume data bytes, forcing decoding
             # and avoiding compiler/runtime dead-code elimination optimizations.
             for row in results:

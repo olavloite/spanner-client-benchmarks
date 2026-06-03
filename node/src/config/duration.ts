@@ -3,7 +3,11 @@
  * into milliseconds. Returns null for infinite durations.
  */
 export function parseDuration(durationStr: string | undefined): number | null {
-  if (!durationStr || durationStr.toLowerCase() === "inf" || durationStr.toLowerCase() === "infinite") {
+  if (
+    !durationStr ||
+    durationStr.toLowerCase() === 'inf' ||
+    durationStr.toLowerCase() === 'infinite'
+  ) {
     return null;
   }
 
@@ -22,13 +26,13 @@ export function parseDuration(durationStr: string | undefined): number | null {
   const unit = match[2].toLowerCase();
 
   switch (unit) {
-    case "ms":
+    case 'ms':
       return value;
-    case "s":
+    case 's':
       return value * 1000;
-    case "m":
+    case 'm':
       return value * 60 * 1000;
-    case "h":
+    case 'h':
       return value * 60 * 60 * 1000;
     default:
       return null;

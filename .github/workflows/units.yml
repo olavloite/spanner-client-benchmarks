@@ -21,6 +21,10 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
+      - name: Verify code formatting
+        working-directory: java
+        run: mvn fmt:check
+
       - name: Run tests
         working-directory: java
         run: mvn -B -ntp test
@@ -60,6 +64,15 @@ jobs:
         working-directory: go
         run: go mod download
 
+      - name: Check formatting
+        working-directory: go
+        run: |
+          if [ -n "$(gofmt -s -l .)" ]; then
+            echo "Go files are not formatted. Run 'gofmt -s -w .'"
+            gofmt -s -d .
+            exit 1
+          fi
+
       - name: Run tests
         working-directory: go
         run: go test -v ./...
@@ -84,6 +97,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Verify formatting and style
+        working-directory: python
+        run: |
+          pip install ruff
+          ruff format --check .
+          ruff check .
+
       - name: Run tests
         working-directory: python
         run: python3 -m unittest discover -s tests
@@ -103,6 +123,10 @@ jobs:
       - name: Install dependencies
         working-directory: node
         run: npm install
+
+      - name: Run linter/formatter check
+        working-directory: node
+        run: npm run lint
 
       - name: Build typescript
         working-directory: node
@@ -129,6 +153,33 @@ jobs:
         with:
           workspaces: rust -> target
 
+      - name: Check Rust formatting
+        working-directory: rust
+        run: cargo fmt --check
+
+      - name: Check TOML formatting
+        uses: tamasfe/taplo-actions@v0.8
+        with:
+          run: fmt --check
+
       - name: Run tests
         working-directory: rust
         run: cargo test --quiet
+
+  analyzer-checks:
+    name: Analyzer Style Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Verify formatting
+        working-directory: analyzer
+        run: mvn fmt:check

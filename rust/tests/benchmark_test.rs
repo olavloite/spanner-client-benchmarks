@@ -2,7 +2,7 @@ use clap::Parser;
 use opentelemetry_sdk::metrics::{InMemoryMetricExporter, SdkMeterProvider};
 use spanner_grpc_mock::google::spanner::v1 as mock_v1;
 use spanner_grpc_mock::{MockSpanner, start};
-use spanner_rust_benchmark::{Args, run_benchmark, TEST_METER_PROVIDER};
+use spanner_rust_benchmark::{Args, TEST_METER_PROVIDER, run_benchmark};
 use tonic::Response;
 
 fn mock_field(name: &str, code: mock_v1::TypeCode) -> mock_v1::struct_type::Field {
@@ -57,7 +57,10 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
 
     mock.expect_commit().returning(|_| {
         Ok(Response::new(mock_v1::CommitResponse {
-            commit_timestamp: Some(prost_types::Timestamp { seconds: 12345, nanos: 0 }),
+            commit_timestamp: Some(prost_types::Timestamp {
+                seconds: 12345,
+                nanos: 0,
+            }),
             ..Default::default()
         }))
     });
@@ -65,17 +68,17 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
     mock.expect_execute_batch_dml().returning(|req| {
         let req = req.into_inner();
         let count = req.statements.len();
-        let transaction = req.transaction.and_then(|t| t.selector).and_then(|s| {
-            match s {
-                mock_v1::transaction_selector::Selector::Begin(_) | mock_v1::transaction_selector::Selector::Id(_) => {
-                    Some(mock_v1::Transaction {
-                        id: vec![1, 2, 3],
-                        ..Default::default()
-                    })
-                }
+        let transaction = req
+            .transaction
+            .and_then(|t| t.selector)
+            .and_then(|s| match s {
+                mock_v1::transaction_selector::Selector::Begin(_)
+                | mock_v1::transaction_selector::Selector::Id(_) => Some(mock_v1::Transaction {
+                    id: vec![1, 2, 3],
+                    ..Default::default()
+                }),
                 _ => None,
-            }
-        });
+            });
         let result_sets = (0..count)
             .map(|_| mock_v1::ResultSet {
                 stats: Some(mock_v1::ResultSetStats {
@@ -102,17 +105,17 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
 
     mock.expect_execute_sql().returning(|req| {
         let req = req.into_inner();
-        let transaction = req.transaction.and_then(|t| t.selector).and_then(|s| {
-            match s {
-                mock_v1::transaction_selector::Selector::Begin(_) | mock_v1::transaction_selector::Selector::Id(_) => {
-                    Some(mock_v1::Transaction {
-                        id: vec![1, 2, 3],
-                        ..Default::default()
-                    })
-                }
+        let transaction = req
+            .transaction
+            .and_then(|t| t.selector)
+            .and_then(|s| match s {
+                mock_v1::transaction_selector::Selector::Begin(_)
+                | mock_v1::transaction_selector::Selector::Id(_) => Some(mock_v1::Transaction {
+                    id: vec![1, 2, 3],
+                    ..Default::default()
+                }),
                 _ => None,
-            }
-        });
+            });
         Ok(Response::new(mock_v1::ResultSet {
             stats: Some(mock_v1::ResultSetStats {
                 row_count: Some(mock_v1::result_set_stats::RowCount::RowCountExact(1)),
@@ -129,17 +132,17 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
     mock.expect_execute_streaming_sql().returning(move |req| {
         let req = req.into_inner();
         let sql = req.sql;
-        let transaction = req.transaction.and_then(|t| t.selector).and_then(|s| {
-            match s {
-                mock_v1::transaction_selector::Selector::Begin(_) | mock_v1::transaction_selector::Selector::Id(_) => {
-                    Some(mock_v1::Transaction {
-                        id: vec![1, 2, 3],
-                        ..Default::default()
-                    })
-                }
+        let transaction = req
+            .transaction
+            .and_then(|t| t.selector)
+            .and_then(|s| match s {
+                mock_v1::transaction_selector::Selector::Begin(_)
+                | mock_v1::transaction_selector::Selector::Id(_) => Some(mock_v1::Transaction {
+                    id: vec![1, 2, 3],
+                    ..Default::default()
+                }),
                 _ => None,
-            }
-        });
+            });
         let (tx, rx) = tokio::sync::mpsc::channel(1);
 
         let mut result_set = if sql.contains("SELECT id, value FROM") {
@@ -153,10 +156,7 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
                     }),
                     ..Default::default()
                 }),
-                values: vec![
-                    string_value("1"),
-                    string_value("test-value"),
-                ],
+                values: vec![string_value("1"), string_value("test-value")],
                 last: true,
                 ..Default::default()
             }
@@ -164,15 +164,11 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
             mock_v1::PartialResultSet {
                 metadata: Some(mock_v1::ResultSetMetadata {
                     row_type: Some(mock_v1::StructType {
-                        fields: vec![
-                            mock_field("id", mock_v1::TypeCode::Int64),
-                        ],
+                        fields: vec![mock_field("id", mock_v1::TypeCode::Int64)],
                     }),
                     ..Default::default()
                 }),
-                values: vec![
-                    string_value("1"),
-                ],
+                values: vec![string_value("1")],
                 last: true,
                 ..Default::default()
             }
@@ -212,15 +208,11 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
             mock_v1::PartialResultSet {
                 metadata: Some(mock_v1::ResultSetMetadata {
                     row_type: Some(mock_v1::StructType {
-                        fields: vec![
-                            mock_field("count", mock_v1::TypeCode::Int64),
-                        ],
+                        fields: vec![mock_field("count", mock_v1::TypeCode::Int64)],
                     }),
                     ..Default::default()
                 }),
-                values: vec![
-                    string_value("1"),
-                ],
+                values: vec![string_value("1")],
                 last: true,
                 ..Default::default()
             }
@@ -228,15 +220,11 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
             mock_v1::PartialResultSet {
                 metadata: Some(mock_v1::ResultSetMetadata {
                     row_type: Some(mock_v1::StructType {
-                        fields: vec![
-                            mock_field("next_order_id", mock_v1::TypeCode::Int64),
-                        ],
+                        fields: vec![mock_field("next_order_id", mock_v1::TypeCode::Int64)],
                     }),
                     ..Default::default()
                 }),
-                values: vec![
-                    string_value("1000"),
-                ],
+                values: vec![string_value("1000")],
                 last: true,
                 ..Default::default()
             }
@@ -251,10 +239,7 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
                     }),
                     ..Default::default()
                 }),
-                values: vec![
-                    number_value(0.10),
-                    string_value("last_name"),
-                ],
+                values: vec![number_value(0.10), string_value("last_name")],
                 last: true,
                 ..Default::default()
             }
@@ -282,15 +267,11 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
             mock_v1::PartialResultSet {
                 metadata: Some(mock_v1::ResultSetMetadata {
                     row_type: Some(mock_v1::StructType {
-                        fields: vec![
-                            mock_field("order_id", mock_v1::TypeCode::Int64),
-                        ],
+                        fields: vec![mock_field("order_id", mock_v1::TypeCode::Int64)],
                     }),
                     ..Default::default()
                 }),
-                values: vec![
-                    string_value("5"),
-                ],
+                values: vec![string_value("5")],
                 last: true,
                 ..Default::default()
             }
@@ -320,15 +301,11 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
             mock_v1::PartialResultSet {
                 metadata: Some(mock_v1::ResultSetMetadata {
                     row_type: Some(mock_v1::StructType {
-                        fields: vec![
-                            mock_field("order_id", mock_v1::TypeCode::Int64),
-                        ],
+                        fields: vec![mock_field("order_id", mock_v1::TypeCode::Int64)],
                     }),
                     ..Default::default()
                 }),
-                values: vec![
-                    string_value("5"),
-                ],
+                values: vec![string_value("5")],
                 last: true,
                 ..Default::default()
             }
@@ -362,9 +339,10 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
     // 2. Initialize InMemory Metric Exporter & SdkMeterProvider
     let exporter = InMemoryMetricExporter::default();
     let resource = opentelemetry_sdk::Resource::builder_empty()
-        .with_attributes(vec![
-            opentelemetry::KeyValue::new("service.name", "spanner-benchmark-test"),
-        ])
+        .with_attributes(vec![opentelemetry::KeyValue::new(
+            "service.name",
+            "spanner-benchmark-test",
+        )])
         .build();
 
     let provider = SdkMeterProvider::builder()
@@ -379,16 +357,25 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
     {
         let args = Args::try_parse_from(vec![
             "benchmark",
-            "--project", "test-project",
-            "--instance", "test-instance",
-            "--database", "test-database",
-            "--table", "test",
-            "--duration", "1s",
-            "--host", &address,
-            "--threads", "2",
-            "--resource-probe-interval", "10ms",
+            "--project",
+            "test-project",
+            "--instance",
+            "test-instance",
+            "--database",
+            "test-database",
+            "--table",
+            "test",
+            "--duration",
+            "1s",
+            "--host",
+            &address,
+            "--threads",
+            "2",
+            "--resource-probe-interval",
+            "10ms",
             "point-select",
-            "--tps", "10",
+            "--tps",
+            "10",
         ])?;
 
         run_benchmark(args).await?;
@@ -398,16 +385,25 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
     {
         let args = Args::try_parse_from(vec![
             "benchmark",
-            "--project", "test-project",
-            "--instance", "test-instance",
-            "--database", "test-database",
-            "--table", "test",
-            "--duration", "1s",
-            "--host", &address,
-            "--threads", "2",
-            "--resource-probe-interval", "10ms",
+            "--project",
+            "test-project",
+            "--instance",
+            "test-instance",
+            "--database",
+            "test-database",
+            "--table",
+            "test",
+            "--duration",
+            "1s",
+            "--host",
+            &address,
+            "--threads",
+            "2",
+            "--resource-probe-interval",
+            "10ms",
             "select-update",
-            "--tps", "10",
+            "--tps",
+            "10",
         ])?;
 
         run_benchmark(args).await?;
@@ -417,16 +413,25 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
     {
         let args = Args::try_parse_from(vec![
             "benchmark",
-            "--project", "test-project",
-            "--instance", "test-instance",
-            "--database", "test-database",
-            "--table", "test",
-            "--duration", "1s",
-            "--host", &address,
-            "--threads", "1",
-            "--resource-probe-interval", "10ms",
+            "--project",
+            "test-project",
+            "--instance",
+            "test-instance",
+            "--database",
+            "test-database",
+            "--table",
+            "test",
+            "--duration",
+            "1s",
+            "--host",
+            &address,
+            "--threads",
+            "1",
+            "--resource-probe-interval",
+            "10ms",
             "read-large-result-set",
-            "--tps", "10",
+            "--tps",
+            "10",
         ])?;
 
         run_benchmark(args).await?;
@@ -436,16 +441,25 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
     {
         let args = Args::try_parse_from(vec![
             "benchmark",
-            "--project", "test-project",
-            "--instance", "test-instance",
-            "--database", "test-database",
-            "--duration", "1s",
-            "--host", &address,
-            "--threads", "2",
-            "--resource-probe-interval", "10ms",
+            "--project",
+            "test-project",
+            "--instance",
+            "test-instance",
+            "--database",
+            "test-database",
+            "--duration",
+            "1s",
+            "--host",
+            &address,
+            "--threads",
+            "2",
+            "--resource-probe-interval",
+            "10ms",
             "tpcc",
-            "--warehouses", "1",
-            "--clients", "2",
+            "--warehouses",
+            "1",
+            "--clients",
+            "2",
         ])?;
 
         run_benchmark(args).await?;
@@ -454,7 +468,10 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
     // 7. Assert metrics have been emitted correctly
     provider.force_flush()?;
     let metrics = exporter.get_finished_metrics()?;
-    assert!(!metrics.is_empty(), "Metric collection is unexpectedly empty; should have collected metrics");
+    assert!(
+        !metrics.is_empty(),
+        "Metric collection is unexpectedly empty; should have collected metrics"
+    );
 
     let mut found_operation_count = false;
     let mut found_latency = false;
@@ -467,32 +484,80 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
                 let debug_str = format!("{:?}", m);
                 if m.name() == "spanner_client_benchmarks/operation_count" {
                     found_operation_count = true;
-                    assert!(debug_str.contains("rust-client"), "Metric spanner_client_benchmarks/operation_count did not contain expected 'rust-client' client attribute: {}", debug_str);
-                    assert!(debug_str.contains("benchmark_type"), "Metric spanner_client_benchmarks/operation_count did not contain 'benchmark_type' attribute: {}", debug_str);
+                    assert!(
+                        debug_str.contains("rust-client"),
+                        "Metric spanner_client_benchmarks/operation_count did not contain expected 'rust-client' client attribute: {}",
+                        debug_str
+                    );
+                    assert!(
+                        debug_str.contains("benchmark_type"),
+                        "Metric spanner_client_benchmarks/operation_count did not contain 'benchmark_type' attribute: {}",
+                        debug_str
+                    );
                 }
-                if m.name() == "spanner_client_benchmarks/latency" || m.name() == "spanner_client_benchmarks/read_latency" {
+                if m.name() == "spanner_client_benchmarks/latency"
+                    || m.name() == "spanner_client_benchmarks/read_latency"
+                {
                     found_latency = true;
-                    assert!(debug_str.contains("rust-client"), "Metric {} did not contain expected 'rust-client' client attribute: {}", m.name(), debug_str);
-                    assert!(debug_str.contains("benchmark_type"), "Metric {} did not contain 'benchmark_type' attribute: {}", m.name(), debug_str);
+                    assert!(
+                        debug_str.contains("rust-client"),
+                        "Metric {} did not contain expected 'rust-client' client attribute: {}",
+                        m.name(),
+                        debug_str
+                    );
+                    assert!(
+                        debug_str.contains("benchmark_type"),
+                        "Metric {} did not contain 'benchmark_type' attribute: {}",
+                        m.name(),
+                        debug_str
+                    );
                 }
                 if m.name() == "spanner_client_benchmarks/memory_usage" {
                     found_memory = true;
-                    assert!(debug_str.contains("rust-client"), "Metric spanner_client_benchmarks/memory_usage did not contain expected 'rust-client' client attribute: {}", debug_str);
-                    assert!(debug_str.contains("benchmark_type"), "Metric spanner_client_benchmarks/memory_usage did not contain 'benchmark_type' attribute: {}", debug_str);
+                    assert!(
+                        debug_str.contains("rust-client"),
+                        "Metric spanner_client_benchmarks/memory_usage did not contain expected 'rust-client' client attribute: {}",
+                        debug_str
+                    );
+                    assert!(
+                        debug_str.contains("benchmark_type"),
+                        "Metric spanner_client_benchmarks/memory_usage did not contain 'benchmark_type' attribute: {}",
+                        debug_str
+                    );
                 }
                 if m.name() == "spanner_client_benchmarks/cpu_utilization" {
                     found_cpu = true;
-                    assert!(debug_str.contains("rust-client"), "Metric spanner_client_benchmarks/cpu_utilization did not contain expected 'rust-client' client attribute: {}", debug_str);
-                    assert!(debug_str.contains("benchmark_type"), "Metric spanner_client_benchmarks/cpu_utilization did not contain 'benchmark_type' attribute: {}", debug_str);
+                    assert!(
+                        debug_str.contains("rust-client"),
+                        "Metric spanner_client_benchmarks/cpu_utilization did not contain expected 'rust-client' client attribute: {}",
+                        debug_str
+                    );
+                    assert!(
+                        debug_str.contains("benchmark_type"),
+                        "Metric spanner_client_benchmarks/cpu_utilization did not contain 'benchmark_type' attribute: {}",
+                        debug_str
+                    );
                 }
             }
         }
     }
 
-    assert!(found_operation_count, "Failed to find spanner_client_benchmarks/operation_count metric in the collected metrics");
-    assert!(found_latency, "Failed to find spanner_client_benchmarks/latency or read_latency metric in the collected metrics");
-    assert!(found_memory, "Failed to find spanner_client_benchmarks/memory_usage metric in the collected metrics");
-    assert!(found_cpu, "Failed to find spanner_client_benchmarks/cpu_utilization metric in the collected metrics");
+    assert!(
+        found_operation_count,
+        "Failed to find spanner_client_benchmarks/operation_count metric in the collected metrics"
+    );
+    assert!(
+        found_latency,
+        "Failed to find spanner_client_benchmarks/latency or read_latency metric in the collected metrics"
+    );
+    assert!(
+        found_memory,
+        "Failed to find spanner_client_benchmarks/memory_usage metric in the collected metrics"
+    );
+    assert!(
+        found_cpu,
+        "Failed to find spanner_client_benchmarks/cpu_utilization metric in the collected metrics"
+    );
 
     drop(_server);
     provider.shutdown()?;

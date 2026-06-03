@@ -11,8 +11,8 @@ import (
 
 type PointSelectBenchmark struct{}
 
-func (b *PointSelectBenchmark) Name() string { return "Point Select Benchmark" }
-func (b *PointSelectBenchmark) Type() string { return "point-select" }
+func (b *PointSelectBenchmark) Name() string                    { return "Point Select Benchmark" }
+func (b *PointSelectBenchmark) Type() string                    { return "point-select" }
 func (b *PointSelectBenchmark) ShouldMeasureEntireMethod() bool { return true }
 func (b *PointSelectBenchmark) Execute(ctx context.Context, client *spanner.Client, tableName string, minId, maxId int64) error {
 	randomId := rand.Int63n(maxId-minId+1) + minId

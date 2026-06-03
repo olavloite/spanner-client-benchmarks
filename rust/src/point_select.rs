@@ -1,8 +1,8 @@
-use google_cloud_spanner::client::DatabaseClient;
-use google_cloud_spanner::statement::Statement;
-use google_cloud_spanner::result::ResultSet;
-use futures::future::BoxFuture;
 use futures::FutureExt;
+use futures::future::BoxFuture;
+use google_cloud_spanner::client::DatabaseClient;
+use google_cloud_spanner::result::ResultSet;
+use google_cloud_spanner::statement::Statement;
 use std::hint::black_box;
 
 pub fn execute_point_select(
@@ -14,9 +14,7 @@ pub fn execute_point_select(
     async move {
         let random_id = rand::random_range(min_id..=max_id);
         let sql = format!("SELECT id, value FROM {} WHERE id = @id", table);
-        let statement = Statement::builder(&sql)
-            .add_param("id", &random_id)
-            .build();
+        let statement = Statement::builder(&sql).add_param("id", &random_id).build();
 
         let transaction = client.single_use().build();
         let mut result_set: ResultSet = transaction.execute_query(statement).await?;

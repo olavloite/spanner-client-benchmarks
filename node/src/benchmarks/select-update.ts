@@ -1,5 +1,5 @@
-import { Database } from "@google-cloud/spanner";
-import { AbstractBenchmark } from "./abstract-benchmark";
+import {Database} from '@google-cloud/spanner';
+import {AbstractBenchmark} from './abstract-benchmark';
 
 /**
  * Implements a 1-to-1 parity Select and Update benchmark workload.
@@ -7,11 +7,11 @@ import { AbstractBenchmark } from "./abstract-benchmark";
  */
 export class SelectAndUpdateBenchmark extends AbstractBenchmark {
   public getName(): string {
-    return "Select and Update Benchmark";
+    return 'Select and Update Benchmark';
   }
 
   public getType(): string {
-    return "select-update";
+    return 'select-update';
   }
 
   /**
@@ -28,14 +28,14 @@ export class SelectAndUpdateBenchmark extends AbstractBenchmark {
 
     // Run a simple read/write transaction that selects one random row.
     // If the row exists, the row is updated. If it does not exist, it is inserted.
-    await database.runTransactionAsync(async (transaction) => {
+    await database.runTransactionAsync(async transaction => {
       const selectQuery = {
         sql: `SELECT id FROM ${tableName} WHERE id = @id`,
         params: {
           id: randomId,
         },
         types: {
-          id: "int64",
+          id: 'int64',
         },
       };
 
@@ -56,8 +56,8 @@ export class SelectAndUpdateBenchmark extends AbstractBenchmark {
             value: randomValue,
           },
           types: {
-            id: "int64",
-            value: "string",
+            id: 'int64',
+            value: 'string',
           },
         };
         await transaction.runUpdate(updateQuery);
@@ -69,8 +69,8 @@ export class SelectAndUpdateBenchmark extends AbstractBenchmark {
             value: randomValue,
           },
           types: {
-            id: "int64",
-            value: "string",
+            id: 'int64',
+            value: 'string',
           },
         };
         await transaction.runUpdate(insertQuery);
@@ -85,8 +85,9 @@ export class SelectAndUpdateBenchmark extends AbstractBenchmark {
    * Generates a random alphanumeric string using the exact Java and Go benchmark alphabet.
    */
   private generateRandomString(length: number): string {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let result = "";
+    const chars =
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
     const charsLength = chars.length;
     for (let i = 0; i < length; i++) {
       result += chars.charAt(Math.floor(Math.random() * charsLength));

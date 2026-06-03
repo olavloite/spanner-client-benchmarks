@@ -1,13 +1,18 @@
-import { Database } from "@google-cloud/spanner";
-import { Histogram, Counter } from "@opentelemetry/api";
-import { Worker } from "worker_threads";
-import * as path from "path";
-import { LoadType } from "./load-type";
-import { parseDuration } from "../config/duration";
-export { LoadType };
+import {Database} from '@google-cloud/spanner';
+import {Histogram, Counter} from '@opentelemetry/api';
+import {Worker} from 'worker_threads';
+import * as path from 'path';
+import {LoadType} from './load-type';
+import {parseDuration} from '../config/duration';
+export {LoadType};
 
 export interface IBenchmark {
-  execute(database: Database, tableName: string, minId: number, maxId: number): Promise<void>;
+  execute(
+    database: Database,
+    tableName: string,
+    minId: number,
+    maxId: number
+  ): Promise<void>;
   getName(): string;
   getType(): string;
 }
@@ -45,9 +50,9 @@ export abstract class AbstractBenchmark implements IBenchmark {
 
   private memoryUsageHistogram: Histogram | null = null;
   private cpuUtilizationHistogram: Histogram | null = null;
-  private resourceProbeIntervalStr: string = "10s";
+  private resourceProbeIntervalStr = '10s';
   private lastCpuUsage: NodeJS.CpuUsage | null = null;
-  private lastWallTime: bigint = 0n;
+  private lastWallTime = 0n;
   private resourceIntervalId: NodeJS.Timeout | null = null;
 
   constructor(
@@ -65,13 +70,13 @@ export abstract class AbstractBenchmark implements IBenchmark {
     threads: number,
     durationMs: number | null,
     forAlerting: boolean,
-    benchmarkName: string = "",
+    benchmarkName = '',
     loadType: LoadType = LoadType.Steady,
     cycleDurationMs: number | null = null,
-    peakFactor: number = 2.0,
-    burstFactor: number = 1.0,
-    burstDuration: number = 1.0,
-    burstFraction: number = 0.1
+    peakFactor = 2.0,
+    burstFactor = 1.0,
+    burstDuration = 1.0,
+    burstFraction = 0.1
   ) {
     this.database = database;
     this.latencyHistogram = latencyHistogram;
@@ -93,28 +98,35 @@ export abstract class AbstractBenchmark implements IBenchmark {
     this.burstFactor = burstFactor;
     this.burstDuration = burstDuration;
     this.burstFraction = burstFraction;
- 
+
     this.rBurst = this.tps * this.burstFactor;
-    this.rNormal = (this.tps - this.burstFraction * this.rBurst) / (1.0 - this.burstFraction);
- 
+    this.rNormal =
+      (this.tps - this.burstFraction * this.rBurst) /
+      (1.0 - this.burstFraction);
+
     // Pre-create attributes to avoid object creation overhead on the hot path (parity with Go and Java)
     this.attributes = {
       benchmark_type: this.getType(),
       tps: this.tps,
       for_alerting: this.forAlerting,
       benchmark_name: benchmarkName,
-      client: "node-client",
+      client: 'node-client',
       load_type: this.loadType,
       burst_factor: this.burstFactor,
       burst_duration: this.burstDuration,
       burst_fraction: this.burstFraction,
       cycle_duration_ms: this.cycleDurationMs || 0,
       peak_factor: this.peakFactor,
-      transaction_type: "none",
+      transaction_type: 'none',
     };
   }
 
-  abstract execute(database: Database, tableName: string, minId: number, maxId: number): Promise<void>;
+  abstract execute(
+    database: Database,
+    tableName: string,
+    minId: number,
+    maxId: number
+  ): Promise<void>;
   abstract getName(): string;
   abstract getType(): string;
 
@@ -123,7 +135,9 @@ export abstract class AbstractBenchmark implements IBenchmark {
    */
   public async run(): Promise<void> {
     console.log(`Starting ${this.getName()}`);
-    console.log(`Parameters: TPS=${this.tps}, Max Workers=${this.threads}, MinID=${this.minId}, MaxID=${this.maxId}`);
+    console.log(
+      `Parameters: TPS=${this.tps}, Max Workers=${this.threads}, MinID=${this.minId}, MaxID=${this.maxId}`
+    );
 
     this.startResourceMonitoring();
 
@@ -131,14 +145,16 @@ export abstract class AbstractBenchmark implements IBenchmark {
     const durationMs = this.durationMs;
     if (durationMs !== null) {
       timeoutId = setTimeout(() => {
-        console.log("Benchmark duration reached. Stopping workload generator...");
+        console.log(
+          'Benchmark duration reached. Stopping workload generator...'
+        );
         this.stop();
       }, durationMs);
     }
 
     const sab = new SharedArrayBuffer(4);
     const int32Array = new Int32Array(sab);
-    
+
     const workerPath = path.join(__dirname, 'scheduler-worker.js');
     this.worker = new Worker(workerPath, {
       workerData: {
@@ -152,10 +168,10 @@ export abstract class AbstractBenchmark implements IBenchmark {
         rBurst: this.rBurst,
         rNormal: this.rNormal,
         sab: sab,
-      }
+      },
     });
 
-    this.worker.on('message', (msg) => {
+    this.worker.on('message', msg => {
       if (msg.type === 'spawn') {
         for (let i = 0; i < msg.count; i++) {
           this.submitTask();
@@ -163,23 +179,29 @@ export abstract class AbstractBenchmark implements IBenchmark {
       }
     });
 
-    this.worker.on('error', (err) => {
-      console.error("Worker error:", err);
+    this.worker.on('error', err => {
+      console.error('Worker error:', err);
     });
 
-    this.worker.on('exit', (code) => {
+    this.worker.on('exit', code => {
       if (code !== 0) {
         console.error(`Worker stopped with exit code ${code}`);
       }
     });
 
     // Block and wait until the benchmark is stopped and all tasks are finished or cancelled
-    return new Promise<void>((resolve) => {
+    return new Promise<void>(resolve => {
       const waiter = setInterval(() => {
-        if (this.isStopped && this.activeTasks === 0 && this.taskQueue.length === 0) {
+        if (
+          this.isStopped &&
+          this.activeTasks === 0 &&
+          this.taskQueue.length === 0
+        ) {
           clearInterval(waiter);
           if (timeoutId) clearTimeout(timeoutId);
-          console.log("All outstanding active tasks completed. Benchmark run finished.");
+          console.log(
+            'All outstanding active tasks completed. Benchmark run finished.'
+          );
           resolve();
         }
       }, 100);
@@ -212,7 +234,9 @@ export abstract class AbstractBenchmark implements IBenchmark {
         this.taskQueue.push(1);
       } else {
         // Task queue is full, drop task to simulate unbounded network queue limits (parity with Go's 1M limit)
-        console.error("Task dropped: workload queue is full (1M tasks exceeded)");
+        console.error(
+          'Task dropped: workload queue is full (1M tasks exceeded)'
+        );
       }
     }
   }
@@ -247,7 +271,11 @@ export abstract class AbstractBenchmark implements IBenchmark {
       this.activeTasks--;
 
       // Drain buffered queue slots concurrently as workers become available
-      if (this.taskQueue.length > 0 && this.activeTasks < this.threads && !this.isStopped) {
+      if (
+        this.taskQueue.length > 0 &&
+        this.activeTasks < this.threads &&
+        !this.isStopped
+      ) {
         this.taskQueue.shift();
         setImmediate(() => this.runTask());
       }
@@ -269,26 +297,38 @@ export abstract class AbstractBenchmark implements IBenchmark {
     return BigInt(Math.floor(delaySeconds * 1_000_000_000));
   }
 
-  private calculateCurrentRate(nowNs: bigint, startTimeNs: bigint, inBurst: boolean): number {
+  private calculateCurrentRate(
+    nowNs: bigint,
+    startTimeNs: bigint,
+    inBurst: boolean
+  ): number {
     if (this.loadType === LoadType.Spiky) {
       return inBurst ? this.rBurst : this.rNormal;
     } else if (this.loadType === LoadType.Gradual) {
       const elapsedNs = Number(nowNs - startTimeNs);
       const cycleDurationNs = (this.cycleDurationMs || 3600000) * 1000000;
       const amplitude = this.tps * (this.peakFactor - 1.0);
-      const angle = (2.0 * Math.PI * (elapsedNs % cycleDurationNs)) / cycleDurationNs;
+      const angle =
+        (2.0 * Math.PI * (elapsedNs % cycleDurationNs)) / cycleDurationNs;
       return this.tps + amplitude * Math.cos(angle - Math.PI);
     }
     return this.tps;
   }
 
   private startResourceMonitoring(): void {
-    if (this.resourceProbeIntervalStr && this.resourceProbeIntervalStr !== "0" && this.resourceProbeIntervalStr !== "0s") {
+    if (
+      this.resourceProbeIntervalStr &&
+      this.resourceProbeIntervalStr !== '0' &&
+      this.resourceProbeIntervalStr !== '0s'
+    ) {
       const intervalMs = parseDuration(this.resourceProbeIntervalStr);
       if (intervalMs !== null && intervalMs > 0) {
         this.lastCpuUsage = process.cpuUsage();
         this.lastWallTime = process.hrtime.bigint();
-        this.resourceIntervalId = setInterval(() => this.probeResourceUsage(), intervalMs);
+        this.resourceIntervalId = setInterval(
+          () => this.probeResourceUsage(),
+          intervalMs
+        );
       }
     }
   }
@@ -316,8 +356,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
         this.lastWallTime = nowWallTime;
       }
     } catch (e) {
-      console.error("ERROR IN probeResourceUsage:", e);
+      console.error('ERROR IN probeResourceUsage:', e);
     }
   }
 }
-

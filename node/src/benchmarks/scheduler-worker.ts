@@ -1,5 +1,5 @@
-import { workerData, parentPort } from "worker_threads";
-import { LoadType } from "./load-type";
+import {workerData, parentPort} from 'worker_threads';
+import {LoadType} from './load-type';
 
 try {
   const {
@@ -26,7 +26,7 @@ try {
 
   if (loadType === LoadType.Spiky) {
     mu2 = 1.0 / burstDuration;
-    mu1 = mu2 * burstFraction / (1.0 - burstFraction);
+    mu1 = (mu2 * burstFraction) / (1.0 - burstFraction);
     nextStateChangeTimeNs = startTimeNs + calculatePoissonDelayNs(mu1);
   }
 
@@ -40,14 +40,19 @@ try {
     return BigInt(Math.floor(delaySeconds * 1_000_000_000));
   }
 
-  function calculateCurrentRate(nowNs: bigint, startTimeNs: bigint, inBurst: boolean): number {
+  function calculateCurrentRate(
+    nowNs: bigint,
+    startTimeNs: bigint,
+    inBurst: boolean
+  ): number {
     if (loadType === LoadType.Spiky) {
       return inBurst ? rBurst : rNormal;
     } else if (loadType === LoadType.Gradual) {
       const elapsedNs = Number(nowNs - startTimeNs);
       const cycleDurationNs = (cycleDurationMs || 3600000) * 1000000;
       const amplitude = tps * (peakFactor - 1.0);
-      const angle = (2.0 * Math.PI * (elapsedNs % cycleDurationNs)) / cycleDurationNs;
+      const angle =
+        (2.0 * Math.PI * (elapsedNs % cycleDurationNs)) / cycleDurationNs;
       return tps + amplitude * Math.cos(angle - Math.PI);
     }
     return tps;
@@ -59,7 +64,9 @@ try {
     if (loadType === LoadType.Spiky) {
       if (nowNs >= nextStateChangeTimeNs) {
         inBurst = !inBurst;
-        const nextDelayNs = inBurst ? calculatePoissonDelayNs(mu2) : calculatePoissonDelayNs(mu1);
+        const nextDelayNs = inBurst
+          ? calculatePoissonDelayNs(mu2)
+          : calculatePoissonDelayNs(mu1);
         nextStateChangeTimeNs = nowNs + nextDelayNs;
       }
     }
@@ -70,7 +77,7 @@ try {
     while (nowNs >= nextTaskTimeNs) {
       spawnCount++;
       const delayNs = calculatePoissonDelayNs(currentRate);
-      
+
       if (loadType === LoadType.Spiky) {
         const timeToStateChangeNs = nextStateChangeTimeNs - nextTaskTimeNs;
         if (delayNs > timeToStateChangeNs) {
@@ -82,13 +89,13 @@ try {
     }
 
     if (spawnCount > 0 && parentPort) {
-      parentPort.postMessage({ type: "spawn", count: spawnCount });
+      parentPort.postMessage({type: 'spawn', count: spawnCount});
     }
 
     // Sleep using Atomics.wait
     const nextNowNs = process.hrtime.bigint();
     const remainingNs = nextTaskTimeNs - nextNowNs;
-    
+
     if (remainingNs > 0n) {
       const timeoutMs = Number(remainingNs / 1000000n);
       if (timeoutMs > 0) {
@@ -97,6 +104,6 @@ try {
     }
   }
 } catch (err) {
-  console.error("UNHANDLED EXCEPTION IN SCHEDULER WORKER THREAD:", err);
+  console.error('UNHANDLED EXCEPTION IN SCHEDULER WORKER THREAD:', err);
   throw err;
 }

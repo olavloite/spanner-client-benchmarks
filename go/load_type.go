@@ -159,7 +159,7 @@ func (g *GradualGenerator) Run(ctx context.Context, b Benchmark, client *spanner
 		default:
 			now := time.Now()
 			elapsedNs := float64(now.Sub(startTime).Nanoseconds())
-			
+
 			// Calculate rate based on sine wave
 			angle := (2.0 * math.Pi * math.Mod(elapsedNs, cycleDurationNs)) / cycleDurationNs
 			currentRate := targetTPS + amplitude*math.Cos(angle-math.Pi)
@@ -201,15 +201,25 @@ func ValidateAndApplyDefaults(cmd *cli.Command, loadType LoadType, cycleDuration
 		if cmd.IsSet("cycle-duration") || cmd.IsSet("peak-factor") {
 			return fmt.Errorf("cannot specify gradual load options when load-type is spiky")
 		}
-		if !cmd.IsSet("burst-factor") { *burstFactor = 1.0 }
-		if !cmd.IsSet("burst-duration") { *burstDuration = 1.0 }
-		if !cmd.IsSet("burst-fraction") { *burstFraction = 0.1 }
+		if !cmd.IsSet("burst-factor") {
+			*burstFactor = 1.0
+		}
+		if !cmd.IsSet("burst-duration") {
+			*burstDuration = 1.0
+		}
+		if !cmd.IsSet("burst-fraction") {
+			*burstFraction = 0.1
+		}
 	} else if loadType == LoadTypeGradual {
 		if cmd.IsSet("burst-factor") || cmd.IsSet("burst-duration") || cmd.IsSet("burst-fraction") {
 			return fmt.Errorf("cannot specify burst load options when load-type is gradual")
 		}
-		if !cmd.IsSet("cycle-duration") { *cycleDurationStr = "1h" }
-		if !cmd.IsSet("peak-factor") { *peakFactor = 2.0 }
+		if !cmd.IsSet("cycle-duration") {
+			*cycleDurationStr = "1h"
+		}
+		if !cmd.IsSet("peak-factor") {
+			*peakFactor = 2.0
+		}
 	}
 	return nil
 }

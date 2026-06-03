@@ -5,16 +5,18 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional
 from enum import Enum
-from google.cloud import spanner
+from typing import Optional
+
 from google.cloud.spanner_v1.database import Database
-from opentelemetry.metrics import Histogram, Counter
+from opentelemetry.metrics import Counter, Histogram
+
 
 class LoadType(str, Enum):
     STEADY = "steady"
     SPIKY = "spiky"
     GRADUAL = "gradual"
+
 
 class AbstractBenchmark(abc.ABC):
     """
@@ -68,7 +70,9 @@ class AbstractBenchmark(abc.ABC):
         self.burst_fraction = burst_fraction
 
         self.r_burst = self.tps * self.burst_factor
-        self.r_normal = (self.tps - self.burst_fraction * self.r_burst) / (1.0 - self.burst_fraction)
+        self.r_normal = (self.tps - self.burst_fraction * self.r_burst) / (
+            1.0 - self.burst_fraction
+        )
 
         # Pre-create metric attributes to optimize away overhead on the hot path
         self.attributes = {
@@ -81,7 +85,9 @@ class AbstractBenchmark(abc.ABC):
             "burst_factor": self.burst_factor,
             "burst_duration": self.burst_duration,
             "burst_fraction": self.burst_fraction,
-            "cycle_duration_ms": (self.cycle_duration_sec * 1000) if self.cycle_duration_sec else 0,
+            "cycle_duration_ms": (self.cycle_duration_sec * 1000)
+            if self.cycle_duration_sec
+            else 0,
             "peak_factor": self.peak_factor,
             "transaction_type": "none",
         }
@@ -114,7 +120,9 @@ class AbstractBenchmark(abc.ABC):
         Spawns the background ticker thread and blocks until duration completes or stopped.
         """
         print(f"Starting {self.get_benchmark_name()}")
-        print(f"Parameters: TPS={self.tps}, Max Workers={self.threads}, MinID={self.min_id}, MaxID={self.max_id}")
+        print(
+            f"Parameters: TPS={self.tps}, Max Workers={self.threads}, MinID={self.min_id}, MaxID={self.max_id}"
+        )
 
         self.is_stopped = False
         self._generator_thread = threading.Thread(
@@ -129,7 +137,10 @@ class AbstractBenchmark(abc.ABC):
         start_wait = time.perf_counter()
         try:
             if self.duration_sec is not None:
-                while time.perf_counter() - start_wait < self.duration_sec and not self.is_stopped:
+                while (
+                    time.perf_counter() - start_wait < self.duration_sec
+                    and not self.is_stopped
+                ):
                     time.sleep(0.1)
                 print("Benchmark duration reached. Stopping workload generator...")
                 self.stop()
@@ -147,9 +158,10 @@ class AbstractBenchmark(abc.ABC):
         except TypeError:
             # Fallback for Python < 3.9
             self._executor.shutdown(wait=True)
-            
+
         # For Cloud Run deployment, call os._exit(0) directly unless mocked in tests.
         import os
+
         os._exit(0)
 
     def stop(self) -> None:
@@ -180,7 +192,11 @@ class AbstractBenchmark(abc.ABC):
             if self.load_type == LoadType.SPIKY:
                 if now_ns >= next_state_change_time_ns:
                     in_burst = not in_burst
-                    next_delay_sec = self._calculate_poisson_delay(mu2) if in_burst else self._calculate_poisson_delay(mu1)
+                    next_delay_sec = (
+                        self._calculate_poisson_delay(mu2)
+                        if in_burst
+                        else self._calculate_poisson_delay(mu1)
+                    )
                     next_state_change_time_ns = now_ns + next_delay_sec
 
             current_rate = self._calculate_current_rate(now_ns, start_time_ns, in_burst)
@@ -191,20 +207,22 @@ class AbstractBenchmark(abc.ABC):
 
                 # Calculate next arrival delay using exponential inter-arrival distribution
                 delay_sec = self._calculate_poisson_delay(current_rate)
-                
+
                 if self.load_type == LoadType.SPIKY:
-                    time_to_state_change_sec = next_state_change_time_ns - next_task_time_ns
+                    time_to_state_change_sec = (
+                        next_state_change_time_ns - next_task_time_ns
+                    )
                     if delay_sec > time_to_state_change_sec:
                         next_task_time_ns = next_state_change_time_ns
                         break
-                
+
                 next_task_time_ns += delay_sec
 
             # Sleep to yield to other threads, sleeping longer if the next task is far in the future
             if not self.is_stopped:
                 next_now_ns = time.perf_counter()
                 remaining_sec = next_task_time_ns - next_now_ns
-                if remaining_sec > 0.001: # More than 1ms remaining
+                if remaining_sec > 0.001:  # More than 1ms remaining
                     time.sleep(remaining_sec)
                 else:
                     time.sleep(0.0001)
@@ -217,7 +235,10 @@ class AbstractBenchmark(abc.ABC):
                 self._executor.submit(self._run_task)
             else:
                 # Dropping tasks to simulate unbounded network backlog limiters (parity with Go's 1M cap)
-                print("Task dropped: workload queue is full (1M tasks exceeded)", file=sys.stderr)
+                print(
+                    "Task dropped: workload queue is full (1M tasks exceeded)",
+                    file=sys.stderr,
+                )
 
     def should_measure_entire_method(self) -> bool:
         return True
@@ -229,7 +250,9 @@ class AbstractBenchmark(abc.ABC):
         """Executes the concrete Spanner scenario, measures latency in microseconds, records to metrics."""
         start_time = time.perf_counter()
         try:
-            self.execute_operation(self.database, self.table_name, self.min_id, self.max_id)
+            self.execute_operation(
+                self.database, self.table_name, self.min_id, self.max_id
+            )
         except Exception as err:
             print(f"Operation failed: {err}", file=sys.stderr)
             self.error_counter.add(1, self.attributes)
@@ -248,56 +271,71 @@ class AbstractBenchmark(abc.ABC):
         Formula: delaySeconds = -ln(1.0 - u) / rate, where u ~ Uniform(0, 1)
         """
         if rate <= 0:
-            return 3600.0 # 1 hour in seconds
+            return 3600.0  # 1 hour in seconds
         u = random.random()
         # Guard to prevent log(0) -> -Infinity error if u is exactly 1.0
         safe_u = 0.999999999 if u == 1.0 else u
         return -math.log(1.0 - safe_u) / rate
 
-    def _calculate_current_rate(self, now_sec: float, start_time_sec: float, in_burst: bool) -> float:
+    def _calculate_current_rate(
+        self, now_sec: float, start_time_sec: float, in_burst: bool
+    ) -> float:
         if self.load_type == LoadType.SPIKY:
             return self.r_burst if in_burst else self.r_normal
         elif self.load_type == LoadType.GRADUAL:
             elapsed_sec = now_sec - start_time_sec
             cycle_duration_sec = self.cycle_duration_sec or 3600.0
             amplitude = self.tps * (self.peak_factor - 1.0)
-            angle = (2.0 * math.pi * (elapsed_sec % cycle_duration_sec)) / cycle_duration_sec
+            angle = (
+                2.0 * math.pi * (elapsed_sec % cycle_duration_sec)
+            ) / cycle_duration_sec
             return self.tps + amplitude * math.cos(angle - math.pi)
         return self.tps
 
     def _start_resource_monitoring(self) -> None:
-        if self.resource_probe_interval_str and self.resource_probe_interval_str not in ("0", "0s"):
+        if (
+            self.resource_probe_interval_str
+            and self.resource_probe_interval_str not in ("0", "0s")
+        ):
             from src.config.duration import parse_duration
+
             probe_interval_sec = parse_duration(self.resource_probe_interval_str)
             if probe_interval_sec > 0:
                 self._last_cpu_time = time.process_time()
                 self._last_wall_time = time.perf_counter()
+
                 def _loop():
                     while not self.is_stopped:
                         time.sleep(probe_interval_sec)
                         if self.is_stopped:
                             break
                         self._probe_resource_usage()
-                resource_thread = threading.Thread(target=_loop, name="ResourceMonitor", daemon=True)
+
+                resource_thread = threading.Thread(
+                    target=_loop, name="ResourceMonitor", daemon=True
+                )
                 resource_thread.start()
 
     def _probe_resource_usage(self) -> None:
         import resource
         import sys
+
         try:
             usage = resource.getrusage(resource.RUSAGE_SELF)
             # On macOS (darwin), ru_maxrss is in bytes. On Linux (e.g. Cloud Run), it is in kilobytes.
-            max_rss = usage.ru_maxrss if sys.platform == "darwin" else usage.ru_maxrss * 1024
+            max_rss = (
+                usage.ru_maxrss if sys.platform == "darwin" else usage.ru_maxrss * 1024
+            )
             if self.memory_usage_histogram:
                 self.memory_usage_histogram.record(int(max_rss), self.attributes)
-            
+
             now_cpu_time = time.process_time()
             now_wall_time = time.perf_counter()
             elapsed_wall = now_wall_time - self._last_wall_time
             if elapsed_wall > 0 and self.cpu_utilization_histogram:
                 cpu_util = (now_cpu_time - self._last_cpu_time) / elapsed_wall
                 self.cpu_utilization_histogram.record(float(cpu_util), self.attributes)
-            
+
             self._last_cpu_time = now_cpu_time
             self._last_wall_time = now_wall_time
         except Exception:

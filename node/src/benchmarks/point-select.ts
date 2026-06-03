@@ -1,5 +1,5 @@
-import { Database } from "@google-cloud/spanner";
-import { AbstractBenchmark } from "./abstract-benchmark";
+import {Database} from '@google-cloud/spanner';
+import {AbstractBenchmark} from './abstract-benchmark';
 
 /**
  * Implements a 1-to-1 parity Point Select benchmark workload.
@@ -7,11 +7,11 @@ import { AbstractBenchmark } from "./abstract-benchmark";
  */
 export class PointSelectBenchmark extends AbstractBenchmark {
   public getName(): string {
-    return "Point Select Benchmark";
+    return 'Point Select Benchmark';
   }
 
   public getType(): string {
-    return "point-select";
+    return 'point-select';
   }
 
   /**
@@ -32,7 +32,7 @@ export class PointSelectBenchmark extends AbstractBenchmark {
         id: randomId,
       },
       types: {
-        id: "int64",
+        id: 'int64',
       },
     };
 

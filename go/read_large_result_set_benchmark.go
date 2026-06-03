@@ -11,6 +11,7 @@ import (
 )
 
 type ctxKey string
+
 const MetricAttributesKey ctxKey = "metric-attributes"
 
 type ReadLargeResultSetBenchmark struct {

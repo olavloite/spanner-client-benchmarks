@@ -2,8 +2,18 @@ import argparse
 import os
 import signal
 import sys
+
 from src.config.duration import parse_duration
-from src.metrics.otel import setup_metrics, LATENCY_NAME, READ_LATENCY_NAME, OPERATION_COUNT_NAME, ERROR_COUNT_NAME, MEMORY_USAGE_NAME, CPU_UTILIZATION_NAME
+from src.metrics.otel import (
+    CPU_UTILIZATION_NAME,
+    ERROR_COUNT_NAME,
+    LATENCY_NAME,
+    MEMORY_USAGE_NAME,
+    OPERATION_COUNT_NAME,
+    READ_LATENCY_NAME,
+    setup_metrics,
+)
+
 
 def _safe_call(action):
     try:
@@ -11,27 +21,50 @@ def _safe_call(action):
     except Exception:
         pass
 
+
 def validate_and_fill_load_params(args):
     if args.load_type == "steady":
-        if args.cycle_duration is not None or args.peak_factor is not None or args.burst_factor is not None or args.burst_duration is not None or args.burst_fraction is not None:
-            print("Error: Cannot specify burst or gradual load options when load-type is steady", file=sys.stderr)
+        if (
+            args.cycle_duration is not None
+            or args.peak_factor is not None
+            or args.burst_factor is not None
+            or args.burst_duration is not None
+            or args.burst_fraction is not None
+        ):
+            print(
+                "Error: Cannot specify burst or gradual load options when load-type is steady",
+                file=sys.stderr,
+            )
             sys.exit(1)
     elif args.load_type == "spiky":
         if args.cycle_duration is not None or args.peak_factor is not None:
-            print("Error: Cannot specify gradual load options when load-type is spiky", file=sys.stderr)
+            print(
+                "Error: Cannot specify gradual load options when load-type is spiky",
+                file=sys.stderr,
+            )
             sys.exit(1)
     elif args.load_type == "gradual":
-        if args.burst_factor is not None or args.burst_duration is not None or args.burst_fraction is not None:
-            print("Error: Cannot specify burst load options when load-type is gradual", file=sys.stderr)
+        if (
+            args.burst_factor is not None
+            or args.burst_duration is not None
+            or args.burst_fraction is not None
+        ):
+            print(
+                "Error: Cannot specify burst load options when load-type is gradual",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
     burst_factor = args.burst_factor if args.burst_factor is not None else 1.0
     burst_duration = args.burst_duration if args.burst_duration is not None else 1.0
     burst_fraction = args.burst_fraction if args.burst_fraction is not None else 0.1
-    cycle_duration_str = args.cycle_duration if args.cycle_duration is not None else "1h"
+    cycle_duration_str = (
+        args.cycle_duration if args.cycle_duration is not None else "1h"
+    )
     peak_factor = args.peak_factor if args.peak_factor is not None else 2.0
 
     return burst_factor, burst_duration, burst_fraction, cycle_duration_str, peak_factor
+
 
 def main():
     """
@@ -45,18 +78,22 @@ def main():
     def str2bool(v):
         if isinstance(v, bool):
             return v
-        if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        if v.lower() in ("yes", "true", "t", "y", "1"):
             return True
-        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        elif v.lower() in ("no", "false", "f", "n", "0"):
             return False
         else:
-            raise argparse.ArgumentTypeError('Boolean value expected.')
+            raise argparse.ArgumentTypeError("Boolean value expected.")
 
     # Global flags matching Java, Go, and Node setups
-    parser.add_argument("-p", "--project", required=True, help="Google Cloud Project ID")
+    parser.add_argument(
+        "-p", "--project", required=True, help="Google Cloud Project ID"
+    )
     parser.add_argument("-i", "--instance", required=True, help="Spanner Instance ID")
     parser.add_argument("-d", "--database", required=True, help="Spanner Database ID")
-    parser.add_argument("--host", help="Custom Spanner host endpoint override (e.g. for emulators)")
+    parser.add_argument(
+        "--host", help="Custom Spanner host endpoint override (e.g. for emulators)"
+    )
     parser.add_argument(
         "--duration",
         default="inf",
@@ -65,65 +102,166 @@ def main():
     parser.add_argument(
         "--for-alerting",
         type=str2bool,
-        nargs='?',
+        nargs="?",
         const=True,
         default=False,
         help="Marks the metrics emitted for regression/alerting pipelines.",
     )
-    parser.add_argument("--benchmark-name", default="", help="Optional name to identify this benchmark run in metrics")
-    parser.add_argument("--resource-probe-interval", default="10s", help="Interval for probing resource usage (e.g. 10s, 1m). Set to 0 to disable.")
-    parser.add_argument("--load-type", default="steady", choices=["steady", "spiky", "gradual"], help="Load type")
-    parser.add_argument("--cycle-duration", help="Duration of a full cycle for gradual load")
-    parser.add_argument("--peak-factor", type=float, help="Ratio of peak rate to average rate for gradual load")
-    parser.add_argument("--burst-factor", type=float, help="Ratio of burst rate to average rate")
-    parser.add_argument("--burst-duration", type=float, help="Average duration of a burst in seconds")
-    parser.add_argument("--burst-fraction", type=float, help="Fraction of total time spent in the burst state")
+    parser.add_argument(
+        "--benchmark-name",
+        default="",
+        help="Optional name to identify this benchmark run in metrics",
+    )
+    parser.add_argument(
+        "--resource-probe-interval",
+        default="10s",
+        help="Interval for probing resource usage (e.g. 10s, 1m). Set to 0 to disable.",
+    )
+    parser.add_argument(
+        "--load-type",
+        default="steady",
+        choices=["steady", "spiky", "gradual"],
+        help="Load type",
+    )
+    parser.add_argument(
+        "--cycle-duration", help="Duration of a full cycle for gradual load"
+    )
+    parser.add_argument(
+        "--peak-factor",
+        type=float,
+        help="Ratio of peak rate to average rate for gradual load",
+    )
+    parser.add_argument(
+        "--burst-factor", type=float, help="Ratio of burst rate to average rate"
+    )
+    parser.add_argument(
+        "--burst-duration", type=float, help="Average duration of a burst in seconds"
+    )
+    parser.add_argument(
+        "--burst-fraction",
+        type=float,
+        help="Fraction of total time spent in the burst state",
+    )
 
     # Common workload flags for all subparsers
     workload_parser = argparse.ArgumentParser(add_help=False)
-    workload_parser.add_argument("-t", "--table", required=True, help="Target database table name")
-    workload_parser.add_argument("--threads", type=int, default=100, help="ThreadPoolExecutor worker thread concurrency cap")
-    workload_parser.add_argument("--load-type", default="steady", choices=["steady", "spiky", "gradual"], help="Load type")
-    workload_parser.add_argument("--cycle-duration", help="Duration of a full cycle for gradual load")
-    workload_parser.add_argument("--peak-factor", type=float, help="Ratio of peak rate to average rate for gradual load")
-    workload_parser.add_argument("--burst-factor", type=float, help="Ratio of burst rate to average rate")
-    workload_parser.add_argument("--burst-duration", type=float, help="Average duration of a burst in seconds")
-    workload_parser.add_argument("--burst-fraction", type=float, help="Fraction of total time spent in the burst state")
+    workload_parser.add_argument(
+        "-t", "--table", required=True, help="Target database table name"
+    )
+    workload_parser.add_argument(
+        "--threads",
+        type=int,
+        default=100,
+        help="ThreadPoolExecutor worker thread concurrency cap",
+    )
+    workload_parser.add_argument(
+        "--load-type",
+        default="steady",
+        choices=["steady", "spiky", "gradual"],
+        help="Load type",
+    )
+    workload_parser.add_argument(
+        "--cycle-duration", help="Duration of a full cycle for gradual load"
+    )
+    workload_parser.add_argument(
+        "--peak-factor",
+        type=float,
+        help="Ratio of peak rate to average rate for gradual load",
+    )
+    workload_parser.add_argument(
+        "--burst-factor", type=float, help="Ratio of burst rate to average rate"
+    )
+    workload_parser.add_argument(
+        "--burst-duration", type=float, help="Average duration of a burst in seconds"
+    )
+    workload_parser.add_argument(
+        "--burst-fraction",
+        type=float,
+        help="Fraction of total time spent in the burst state",
+    )
 
     # Workload Scenario Subcommands routing
-    subparsers = parser.add_subparsers(dest="command", required=True, help="Workload scenario subcommands")
+    subparsers = parser.add_subparsers(
+        dest="command", required=True, help="Workload scenario subcommands"
+    )
 
     # Point-Select subparser
     ps_parser = subparsers.add_parser(
-        "point-select", parents=[workload_parser], help="Execute single point select statement workload scenario"
+        "point-select",
+        parents=[workload_parser],
+        help="Execute single point select statement workload scenario",
     )
-    ps_parser.add_argument("--tps", type=float, default=10.0, help="Target Transactions Per Second rate limit")
-    ps_parser.add_argument("--num-rows", type=int, default=1000000, help="Number of rows in target database table")
+    ps_parser.add_argument(
+        "--tps",
+        type=float,
+        default=10.0,
+        help="Target Transactions Per Second rate limit",
+    )
+    ps_parser.add_argument(
+        "--num-rows",
+        type=int,
+        default=1000000,
+        help="Number of rows in target database table",
+    )
 
     # Select-Update subparser
     su_parser = subparsers.add_parser(
-        "select-update", parents=[workload_parser], help="Execute read-modify-write transaction statement workload scenario"
+        "select-update",
+        parents=[workload_parser],
+        help="Execute read-modify-write transaction statement workload scenario",
     )
-    su_parser.add_argument("--tps", type=float, default=10.0, help="Target Transactions Per Second rate limit")
-    su_parser.add_argument("--num-rows", type=int, default=1000000, help="Number of rows in target database table")
+    su_parser.add_argument(
+        "--tps",
+        type=float,
+        default=10.0,
+        help="Target Transactions Per Second rate limit",
+    )
+    su_parser.add_argument(
+        "--num-rows",
+        type=int,
+        default=1000000,
+        help="Number of rows in target database table",
+    )
 
     # Read-Large subparser
     rl_parser = subparsers.add_parser(
-        "read-large-result-set", parents=[workload_parser], help="Execute dynamic large result set iteration scenario"
+        "read-large-result-set",
+        parents=[workload_parser],
+        help="Execute dynamic large result set iteration scenario",
     )
-    rl_parser.add_argument("--tps", type=float, default=0.05, help="Target Transactions Per Second rate limit")
-    rl_parser.add_argument("--num-rows", type=int, default=100000, help="Number of rows to dynamically generate")
+    rl_parser.add_argument(
+        "--tps",
+        type=float,
+        default=0.05,
+        help="Target Transactions Per Second rate limit",
+    )
+    rl_parser.add_argument(
+        "--num-rows",
+        type=int,
+        default=100000,
+        help="Number of rows to dynamically generate",
+    )
 
     # TPC-C subparser
-    tpcc_parser = subparsers.add_parser("tpcc", help="Execute closed-loop TPC-C benchmark")
-    tpcc_parser.add_argument("--warehouses", type=int, default=1, help="Scale factor (number of warehouses)")
-    tpcc_parser.add_argument("--clients", type=int, default=10, help="Number of parallel worker clients")
-    tpcc_parser.add_argument("--items", type=int, default=100000, help="Number of items in catalog")
+    tpcc_parser = subparsers.add_parser(
+        "tpcc", help="Execute closed-loop TPC-C benchmark"
+    )
+    tpcc_parser.add_argument(
+        "--warehouses", type=int, default=1, help="Scale factor (number of warehouses)"
+    )
+    tpcc_parser.add_argument(
+        "--clients", type=int, default=10, help="Number of parallel worker clients"
+    )
+    tpcc_parser.add_argument(
+        "--items", type=int, default=100000, help="Number of items in catalog"
+    )
 
     args = parser.parse_args()
 
     # Validation and filling defaults
-    burst_factor, burst_duration, burst_fraction, cycle_duration_str, peak_factor = validate_and_fill_load_params(args)
+    burst_factor, burst_duration, burst_fraction, cycle_duration_str, peak_factor = (
+        validate_and_fill_load_params(args)
+    )
 
     min_id = 1
     max_id = getattr(args, "num_rows", 1000000)
@@ -138,10 +276,14 @@ def main():
     )
 
     # 1. Setup OpenTelemetry metrics provider and instruments
-    meter, shutdown_metrics = setup_metrics(args.project, is_emulator, args.benchmark_name)
+    meter, shutdown_metrics = setup_metrics(
+        args.project, is_emulator, args.benchmark_name
+    )
 
     # Create shared metrics instruments (us unit matching standard spec)
-    metric_name = READ_LATENCY_NAME if args.command == "read-large-result-set" else LATENCY_NAME
+    metric_name = (
+        READ_LATENCY_NAME if args.command == "read-large-result-set" else LATENCY_NAME
+    )
     latency_histogram = meter.create_histogram(
         name=metric_name,
         description="Query latency measured in microseconds",
@@ -173,11 +315,11 @@ def main():
     )
 
     # 2. Initialize the Google Cloud Spanner Client driver
-    from src.spanner.client import create_spanner_client
     from src.benchmarks.point_select import PointSelectBenchmark
-    from src.benchmarks.select_update import SelectAndUpdateBenchmark
     from src.benchmarks.read_large_result_set import ReadLargeResultSetBenchmark
+    from src.benchmarks.select_update import SelectAndUpdateBenchmark
     from src.benchmarks.tpcc.benchmark import TpccBenchmarkRunner
+    from src.spanner.client import create_spanner_client
 
     spanner_client = create_spanner_client(args.project, host)
     instance = spanner_client.instance(args.instance)
@@ -275,7 +417,10 @@ def main():
             benchmark_name=args.benchmark_name,
         )
     else:
-        print(f"Error: Unsupported benchmark type: '{args.command}'. Valid options are: 'point-select', 'select-update', 'read-large-result-set', 'tpcc'.", file=sys.stderr)
+        print(
+            f"Error: Unsupported benchmark type: '{args.command}'. Valid options are: 'point-select', 'select-update', 'read-large-result-set', 'tpcc'.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     # 4. Register process lifecycle termination traps (SIGINT, SIGTERM)
@@ -286,11 +431,13 @@ def main():
         if is_terminating:
             return
         is_terminating = True
-        print(f"\n[Lifecycle] Received signal {sig}. Initiating graceful termination...")
-        
+        print(
+            f"\n[Lifecycle] Received signal {sig}. Initiating graceful termination..."
+        )
+
         # Tell workload generator to stop spawning new executor tasks
         benchmark.stop()
-        
+
         # Shutdown metrics PeriodicExportingMetricReader
         shutdown_metrics()
         print("[Lifecycle] Graceful shutdown complete. Exiting.")
@@ -303,19 +450,23 @@ def main():
     try:
         benchmark.run()
     except Exception as err:
-        print(f"Fatal exception encountered during benchmark execution: {err}", file=sys.stderr)
+        print(
+            f"Fatal exception encountered during benchmark execution: {err}",
+            file=sys.stderr,
+        )
     finally:
         # Normal duration finish cleanup
         if not is_terminating:
             is_terminating = True
             shutdown_metrics()
-        
+
         # Close all Spanner client transports and pool cleanly to release threads
         _safe_call(lambda: database.pool.close())
         _safe_call(lambda: database.spanner_api.transport.close())
         _safe_call(lambda: spanner_client.database_admin_api.transport.close())
         _safe_call(lambda: spanner_client.instance_admin_api.transport.close())
         _safe_call(lambda: spanner_client.close())
+
 
 if __name__ == "__main__":
     main()

@@ -1,12 +1,12 @@
-use google_cloud_spanner::client::DatabaseClient;
-use google_cloud_spanner::statement::Statement;
-use google_cloud_spanner::result::{ResultSet, Row};
-use futures::future::BoxFuture;
 use futures::FutureExt;
-use opentelemetry::metrics::Histogram;
+use futures::future::BoxFuture;
+use google_cloud_spanner::client::DatabaseClient;
+use google_cloud_spanner::result::{ResultSet, Row};
+use google_cloud_spanner::statement::Statement;
 use opentelemetry::KeyValue;
-use std::time::Instant;
+use opentelemetry::metrics::Histogram;
 use std::hint::black_box;
+use std::time::Instant;
 
 pub fn execute_read_large_result_set(
     client: DatabaseClient,

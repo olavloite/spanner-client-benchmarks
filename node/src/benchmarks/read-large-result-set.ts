@@ -1,6 +1,6 @@
-import { Database } from "@google-cloud/spanner";
-import { Histogram, Counter } from "@opentelemetry/api";
-import { AbstractBenchmark, LoadType } from "./abstract-benchmark";
+import {Database} from '@google-cloud/spanner';
+import {Histogram, Counter} from '@opentelemetry/api';
+import {AbstractBenchmark, LoadType} from './abstract-benchmark';
 
 const SQL = `SELECT
   MOD(FARM_FINGERPRINT(GENERATE_UUID()), 2) = 0 AS random_bool,
@@ -39,10 +39,10 @@ export class ReadLargeResultSetBenchmark extends AbstractBenchmark {
     numRows: number,
     loadType: LoadType = LoadType.Steady,
     cycleDurationMs: number | null = null,
-    peakFactor: number = 2.0,
-    burstFactor: number = 1.0,
-    burstDuration: number = 1.0,
-    burstFraction: number = 0.1
+    peakFactor = 2.0,
+    burstFactor = 1.0,
+    burstDuration = 1.0,
+    burstFraction = 0.1
   ) {
     super(
       database,
@@ -71,11 +71,11 @@ export class ReadLargeResultSetBenchmark extends AbstractBenchmark {
   }
 
   public getName(): string {
-    return "Read Large Result Set Benchmark";
+    return 'Read Large Result Set Benchmark';
   }
 
   public getType(): string {
-    return "read-large-result-set";
+    return 'read-large-result-set';
   }
 
   // INTENTIONAL: Do not change shouldMeasureEntireMethod to return true.
@@ -105,7 +105,7 @@ export class ReadLargeResultSetBenchmark extends AbstractBenchmark {
         num_rows: this.numRows,
       },
       types: {
-        num_rows: "int64",
+        num_rows: 'int64',
       },
     };
 
@@ -116,15 +116,15 @@ export class ReadLargeResultSetBenchmark extends AbstractBenchmark {
 
     await new Promise<void>((resolve, reject) => {
       stream
-        .on("data", (row) => {
-          row.toJSON({ wrapNumbers: true });
+        .on('data', row => {
+          row.toJSON({wrapNumbers: true});
 
           if (!firstRowDecoded) {
             firstRowDecoded = true;
             startTimeNs = process.hrtime.bigint();
           }
         })
-        .on("end", () => {
+        .on('end', () => {
           if (firstRowDecoded) {
             const endTimeNs = process.hrtime.bigint();
             const durationUs = Number(endTimeNs - startTimeNs) / 1000;
@@ -132,7 +132,7 @@ export class ReadLargeResultSetBenchmark extends AbstractBenchmark {
           }
           resolve();
         })
-        .on("error", (err) => {
+        .on('error', err => {
           reject(err);
         });
     });
