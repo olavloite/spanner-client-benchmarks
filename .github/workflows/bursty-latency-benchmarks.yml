@@ -2,8 +2,8 @@ name: Bursty Latency Benchmarks
 
 on:
   schedule:
-    # Schedule at 11:00 UTC
-    - cron: '0 11 * * *'
+    # Schedule at 05:42 UTC
+    - cron: '42 5 * * *'
   workflow_dispatch:
 
 jobs:

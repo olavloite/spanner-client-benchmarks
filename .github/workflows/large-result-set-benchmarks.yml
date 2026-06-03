@@ -2,7 +2,7 @@ name: Large Result Set Benchmarks
 
 on:
   schedule:
-    - cron: '0 8 * * *'
+    - cron: '47 17 * * *'
   workflow_dispatch:
 
 jobs:

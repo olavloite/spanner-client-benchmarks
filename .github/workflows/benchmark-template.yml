@@ -36,6 +36,26 @@ on:
         required: false
         type: string
         default: 'scheduled-main'
+      database_id:
+        description: 'Database ID to run the benchmark against'
+        required: false
+        type: string
+        default: 'spring-data-jpa'
+      clients:
+        description: 'JSON array of client languages to run'
+        required: false
+        type: string
+        default: '["java", "go", "node", "python", "rust"]'
+      warehouses:
+        description: 'Scale factor (number of warehouses) - TPC-C only (optional)'
+        required: false
+        type: string
+        default: ''
+      items:
+        description: 'Number of catalog items - TPC-C only (optional)'
+        required: false
+        type: string
+        default: ''
     secrets:
       GCP_SA_KEY:
         required: true
@@ -43,7 +63,7 @@ on:
 env:
   PROJECT_ID: appdev-soda-spanner-staging
   INSTANCE_ID: knut-test-ycsb
-  DATABASE_ID: spring-data-jpa
+  DATABASE_ID: ${{ inputs.database_id }}
   REGION: europe-north1
   CPU: 2
   MEMORY: 4Gi
@@ -56,7 +76,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        client: [java, go, node, python, rust]
+        client: ${{ fromJSON(inputs.clients) }}
         benchmark_type: ${{ fromJSON(inputs.benchmark_types) }}
     steps:
       - name: Checkout code
@@ -81,4 +101,6 @@ jobs:
           BURST_FRACTION: ${{ inputs.burst_fraction }}
           FOR_ALERTING: 'true'
           BENCHMARK_NAME: ${{ inputs.benchmark_name }}
+          WAREHOUSES: ${{ inputs.warehouses }}
+          ITEMS: ${{ inputs.items }}
         run: ./run_benchmark.sh ${{ matrix.client }}
