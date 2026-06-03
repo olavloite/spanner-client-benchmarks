@@ -158,9 +158,8 @@ jobs:
         run: cargo fmt --check
 
       - name: Check TOML formatting
-        uses: tamasfe/taplo-actions@v0.8
-        with:
-          run: fmt --check
+        working-directory: rust
+        run: npx @taplo/cli fmt --check
 
       - name: Run tests
         working-directory: rust
