@@ -1,9 +1,12 @@
 import random
 import string
+
 from google.cloud import spanner
 from google.cloud.spanner_v1.database import Database
 from google.cloud.spanner_v1.transaction import Transaction
+
 from .abstract_benchmark import AbstractBenchmark
+
 
 class SelectAndUpdateBenchmark(AbstractBenchmark):
     """
@@ -25,7 +28,7 @@ class SelectAndUpdateBenchmark(AbstractBenchmark):
         # The transaction callback logic that Spanner will call and retry if a conflict occurs
         def transaction_callback(transaction: Transaction) -> None:
             select_sql = f"SELECT id FROM {table_name} WHERE id = @id"
-            
+
             # 1. Execute read sql query statement inside transaction context
             results = transaction.execute_sql(
                 select_sql,
@@ -37,7 +40,7 @@ class SelectAndUpdateBenchmark(AbstractBenchmark):
             exists = False
             for _ in results:
                 exists = True
-                break # single row point check, we can skip further fetching
+                break  # single row point check, we can skip further fetching
 
             # Generate random alphanumeric string between 75 and 150 characters (parity constraint)
             random_length = random.randint(75, 150)
@@ -63,5 +66,7 @@ class SelectAndUpdateBenchmark(AbstractBenchmark):
 
     def _generate_random_string(self, length: int) -> str:
         """Generates a random alphanumeric string using the exact alphabet specs."""
-        alphabet = string.ascii_letters + string.digits # ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
+        alphabet = (
+            string.ascii_letters + string.digits
+        )  # ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
         return "".join(random.choice(alphabet) for _ in range(length))

@@ -1,14 +1,18 @@
-use std::hint::black_box;
-use google_cloud_spanner::client::DatabaseClient;
-use google_cloud_spanner::statement::Statement;
+use crate::BenchmarkMetrics;
 use google_cloud_spanner::batch::BatchDml;
+use google_cloud_spanner::client::DatabaseClient;
 use google_cloud_spanner::result::ResultSet;
+use google_cloud_spanner::statement::Statement;
+use opentelemetry::KeyValue;
+use std::hint::black_box;
 use std::sync::Arc;
 use tokio::time::{Duration, Instant};
-use opentelemetry::KeyValue;
-use crate::BenchmarkMetrics;
 
-async fn execute_new_order(client: DatabaseClient, scale_factor: i64, total_items: i64) -> anyhow::Result<()> {
+async fn execute_new_order(
+    client: DatabaseClient,
+    scale_factor: i64,
+    total_items: i64,
+) -> anyhow::Result<()> {
     let runner = client.read_write_transaction().build().await?;
     runner.run(async move |transaction| {
         let warehouse_id = rand::random_range(1..=scale_factor);
@@ -263,10 +267,12 @@ async fn execute_stock_level(client: DatabaseClient, scale_factor: i64) -> anyho
 
     let transaction = client.read_only_transaction().build().await?;
 
-    let district_query = Statement::builder("SELECT next_order_id FROM district WHERE warehouse_id = @w AND district_id = @d")
-        .add_param("w", &warehouse_id)
-        .add_param("d", &district_id)
-        .build();
+    let district_query = Statement::builder(
+        "SELECT next_order_id FROM district WHERE warehouse_id = @w AND district_id = @d",
+    )
+    .add_param("w", &warehouse_id)
+    .add_param("d", &district_id)
+    .build();
     let mut district_result_set: ResultSet = transaction.execute_query(district_query).await?;
     let mut next_order_id_opt = None;
     if let Some(row) = district_result_set.next().await.transpose()? {
@@ -300,7 +306,10 @@ pub(crate) async fn run_tpcc_benchmark(
     metrics: BenchmarkMetrics,
     base_attributes: Vec<KeyValue>,
 ) -> anyhow::Result<()> {
-    println!("Starting TPC-C Benchmark with Scale Factor (Warehouses): {}, Parallel Clients: {}, Items: {}", warehouses, clients, items);
+    println!(
+        "Starting TPC-C Benchmark with Scale Factor (Warehouses): {}, Parallel Clients: {}, Items: {}",
+        warehouses, clients, items
+    );
 
     // Assert database capacity
     let single_use_tx = client.single_use().build();
@@ -309,7 +318,11 @@ pub(crate) async fn run_tpcc_benchmark(
     if let Some(row) = count_result_set.next().await.transpose()? {
         let warehouse_count: i64 = row.get(0_usize);
         if warehouse_count < warehouses {
-            anyhow::bail!("Database capacity check failed: Required scale factor {} warehouses, but database only has {}", warehouses, warehouse_count);
+            anyhow::bail!(
+                "Database capacity check failed: Required scale factor {} warehouses, but database only has {}",
+                warehouses,
+                warehouse_count
+            );
         }
     }
     drop(count_result_set);
@@ -348,10 +361,34 @@ pub(crate) async fn run_tpcc_benchmark(
 
         if let Some(duration) = duration_opt {
             handles.push(tokio::spawn(async move {
-                let _ = tokio::time::timeout(duration, run_tpcc_worker_loop(db_client, warehouses, items, metrics_clone, a_no, a_pm, a_os, a_dl, a_sl)).await;
+                let _ = tokio::time::timeout(
+                    duration,
+                    run_tpcc_worker_loop(
+                        db_client,
+                        warehouses,
+                        items,
+                        metrics_clone,
+                        a_no,
+                        a_pm,
+                        a_os,
+                        a_dl,
+                        a_sl,
+                    ),
+                )
+                .await;
             }));
         } else {
-            handles.push(tokio::spawn(run_tpcc_worker_loop(db_client, warehouses, items, metrics_clone, a_no, a_pm, a_os, a_dl, a_sl)));
+            handles.push(tokio::spawn(run_tpcc_worker_loop(
+                db_client,
+                warehouses,
+                items,
+                metrics_clone,
+                a_no,
+                a_pm,
+                a_os,
+                a_dl,
+                a_sl,
+            )));
         }
     }
 

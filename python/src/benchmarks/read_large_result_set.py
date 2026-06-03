@@ -1,8 +1,10 @@
 import time
 from typing import Optional
+
 from google.cloud import spanner
 from google.cloud.spanner_v1.database import Database
-from opentelemetry.metrics import Histogram, Counter
+from opentelemetry.metrics import Counter, Histogram
+
 from .abstract_benchmark import AbstractBenchmark
 
 SQL = """SELECT
@@ -19,6 +21,7 @@ SQL = """SELECT
   TIMESTAMP_MICROS(ABS(MOD(FARM_FINGERPRINT(GENERATE_UUID()), 1230219000000000))) AS random_timestamp,
   NEW_UUID() AS random_uuid
 FROM UNNEST(GENERATE_ARRAY(1, @num_rows)) AS n"""
+
 
 class ReadLargeResultSetBenchmark(AbstractBenchmark):
     def __init__(

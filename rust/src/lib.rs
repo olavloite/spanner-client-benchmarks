@@ -4,14 +4,14 @@ pub mod read_large_result_set;
 pub mod select_update;
 pub mod tpcc;
 
-use clap::{Parser, Subcommand, ArgAction};
+use clap::{ArgAction, Parser, Subcommand};
 use futures::FutureExt;
 use google_cloud_spanner::client::Spanner;
 use load_type::{LoadType, RunConfig};
 use opentelemetry::KeyValue;
 use opentelemetry::metrics::{Counter, Histogram, MeterProvider};
 use opentelemetry_gcloud_monitoring_exporter::{GCPMetricsExporter, GCPMetricsExporterConfig};
-use opentelemetry_sdk::metrics::{SdkMeterProvider, Aggregation, Stream, Instrument};
+use opentelemetry_sdk::metrics::{Aggregation, Instrument, SdkMeterProvider, Stream};
 use std::sync::Arc;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
@@ -19,7 +19,10 @@ use tokio::time::Instant;
 pub static TEST_METER_PROVIDER: std::sync::OnceLock<SdkMeterProvider> = std::sync::OnceLock::new();
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "BenchmarkApp", about = "Spanner client library benchmark tool for Rust.")]
+#[command(
+    name = "BenchmarkApp",
+    about = "Spanner client library benchmark tool for Rust."
+)]
 pub struct Args {
     #[arg(long)]
     pub project: String,
@@ -115,38 +118,57 @@ async fn setup_metrics(
 ) -> anyhow::Result<(BenchmarkMetrics, SdkMeterProvider, bool)> {
     if let Some(provider) = TEST_METER_PROVIDER.get() {
         let meter = provider.meter("spanner-benchmark");
-        let latency = meter.f64_histogram("spanner_client_benchmarks/latency")
+        let latency = meter
+            .f64_histogram("spanner_client_benchmarks/latency")
             .with_description("Query latency in microseconds")
             .with_unit("us")
             .build();
-        let read_latency = meter.f64_histogram("spanner_client_benchmarks/read_latency")
+        let read_latency = meter
+            .f64_histogram("spanner_client_benchmarks/read_latency")
             .with_description("Query latency in microseconds")
             .with_unit("us")
             .build();
-        let operation_count = meter.u64_counter("spanner_client_benchmarks/operation_count")
+        let operation_count = meter
+            .u64_counter("spanner_client_benchmarks/operation_count")
             .with_description("Total number of benchmark operations executed")
             .with_unit("1")
             .build();
-        let error_count = meter.u64_counter("spanner_client_benchmarks/error_count")
+        let error_count = meter
+            .u64_counter("spanner_client_benchmarks/error_count")
             .with_description("Total number of benchmark operations that failed with an error")
             .with_unit("1")
             .build();
-        let memory_usage = meter.f64_histogram("spanner_client_benchmarks/memory_usage")
+        let memory_usage = meter
+            .f64_histogram("spanner_client_benchmarks/memory_usage")
             .with_description("Active memory usage in bytes")
             .with_unit("By")
             .build();
-        let cpu_utilization = meter.f64_histogram("spanner_client_benchmarks/cpu_utilization")
+        let cpu_utilization = meter
+            .f64_histogram("spanner_client_benchmarks/cpu_utilization")
             .with_description("Process CPU utilization")
             .with_unit("1")
             .build();
-        return Ok((BenchmarkMetrics { latency, read_latency, operation_count, error_count, memory_usage, cpu_utilization }, provider.clone(), false));
+        return Ok((
+            BenchmarkMetrics {
+                latency,
+                read_latency,
+                operation_count,
+                error_count,
+                memory_usage,
+                cpu_utilization,
+            },
+            provider.clone(),
+            false,
+        ));
     }
 
     let config = GCPMetricsExporterConfig {
         project_id: Some(project_id.to_string()),
         ..Default::default()
     };
-    let exporter = GCPMetricsExporter::init(config).await.map_err(|e| anyhow::anyhow!("{:?}", e))?;
+    let exporter = GCPMetricsExporter::init(config)
+        .await
+        .map_err(|e| anyhow::anyhow!("{:?}", e))?;
 
     let service_name = benchmark_name.unwrap_or_else(|| "spanner-benchmark".to_string());
     let instance_id = uuid::Uuid::new_v4().to_string();
@@ -210,37 +232,54 @@ async fn setup_metrics(
 
     let meter = provider.meter("spanner-benchmark");
 
-    let latency = meter.f64_histogram("spanner_client_benchmarks/latency")
+    let latency = meter
+        .f64_histogram("spanner_client_benchmarks/latency")
         .with_description("Query latency in microseconds")
         .with_unit("us")
         .build();
 
-    let read_latency = meter.f64_histogram("spanner_client_benchmarks/read_latency")
+    let read_latency = meter
+        .f64_histogram("spanner_client_benchmarks/read_latency")
         .with_description("Query latency in microseconds")
         .with_unit("us")
         .build();
 
-    let operation_count = meter.u64_counter("spanner_client_benchmarks/operation_count")
+    let operation_count = meter
+        .u64_counter("spanner_client_benchmarks/operation_count")
         .with_description("Total number of benchmark operations executed")
         .with_unit("1")
         .build();
 
-    let error_count = meter.u64_counter("spanner_client_benchmarks/error_count")
+    let error_count = meter
+        .u64_counter("spanner_client_benchmarks/error_count")
         .with_description("Total number of benchmark operations that failed with an error")
         .with_unit("1")
         .build();
 
-    let memory_usage = meter.f64_histogram("spanner_client_benchmarks/memory_usage")
+    let memory_usage = meter
+        .f64_histogram("spanner_client_benchmarks/memory_usage")
         .with_description("Active memory usage in bytes")
         .with_unit("By")
         .build();
 
-    let cpu_utilization = meter.f64_histogram("spanner_client_benchmarks/cpu_utilization")
+    let cpu_utilization = meter
+        .f64_histogram("spanner_client_benchmarks/cpu_utilization")
         .with_description("Process CPU utilization")
         .with_unit("1")
         .build();
 
-    Ok((BenchmarkMetrics { latency, read_latency, operation_count, error_count, memory_usage, cpu_utilization }, provider, true))
+    Ok((
+        BenchmarkMetrics {
+            latency,
+            read_latency,
+            operation_count,
+            error_count,
+            memory_usage,
+            cpu_utilization,
+        },
+        provider,
+        true,
+    ))
 }
 
 pub fn run_task(
@@ -262,7 +301,13 @@ pub fn run_task(
                 select_update::execute_select_update(db_client, table, 1, num_rows).await
             }
             Commands::ReadLargeResultSet { num_rows, .. } => {
-                read_large_result_set::execute_read_large_result_set(db_client, num_rows, metrics.read_latency.clone(), attributes.clone()).await
+                read_large_result_set::execute_read_large_result_set(
+                    db_client,
+                    num_rows,
+                    metrics.read_latency.clone(),
+                    attributes.clone(),
+                )
+                .await
             }
             Commands::Tpcc { .. } => unreachable!(),
         };
@@ -325,8 +370,15 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
     // Validation
     match args.load_type {
         LoadType::Steady => {
-            if args.cycle_duration.is_some() || args.peak_factor.is_some() || args.burst_factor.is_some() || args.burst_duration.is_some() || args.burst_fraction.is_some() {
-                anyhow::bail!("Cannot specify burst or gradual load options when load-type is steady");
+            if args.cycle_duration.is_some()
+                || args.peak_factor.is_some()
+                || args.burst_factor.is_some()
+                || args.burst_duration.is_some()
+                || args.burst_fraction.is_some()
+            {
+                anyhow::bail!(
+                    "Cannot specify burst or gradual load options when load-type is steady"
+                );
             }
         }
         LoadType::Spiky => {
@@ -335,7 +387,10 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
             }
         }
         LoadType::Gradual => {
-            if args.burst_factor.is_some() || args.burst_duration.is_some() || args.burst_fraction.is_some() {
+            if args.burst_factor.is_some()
+                || args.burst_duration.is_some()
+                || args.burst_fraction.is_some()
+            {
                 anyhow::bail!("Cannot specify burst load options when load-type is gradual");
             }
         }
@@ -345,9 +400,13 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
     let burst_factor = args.burst_factor.unwrap_or(1.0);
     let burst_duration = args.burst_duration.unwrap_or(1.0);
     let burst_fraction = args.burst_fraction.unwrap_or(0.1);
-    let cycle_duration_str = args.cycle_duration.clone().unwrap_or_else(|| "1h".to_string());
+    let cycle_duration_str = args
+        .cycle_duration
+        .clone()
+        .unwrap_or_else(|| "1h".to_string());
     let peak_factor = args.peak_factor.unwrap_or(2.0);
-    let cycle_duration = load_type::parse_duration(&cycle_duration_str).ok_or_else(|| anyhow::anyhow!("Failed to parse cycle duration: {}", cycle_duration_str))?;
+    let cycle_duration = load_type::parse_duration(&cycle_duration_str)
+        .ok_or_else(|| anyhow::anyhow!("Failed to parse cycle duration: {}", cycle_duration_str))?;
 
     // Build Spanner client
     let mut builder = Spanner::builder();
@@ -364,18 +423,40 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         .await?;
 
     let duration = load_type::parse_duration(&args.duration);
-    let (metrics, _meter_provider, is_owned_provider) = setup_metrics(&args.project, args.benchmark_name.clone()).await?;
+    let (metrics, _meter_provider, is_owned_provider) =
+        setup_metrics(&args.project, args.benchmark_name.clone()).await?;
 
-    if let Commands::Tpcc { warehouses, clients, items } = args.command {
+    if let Commands::Tpcc {
+        warehouses,
+        clients,
+        items,
+    } = args.command
+    {
         let base_attributes = vec![
             KeyValue::new("benchmark_type", "tpcc"),
             KeyValue::new("for_alerting", args.for_alerting),
-            KeyValue::new("benchmark_name", args.benchmark_name.unwrap_or_else(|| "".to_string())),
+            KeyValue::new(
+                "benchmark_name",
+                args.benchmark_name.unwrap_or_else(|| "".to_string()),
+            ),
             KeyValue::new("client", "rust-client"),
             KeyValue::new("concurrent_clients", clients as i64),
         ];
-        let monitor_handle = start_resource_monitoring(&args.resource_probe_interval, metrics.clone(), base_attributes.clone());
-        let res = tpcc::run_tpcc_benchmark(db_client, warehouses, clients, items, duration, metrics, base_attributes).await;
+        let monitor_handle = start_resource_monitoring(
+            &args.resource_probe_interval,
+            metrics.clone(),
+            base_attributes.clone(),
+        );
+        let res = tpcc::run_tpcc_benchmark(
+            db_client,
+            warehouses,
+            clients,
+            items,
+            duration,
+            metrics,
+            base_attributes,
+        )
+        .await;
         if let Some(handle) = monitor_handle {
             handle.abort();
         }
@@ -404,7 +485,10 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         KeyValue::new("benchmark_type", benchmark_type_str),
         KeyValue::new("tps", tps),
         KeyValue::new("for_alerting", args.for_alerting),
-        KeyValue::new("benchmark_name", args.benchmark_name.unwrap_or_else(|| "".to_string())),
+        KeyValue::new(
+            "benchmark_name",
+            args.benchmark_name.unwrap_or_else(|| "".to_string()),
+        ),
         KeyValue::new("client", "rust-client"),
         KeyValue::new("load_type", format!("{:?}", args.load_type).to_lowercase()),
         KeyValue::new("burst_factor", burst_factor),
@@ -420,7 +504,11 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         args.command, args.duration, tps, args.threads
     );
 
-    let monitor_handle = start_resource_monitoring(&args.resource_probe_interval, metrics.clone(), attributes.clone());
+    let monitor_handle = start_resource_monitoring(
+        &args.resource_probe_interval,
+        metrics.clone(),
+        attributes.clone(),
+    );
 
     let semaphore = Arc::new(Semaphore::new(args.threads));
     let table = args.table.clone().expect("--table is required");
@@ -428,7 +516,7 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
 
     // Loop to generate tasks with Poisson delays
     let start_time = Instant::now();
-    
+
     let config = RunConfig {
         db_client,
         table,

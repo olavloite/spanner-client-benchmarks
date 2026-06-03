@@ -1,9 +1,13 @@
-from google.cloud import spanner
-from google.api_core.client_options import ClientOptions
-from google.auth.credentials import AnonymousCredentials
 from typing import Optional
 
-def create_spanner_client(project_id: str, host: Optional[str] = None) -> spanner.Client:
+from google.api_core.client_options import ClientOptions
+from google.auth.credentials import AnonymousCredentials
+from google.cloud import spanner
+
+
+def create_spanner_client(
+    project_id: str, host: Optional[str] = None
+) -> spanner.Client:
     """
     Configures and instantiates a standard google-cloud-spanner Client object.
     """

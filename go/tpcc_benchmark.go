@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	"github.com/urfave/cli/v3"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
-	"github.com/urfave/cli/v3"
 )
 
 func executeTPCCBenchmark(ctx context.Context, cmd *cli.Command) error {

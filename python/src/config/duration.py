@@ -1,6 +1,7 @@
 import re
 from typing import Optional
 
+
 def parse_duration(duration_str: Optional[str]) -> Optional[float]:
     """
     Parses a human-readable duration string (e.g., "30s", "5m", "2h", "inf", "infinite")

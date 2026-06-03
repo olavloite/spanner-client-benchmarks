@@ -17,12 +17,12 @@ import (
 	mexporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
 	"github.com/google/uuid"
 	"github.com/urfave/cli/v3"
-	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 )
@@ -479,5 +479,3 @@ func probeResourceUsage(ctx context.Context, memoryUsageHistogram metric.Float64
 		*initialized = true
 	}
 }
-
-

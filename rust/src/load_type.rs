@@ -1,4 +1,4 @@
-use crate::{Commands, BenchmarkMetrics, run_task};
+use crate::{BenchmarkMetrics, Commands, run_task};
 use google_cloud_spanner::client::DatabaseClient;
 use opentelemetry::KeyValue;
 use std::sync::Arc;
@@ -58,7 +58,9 @@ impl LoadType {
             let metrics = config.metrics.clone();
             let attributes = config.attributes.clone();
 
-            tokio::spawn(run_task(db_client, table, command, permit, metrics, attributes));
+            tokio::spawn(run_task(
+                db_client, table, command, permit, metrics, attributes,
+            ));
 
             tokio::time::sleep(calculate_poisson_delay(config.tps)).await;
         }
@@ -66,7 +68,8 @@ impl LoadType {
 
     async fn run_spiky(&self, config: RunConfig) {
         let r_burst = config.tps * config.burst_factor;
-        let r_normal = (config.tps - config.burst_fraction * r_burst) / (1.0 - config.burst_fraction);
+        let r_normal =
+            (config.tps - config.burst_fraction * r_burst) / (1.0 - config.burst_fraction);
 
         let mu2 = 1.0 / config.burst_duration;
         let mu1 = mu2 * config.burst_fraction / (1.0 - config.burst_fraction);
@@ -84,7 +87,11 @@ impl LoadType {
             let now = Instant::now();
             if now >= next_state_change_time {
                 in_burst = !in_burst;
-                let next_delay = if in_burst { calculate_poisson_delay(mu2) } else { calculate_poisson_delay(mu1) };
+                let next_delay = if in_burst {
+                    calculate_poisson_delay(mu2)
+                } else {
+                    calculate_poisson_delay(mu1)
+                };
                 next_state_change_time = now + next_delay;
             }
 
@@ -100,7 +107,7 @@ impl LoadType {
             } else {
                 Duration::from_secs(0)
             };
-            
+
             if delay > time_to_state_change {
                 if !time_to_state_change.is_zero() {
                     tokio::time::sleep(time_to_state_change).await;
@@ -119,7 +126,9 @@ impl LoadType {
             let metrics = config.metrics.clone();
             let attributes = config.attributes.clone();
 
-            tokio::spawn(run_task(db_client, table, command, permit, metrics, attributes));
+            tokio::spawn(run_task(
+                db_client, table, command, permit, metrics, attributes,
+            ));
 
             tokio::time::sleep(delay).await;
         }
@@ -139,9 +148,11 @@ impl LoadType {
 
             let now = Instant::now();
             let elapsed_ns = now.duration_since(start_instant).as_nanos() as u64;
-            
+
             // Calculate rate based on sine wave
-            let angle = (2.0 * std::f64::consts::PI * (elapsed_ns % cycle_duration_ns as u64) as f64) / cycle_duration_ns;
+            let angle =
+                (2.0 * std::f64::consts::PI * (elapsed_ns % cycle_duration_ns as u64) as f64)
+                    / cycle_duration_ns;
             let current_rate = config.tps + amplitude * (angle - std::f64::consts::PI).cos();
 
             let permit = match config.semaphore.clone().acquire_owned().await {
@@ -155,7 +166,9 @@ impl LoadType {
             let metrics = config.metrics.clone();
             let attributes = config.attributes.clone();
 
-            tokio::spawn(run_task(db_client, table, command, permit, metrics, attributes));
+            tokio::spawn(run_task(
+                db_client, table, command, permit, metrics, attributes,
+            ));
 
             tokio::time::sleep(calculate_poisson_delay(current_rate)).await;
         }
