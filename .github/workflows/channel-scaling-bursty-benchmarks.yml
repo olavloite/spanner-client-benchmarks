@@ -1,0 +1,42 @@
+name: Channel Scaling Bursty Benchmarks
+
+on:
+  schedule:
+    # Run daily at 08:30 UTC
+    - cron: '30 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-point-select:
+    uses: ./.github/workflows/benchmark-template.yml
+    with:
+      benchmark_types: '["point-select"]'
+      duration: '1h'
+      load_type: 'spiky'
+      tps: '2000'
+      threads: '500'
+      burst_factor: '3.8'
+      burst_duration: '5.0'
+      burst_fraction: '0.25'
+      cpu: '8'
+      memory: '2Gi'
+      benchmark_name: 'channel-scaling-bursty-point-select'
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+
+  run-select-update:
+    uses: ./.github/workflows/benchmark-template.yml
+    with:
+      benchmark_types: '["select-update"]'
+      duration: '1h'
+      load_type: 'spiky'
+      tps: '2000'
+      threads: '500'
+      burst_factor: '3.8'
+      burst_duration: '5.0'
+      burst_fraction: '0.25'
+      cpu: '8'
+      memory: '2Gi'
+      benchmark_name: 'channel-scaling-bursty-select-update'
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}

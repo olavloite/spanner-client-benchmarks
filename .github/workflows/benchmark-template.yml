@@ -19,6 +19,10 @@ on:
         description: 'Benchmark target TPS (optional)'
         required: false
         type: string
+      threads:
+        description: 'Number of concurrent threads (optional)'
+        required: false
+        type: string
       burst_factor:
         description: 'Burst factor (optional)'
         required: false
@@ -46,6 +50,16 @@ on:
         required: false
         type: string
         default: '["java", "go", "node", "python", "rust"]'
+      cpu:
+        description: 'Number of vCPUs'
+        required: false
+        type: string
+        default: '2'
+      memory:
+        description: 'Memory allocation'
+        required: false
+        type: string
+        default: '1Gi'
       warehouses:
         description: 'Scale factor (number of warehouses) - TPC-C only (optional)'
         required: false
@@ -65,8 +79,8 @@ env:
   INSTANCE_ID: knut-test-ycsb
   DATABASE_ID: ${{ inputs.database_id }}
   REGION: europe-north1
-  CPU: 2
-  MEMORY: 4Gi
+  CPU: ${{ inputs.cpu }}
+  MEMORY: ${{ inputs.memory }}
   SKIP_CLEANUP: 'true'
 
 jobs:
@@ -96,6 +110,7 @@ jobs:
           DURATION: ${{ inputs.duration }}
           LOAD_TYPE: ${{ inputs.load_type }}
           TPS: ${{ inputs.tps }}
+          THREADS: ${{ inputs.threads }}
           BURST_FACTOR: ${{ inputs.burst_factor }}
           BURST_DURATION: ${{ inputs.burst_duration }}
           BURST_FRACTION: ${{ inputs.burst_fraction }}
