@@ -116,7 +116,7 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
                           "--load-type",
                           "SPIKY",
                           "--burst-factor",
-                          "5.0",
+                          "2.0",
                           "--burst-duration",
                           "0.5",
                           "--burst-fraction",

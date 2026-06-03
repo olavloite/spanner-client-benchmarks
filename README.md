@@ -12,6 +12,7 @@ The benchmarks are built and run against the **most recent source code** of thei
 - 🟢 **Go**: Implemented.
 - 🟢 **Node.js**: Implemented.
 - 🟢 **Python**: Implemented.
+- 🟢 **Rust**: Implemented.
 
 ---
 
@@ -28,6 +29,12 @@ A read-modify-write scenario executed inside a Read-Write Transaction. Reads a r
 ### Read Large Result Set (`read-large-result-set`)
 Executes a query that generates a large result set with all supported data types, and iterates over the results to measure throughput and decoding performance.
 
+### TPC-C Benchmark (`tpcc`)
+Runs a closed-loop TPC-C benchmark against Spanner to measure performance under standardized transaction mixes (New-Order, Payment, Order-Status, Delivery, Stock-Level). 
+
+> [!NOTE]
+> Running the TPC-C benchmark requires an initialization phase using the `tpcc-init` subcommand (currently supported by the Java client runner) to create the schema and populate the test data. Once populated, any language client can execute the benchmark.
+
 ---
 
 ## Configuration Options
@@ -39,15 +46,19 @@ The following options are supported by the benchmark applications. While most la
 - `-p, --project`: (Required) Google Cloud Project ID.
 - `-i, --instance`: (Required) Spanner Instance ID.
 - `-d, --database`: (Required) Spanner Database ID.
-- `-t, --table`: (Required for most scenarios) Target database table name.
+- `-t, --table`: (Required for most scenarios) Target database table name (not required for `tpcc`).
 - `--duration`: Duration of the benchmark (e.g., `60s`, `5m`, `inf` for infinite). Defaults to `inf`.
 - `--for-alerting`: Marks the metrics for alerting pipelines. Defaults to `false`.
 - `--host`: Custom Spanner endpoint URL override (e.g., for emulators).
-- `--threads`: Number of parallel workers allowed (default: 100).
-- `--tps`: Target transactions per second (default varies by scenario).
+- `--threads`: Number of parallel workers allowed (default: 100). *(Not supported for TPC-C, which uses `--clients` instead)*.
+- `--tps`: Target transactions per second (default varies by scenario). *(Not supported for TPC-C, which runs closed-loop as fast as possible)*.
 - `--num-rows`: Number of rows to generate or select from.
+- `--load-type`: Workload generator load pattern. *(Not supported for TPC-C)*. Supported types are:
+    - `steady`: Default. Steady Poisson load (constant target TPS).
+    - `spiky`: Alternates randomly between quiet and burst states simulating a spiky load.
+    - `gradual`: Generates a sine-wave shaped load pattern over a cycle.
 
-### Bursty Load Options
+### Spiky/Bursty Load Options (Only for `--load-type spiky`)
 
 These options configure the **2-State Markov-Modulated Poisson Process (MMPP)** to simulate spiky load. The load generator alternates randomly between a **Quiet** state and a **Burst** state. The arrivals in both states are still Poisson (random inter-arrival times), but the average rate changes.
 
@@ -86,6 +97,15 @@ The model guarantees that the **overall long-term average TPS matches the reques
 > [!WARNING]
 > **Constraint**: To ensure the rate in the quiet state does not become negative, you must ensure that `burst-factor` $\le 1 / \text{burst-fraction}$. For example, if `burst-fraction` is `0.2`, the maximum `burst-factor` is `5.0`.
 
+### Gradual/Sine Load Options (Only for `--load-type gradual`)
+
+These options generate a sine-wave shaped load pattern where traffic varies periodically over a specified cycle duration:
+
+- `--cycle-duration`: The duration of a full sine-wave cycle (e.g., `10m`, `1h`, `12h`).
+    - *Default*: `1h`
+- `--peak-factor`: The multiplier applied to the target `--tps` to determine the peak of the sine wave.
+    - *How it works*: If target `--tps` is `100` and `--peak-factor` is `2.0`, the load will smoothly oscillate between a minimum of `0` TPS and a peak of `200` TPS.
+    - *Default*: `2.0`
 
 ---
 
@@ -95,6 +115,7 @@ The model guarantees that the **overall long-term average TPS matches the reques
 - [go/](go/): Go benchmark implementation.
 - [node/](node/): Node.js benchmark implementation.
 - [python/](python/): Python benchmark implementation.
+- [rust/](rust/): Rust benchmark implementation.
 - [analyzer/](analyzer/): Benchmarks regression analyzer.
 
 ---
@@ -106,13 +127,21 @@ Build and execution scripts are provided at the project root to simplify running
 ### 1. Local Execution
 To build and test the benchmarks locally against the latest upstream client library:
 ```bash
-./run_benchmark_locally.sh <go|java|node|python> [options] [benchmark-type]
+./run_benchmark_locally.sh <go|java|node|python|rust> [options] [benchmark-type]
+```
+
+To run local builds against a specific upstream branch or commit hash:
+```bash
+# Example: Test experimental changes on Go client branch "feature/fast-decoder"
+export CLIENT_BRANCH="feature/fast-decoder"
+export USE_RELEASED_VERSION="false"
+./run_benchmark_locally.sh go --project <PROJECT_ID> --instance <INSTANCE_ID> --database <DATABASE_ID> --table <TABLE_NAME> point-select --tps 100
 ```
 
 ### 2. Cloud Run Jobs
 Benchmarks are designed to run natively as Cloud Run Jobs for sustained performance tracking. To package and deploy them to the cloud:
 ```bash
-./run_benchmark.sh <go|java|node|python>
+./run_benchmark.sh <go|java|node|python|rust>
 ```
 This will:
 - Pull the latest client library code from the official upstream repository.
@@ -122,7 +151,7 @@ This will:
 > [!TIP]
 > You can customize execution parameters (e.g., `PROJECT_ID`, `TPS`, `THREADS`, `DURATION`, etc.) by declaring environment variables before running the scripts.
 
-### 3. Running Experimental Branch Builds
+### 3. Running Experimental Branch Builds in Cloud Run
 
 If you are testing experimental client library changes pushed to a specific GitHub branch, you can easily benchmark them by specifying `CLIENT_BRANCH` and `BENCHMARK_NAME`.
 
@@ -139,6 +168,57 @@ export BENCHMARK_TYPE="read-large-result-set"
 This will:
 - Clone the specific `feature/fast-decoder` branch from the upstream repository.
 - Include the attribute `benchmark_name="exp-fast-decoder"` in all emitted OpenTelemetry metrics, allowing you to easily filter and compare your experiment in Google Cloud Monitoring.
+
+### 4. Running TPC-C Benchmark
+
+To run the TPC-C benchmark, you must first initialize the schema and populate the database with test data. The initialization is currently supported via the Java runner.
+
+#### TPC-C Specific Options
+- `--warehouses`: The scaling factor representing the number of simulated warehouses. Default is `1`. This controls the database sizing and data capacity. Note that the value used during benchmark execution (`tpcc`) must match or be smaller than the value used during database initialization (`tpcc-init`).
+- `--clients`: The number of parallel closed-loop clients executing TPC-C transactions as fast as possible. Default is `10`. *(Only supported for `tpcc`, not `tpcc-init`)*.
+- `--items`: The size of the item catalog. Default is `100000`. Must match between the initialization and execution runs.
+
+**Step 1: Initialize TPC-C Schema and Data**
+Initialization of the schema and initial data is performed using the Java runner.
+
+*Deploy and execute via Cloud Run Job (Recommended):*
+```bash
+export BENCHMARK_TYPE="tpcc-init"
+export WAREHOUSES=10
+export ITEMS=100000
+export PROJECT_ID="<PROJECT_ID>"
+export INSTANCE_ID="<INSTANCE_ID>"
+export DATABASE_ID="<DATABASE_ID>"
+
+./run_benchmark.sh java
+```
+
+*Or run locally:*
+```bash
+./run_benchmark_locally.sh java --project <PROJECT_ID> --instance <INSTANCE_ID> --database <DATABASE_ID> tpcc-init --warehouses 10 --items 100000
+```
+
+**Step 2: Execute TPC-C Benchmark Run**
+Once the database is initialized, run the closed-loop TPC-C benchmark in any of the supported languages (e.g., Go).
+
+*Deploy and execute via Cloud Run Job (Recommended):*
+```bash
+export BENCHMARK_TYPE="tpcc"
+export WAREHOUSES=10
+export ITEMS=100000
+export CLIENTS=20
+export DURATION="1h"
+export PROJECT_ID="<PROJECT_ID>"
+export INSTANCE_ID="<INSTANCE_ID>"
+export DATABASE_ID="<DATABASE_ID>"
+
+./run_benchmark.sh go
+```
+
+*Or run locally:*
+```bash
+./run_benchmark_locally.sh go --project <PROJECT_ID> --instance <INSTANCE_ID> --database <DATABASE_ID> tpcc --warehouses 10 --clients 20 --items 100000
+```
 
 ---
 
