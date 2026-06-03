@@ -78,6 +78,9 @@ export class ReadLargeResultSetBenchmark extends AbstractBenchmark {
     return "read-large-result-set";
   }
 
+  // INTENTIONAL: Do not change shouldMeasureEntireMethod to return true.
+  // We intentionally exclude the initial query execution and the first row fetch
+  // to measure purely the iteration and decoding latency of the remaining rows.
   protected shouldMeasureEntireMethod(): boolean {
     return false;
   }

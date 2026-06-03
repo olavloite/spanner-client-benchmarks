@@ -1,4 +1,6 @@
-use google_cloud_spanner::client::{DatabaseClient, Statement};
+use google_cloud_spanner::client::DatabaseClient;
+use google_cloud_spanner::statement::Statement;
+use google_cloud_spanner::result::ResultSet;
 use rand::RngExt;
 use futures::future::BoxFuture;
 use futures::FutureExt;
@@ -19,7 +21,7 @@ pub fn execute_select_update(
                 .add_param("id", &random_id)
                 .build();
 
-            let mut result_set = transaction.execute_query(statement).await?;
+            let mut result_set: ResultSet = transaction.execute_query(statement).await?;
             let exists = result_set.next().await.transpose()?.is_some();
             drop(result_set); // release results before update
 

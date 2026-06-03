@@ -46,6 +46,9 @@ public class ReadLargeResultSetBenchmark extends AbstractBenchmark {
         return this.customAttributes;
     }
 
+    // INTENTIONAL: Do not change shouldMeasureEntireMethod to return true.
+    // We intentionally exclude the initial query execution and the first row fetch
+    // to measure purely the iteration and decoding latency of the remaining rows.
     @Override
     protected boolean shouldMeasureEntireMethod() {
         return false;

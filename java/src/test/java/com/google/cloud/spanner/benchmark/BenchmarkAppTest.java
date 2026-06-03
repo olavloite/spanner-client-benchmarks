@@ -23,6 +23,7 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
         thread.interrupt();
         thread.join(5000); // Wait for it to finish
         assertTrue("Thread should have finished", !thread.isAlive());
+        assertNoErrors();
     }
 
     @Test
@@ -43,6 +44,7 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
         thread.interrupt();
         thread.join(5000); // Wait for it to finish
         assertTrue("Thread should have finished", !thread.isAlive());
+        assertNoErrors();
     }
 
     @Test
@@ -69,6 +71,7 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
         thread.interrupt();
         thread.join(5000); // Wait for it to finish
         assertTrue("Thread should have finished", !thread.isAlive());
+        assertNoErrors();
     }
 
     @Test
@@ -94,6 +97,7 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
         thread.interrupt();
         thread.join(5000); // Wait for it to finish
         assertTrue("Thread should have finished", !thread.isAlive());
+        assertNoErrors();
     }
 
     @Test
@@ -118,6 +122,7 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
         thread.interrupt();
         thread.join(5000); // Wait for it to finish
         assertTrue("Thread should have finished", !thread.isAlive());
+        assertNoErrors();
     }
 
     @Test
@@ -208,5 +213,6 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
         
         thread.interrupt();
         thread.join(5000);
+        assertNoErrors();
     }
 }
