@@ -1,6 +1,12 @@
 name: TPC-C Benchmark Runner
 
 on:
+  schedule:
+    - cron: '7 19 * * *'   # Java
+    - cron: '14 21 * * *'  # Go
+    - cron: '21 23 * * *'  # Node
+    - cron: '28 1 * * *'   # Python
+    - cron: '35 3 * * *'   # Rust
   workflow_dispatch:
     inputs:
       action:
@@ -37,52 +43,78 @@ on:
         type: string
         default: 'manual-tpcc'
 
-env:
-  PROJECT_ID: appdev-soda-spanner-staging
-  INSTANCE_ID: knut-test-ycsb
-  DATABASE_ID: benchmarks
-  REGION: europe-north1
-  CPU: 2
-  MEMORY: 4Gi
-  SKIP_CLEANUP: 'true'
-
 jobs:
-  run-tpcc-benchmark:
-    name: Run TPC-C Suite
+  prepare:
+    name: Prepare Parameters
     runs-on: ubuntu-latest
+    outputs:
+      clients_json: ${{ steps.set-params.outputs.clients_json }}
+      benchmark_types_json: ${{ steps.set-params.outputs.benchmark_types_json }}
+      duration: ${{ steps.set-params.outputs.duration }}
+      benchmark_name: ${{ steps.set-params.outputs.benchmark_name }}
+      warehouses: ${{ steps.set-params.outputs.warehouses }}
+      items: ${{ steps.set-params.outputs.items }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v3
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Determine Client Matrix and Execute
-        env:
-          ACTION: ${{ inputs.action }}
-          DURATION: ${{ inputs.duration }}
-          WAREHOUSES: ${{ inputs.warehouses }}
-          ITEMS: ${{ inputs.items }}
-          FOR_ALERTING: 'false'
-          BENCHMARK_NAME: ${{ inputs.benchmark_name }}
+      - id: set-params
         run: |
-          if [ "$ACTION" = "tpcc-init (schema and data populator)" ]; then
-            export BENCHMARK_TYPE="tpcc-init"
-            ./run_benchmark.sh java
-          elif [ "$ACTION" = "tpcc (all languages)" ]; then
-            export BENCHMARK_TYPE="tpcc"
-            ./run_benchmark.sh java
-            ./run_benchmark.sh go
-            ./run_benchmark.sh node
-            ./run_benchmark.sh python
-            ./run_benchmark.sh rust
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            # Map the scheduled hour (UTC) to the target client language
+            HOUR=$(echo "${{ github.event.schedule }}" | cut -d' ' -f2)
+            case "$HOUR" in
+              19) CLIENT="java" ;;   # 19:07 UTC
+              21) CLIENT="go" ;;     # 21:14 UTC
+              23) CLIENT="node" ;;   # 23:21 UTC
+              1)  CLIENT="python" ;; # 01:28 UTC
+              3)  CLIENT="rust" ;;   # 03:35 UTC
+              *)
+                echo "Unknown schedule hour: $HOUR"
+                exit 1
+                ;;
+            esac
+            CLIENTS_JSON="[\"$CLIENT\"]"
+            BENCHMARK_TYPES_JSON='["tpcc"]'
+            DURATION="1h"
+            BENCHMARK_NAME="scheduled-tpcc-$CLIENT"
+            WAREHOUSES=""
+            ITEMS=""
           else
-            export BENCHMARK_TYPE="tpcc"
-            CLIENT=$(echo "$ACTION" | sed -n 's/tpcc (\(.*\))/\1/p')
-            ./run_benchmark.sh $CLIENT
+            ACTION="${{ inputs.action }}"
+            WAREHOUSES="${{ inputs.warehouses }}"
+            ITEMS="${{ inputs.items }}"
+            DURATION="${{ inputs.duration }}"
+            BENCHMARK_NAME="${{ inputs.benchmark_name }}"
+            
+            if [ "$ACTION" = "tpcc-init (schema and data populator)" ]; then
+              CLIENTS_JSON='["java"]'
+              BENCHMARK_TYPES_JSON='["tpcc-init"]'
+            elif [ "$ACTION" = "tpcc (all languages)" ]; then
+              CLIENTS_JSON='["java", "go", "node", "python", "rust"]'
+              BENCHMARK_TYPES_JSON='["tpcc"]'
+            else
+              CLIENT=$(echo "$ACTION" | sed -n 's/tpcc (\(.*\))/\1/p')
+              CLIENTS_JSON="[\"$CLIENT\"]"
+              BENCHMARK_TYPES_JSON='["tpcc"]'
+            fi
           fi
+
+          echo "clients_json=$CLIENTS_JSON" >> $GITHUB_OUTPUT
+          echo "benchmark_types_json=$BENCHMARK_TYPES_JSON" >> $GITHUB_OUTPUT
+          echo "duration=$duration" >> $GITHUB_OUTPUT
+          echo "benchmark_name=$BENCHMARK_NAME" >> $GITHUB_OUTPUT
+          echo "warehouses=$WAREHOUSES" >> $GITHUB_OUTPUT
+          echo "items=$ITEMS" >> $GITHUB_OUTPUT
+
+  run-benchmarks:
+    name: Run TPC-C Benchmark
+    needs: prepare
+    uses: ./.github/workflows/benchmark-template.yml
+    with:
+      benchmark_types: ${{ needs.prepare.outputs.benchmark_types_json }}
+      duration: ${{ needs.prepare.outputs.duration }}
+      clients: ${{ needs.prepare.outputs.clients_json }}
+      database_id: 'benchmarks'
+      benchmark_name: ${{ needs.prepare.outputs.benchmark_name }}
+      warehouses: ${{ needs.prepare.outputs.warehouses }}
+      items: ${{ needs.prepare.outputs.items }}
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}

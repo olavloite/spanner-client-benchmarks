@@ -2,7 +2,7 @@ name: Latency Benchmarks
 
 on:
   schedule:
-    - cron: '0 5 * * *'
+    - cron: '42 5 * * *'
   workflow_dispatch:
 
 jobs:

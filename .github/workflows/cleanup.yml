@@ -2,8 +2,8 @@ name: Maintenance Cleanup
 
 on:
   schedule:
-    # Schedule daily at 02:00 UTC, before any morning benchmark suites begin
-    - cron: '0 2 * * *'
+    # Schedule daily at 17:12 UTC, before any evening benchmark suites begin
+    - cron: '12 17 * * *'
   workflow_dispatch:
 
 env:
