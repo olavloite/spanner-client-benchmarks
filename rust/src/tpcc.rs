@@ -1,6 +1,8 @@
 use std::hint::black_box;
-use google_cloud_spanner::client::{DatabaseClient, Statement};
-use google_cloud_spanner::batch_dml::BatchDml;
+use google_cloud_spanner::client::DatabaseClient;
+use google_cloud_spanner::statement::Statement;
+use google_cloud_spanner::batch::BatchDml;
+use google_cloud_spanner::result::ResultSet;
 use std::sync::Arc;
 use tokio::time::{Duration, Instant};
 use opentelemetry::KeyValue;
@@ -27,10 +29,10 @@ async fn execute_new_order(client: DatabaseClient, scale_factor: i64, total_item
             .add_param("d", &district_id)
             .build();
 
-        let mut result_set = transaction.execute_query(statement).await?;
+        let mut result_set: ResultSet = transaction.execute_query(statement).await?;
         let mut next_order_id = 1000i64;
         if let Some(row) = result_set.next().await.transpose()? {
-            let val: i64 = row.get(0);
+            let val: i64 = row.get(0_usize);
             next_order_id = val;
         }
         drop(result_set);
@@ -40,10 +42,10 @@ async fn execute_new_order(client: DatabaseClient, scale_factor: i64, total_item
             .add_param("d", &district_id)
             .add_param("c", &customer_id)
             .build();
-        let mut customer_result_set = transaction.execute_query(customer_query).await?;
+        let mut customer_result_set: ResultSet = transaction.execute_query(customer_query).await?;
         while let Some(row) = customer_result_set.next().await.transpose()? {
-            let _: f64 = black_box(row.get(0));
-            let _: String = black_box(row.get(1));
+            let _: f64 = black_box(row.get(0_usize));
+            let _: String = black_box(row.get(1_usize));
         }
         drop(customer_result_set);
 
@@ -160,11 +162,11 @@ async fn execute_order_status(client: DatabaseClient, scale_factor: i64) -> anyh
         .add_param("d", &district_id)
         .add_param("c", &customer_id)
         .build();
-    let mut customer_result_set = transaction.execute_query(customer_query).await?;
+    let mut customer_result_set: ResultSet = transaction.execute_query(customer_query).await?;
     while let Some(row) = customer_result_set.next().await.transpose()? {
-        let _: f64 = black_box(row.get(0));
-        let _: String = black_box(row.get(1));
-        let _: String = black_box(row.get(2));
+        let _: f64 = black_box(row.get(0_usize));
+        let _: String = black_box(row.get(1_usize));
+        let _: String = black_box(row.get(2_usize));
     }
     drop(customer_result_set);
 
@@ -173,10 +175,10 @@ async fn execute_order_status(client: DatabaseClient, scale_factor: i64) -> anyh
         .add_param("d", &district_id)
         .add_param("c", &customer_id)
         .build();
-    let mut order_result_set = transaction.execute_query(order_query).await?;
+    let mut order_result_set: ResultSet = transaction.execute_query(order_query).await?;
     let mut order_id_opt = None;
     if let Some(row) = order_result_set.next().await.transpose()? {
-        let order_id: i64 = row.get(0);
+        let order_id: i64 = row.get(0_usize);
         order_id_opt = Some(order_id);
     }
     drop(order_result_set);
@@ -187,12 +189,12 @@ async fn execute_order_status(client: DatabaseClient, scale_factor: i64) -> anyh
             .add_param("d", &district_id)
             .add_param("o", &order_id)
             .build();
-        let mut line_result_set = transaction.execute_query(line_query).await?;
+        let mut line_result_set: ResultSet = transaction.execute_query(line_query).await?;
         while let Some(row) = line_result_set.next().await.transpose()? {
-            let _: i64 = black_box(row.get(0));
-            let _: i64 = black_box(row.get(1));
-            let _: i64 = black_box(row.get(2));
-            let _: f64 = black_box(row.get(3));
+            let _: i64 = black_box(row.get(0_usize));
+            let _: i64 = black_box(row.get(1_usize));
+            let _: i64 = black_box(row.get(2_usize));
+            let _: f64 = black_box(row.get(3_usize));
         }
     }
 
@@ -212,10 +214,10 @@ async fn execute_delivery(client: DatabaseClient, scale_factor: i64) -> anyhow::
                 .add_param("d", &district_id)
                 .build();
 
-            let mut new_orders_result_set = transaction.execute_query(new_orders_query).await?;
+            let mut new_orders_result_set: ResultSet = transaction.execute_query(new_orders_query).await?;
             let mut order_id_opt = None;
             if let Some(row) = new_orders_result_set.next().await.transpose()? {
-                let order_id: i64 = row.get(0);
+                let order_id: i64 = row.get(0_usize);
                 order_id_opt = Some(order_id);
             }
             drop(new_orders_result_set);
@@ -265,10 +267,10 @@ async fn execute_stock_level(client: DatabaseClient, scale_factor: i64) -> anyho
         .add_param("w", &warehouse_id)
         .add_param("d", &district_id)
         .build();
-    let mut district_result_set = transaction.execute_query(district_query).await?;
+    let mut district_result_set: ResultSet = transaction.execute_query(district_query).await?;
     let mut next_order_id_opt = None;
     if let Some(row) = district_result_set.next().await.transpose()? {
-        let next_id: i64 = row.get(0);
+        let next_id: i64 = row.get(0_usize);
         next_order_id_opt = Some(next_id);
     }
     drop(district_result_set);
@@ -282,7 +284,7 @@ async fn execute_stock_level(client: DatabaseClient, scale_factor: i64) -> anyho
             .add_param("next_order_id", &next_order_id)
             .add_param("threshold", &threshold)
             .build();
-        let mut stock_result_set = transaction.execute_query(stock_query).await?;
+        let mut stock_result_set: ResultSet = transaction.execute_query(stock_query).await?;
         while let Some(_) = stock_result_set.next().await.transpose()? {}
     }
 
@@ -303,9 +305,9 @@ pub(crate) async fn run_tpcc_benchmark(
     // Assert database capacity
     let single_use_tx = client.single_use().build();
     let capacity_statement = Statement::builder("SELECT COUNT(*) FROM warehouse").build();
-    let mut count_result_set = single_use_tx.execute_query(capacity_statement).await?;
+    let mut count_result_set: ResultSet = single_use_tx.execute_query(capacity_statement).await?;
     if let Some(row) = count_result_set.next().await.transpose()? {
-        let warehouse_count: i64 = row.get(0);
+        let warehouse_count: i64 = row.get(0_usize);
         if warehouse_count < warehouses {
             anyhow::bail!("Database capacity check failed: Required scale factor {} warehouses, but database only has {}", warehouses, warehouse_count);
         }

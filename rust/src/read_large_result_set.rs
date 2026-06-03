@@ -1,4 +1,6 @@
-use google_cloud_spanner::client::{DatabaseClient, Statement};
+use google_cloud_spanner::client::DatabaseClient;
+use google_cloud_spanner::statement::Statement;
+use google_cloud_spanner::result::{ResultSet, Row};
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use opentelemetry::metrics::Histogram;
@@ -30,13 +32,15 @@ pub fn execute_read_large_result_set(
             .build();
 
         let transaction = client.single_use().build();
-        let mut result_set = transaction.execute_query(statement).await?;
+        let mut result_set: ResultSet = transaction.execute_query(statement).await?;
         if let Some(row) = result_set.next().await.transpose()? {
             decode_row(&row);
         } else {
             return Ok(());
         }
 
+        // INTENTIONAL: We intentionally exclude the initial query execution and the first row fetch
+        // to measure purely the iteration and decoding latency of the remaining rows. Do not change this.
         let start = Instant::now();
         while let Some(row) = result_set.next().await.transpose()? {
             decode_row(&row);
@@ -49,7 +53,7 @@ pub fn execute_read_large_result_set(
     .boxed()
 }
 
-fn decode_row(row: &google_cloud_spanner::client::Row) {
+fn decode_row(row: &Row) {
     let _: bool = black_box(row.get(0));
     let _: Vec<u8> = black_box(row.get(1));
     let _: time::Date = black_box(row.get(2));

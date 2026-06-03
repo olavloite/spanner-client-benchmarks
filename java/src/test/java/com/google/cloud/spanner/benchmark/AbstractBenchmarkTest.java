@@ -416,4 +416,18 @@ public abstract class AbstractBenchmarkTest {
             return io.opentelemetry.sdk.common.CompletableResultCode.ofSuccess();
         }
     }
+
+    protected void assertNoErrors() {
+        java.util.Collection<io.opentelemetry.sdk.metrics.data.MetricData> metricData = metricReader.collectAllMetrics();
+        io.opentelemetry.sdk.metrics.data.MetricData errorCount = metricData.stream()
+                .filter(md -> md.getName().equals(BenchmarkApp.ERROR_COUNT_NAME))
+                .findFirst().orElse(null);
+        if (errorCount != null) {
+            for (Object point : errorCount.getData().getPoints()) {
+                if (point instanceof io.opentelemetry.sdk.metrics.data.LongPointData) {
+                    org.junit.Assert.assertEquals("Should have 0 errors", 0L, ((io.opentelemetry.sdk.metrics.data.LongPointData) point).getValue());
+                }
+            }
+        }
+    }
 }

@@ -53,6 +53,9 @@ func (b *ReadLargeResultSetBenchmark) Type() string {
 	return "read-large-result-set"
 }
 
+// INTENTIONAL: Do not change ShouldMeasureEntireMethod to return true.
+// We intentionally exclude the initial query execution and the first row fetch
+// to measure purely the iteration and decoding latency of the remaining rows.
 func (b *ReadLargeResultSetBenchmark) ShouldMeasureEntireMethod() bool {
 	return false
 }

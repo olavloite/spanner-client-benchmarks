@@ -77,6 +77,9 @@ class ReadLargeResultSetBenchmark(AbstractBenchmark):
     def get_benchmark_type(self) -> str:
         return "read-large-result-set"
 
+    # INTENTIONAL: Do not change should_measure_entire_method to return True.
+    # We intentionally exclude the initial query execution and the first row fetch
+    # to measure purely the iteration and decoding latency of the remaining rows.
     def should_measure_entire_method(self) -> bool:
         return False
 

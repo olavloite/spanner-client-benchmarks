@@ -43,6 +43,6 @@ fi
 
 # Build our app
 echo "Building benchmark application..."
-mvn --batch-mode clean package -DskipTests
+mvn --batch-mode clean package
 
 echo "Build complete!"
