@@ -70,6 +70,11 @@ on:
         required: false
         type: string
         default: ''
+      for_alerting:
+        description: 'Mark metrics for alerting'
+        required: false
+        type: string
+        default: 'false'
     secrets:
       GCP_SA_KEY:
         required: true
@@ -114,7 +119,7 @@ jobs:
           BURST_FACTOR: ${{ inputs.burst_factor }}
           BURST_DURATION: ${{ inputs.burst_duration }}
           BURST_FRACTION: ${{ inputs.burst_fraction }}
-          FOR_ALERTING: 'true'
+          FOR_ALERTING: ${{ inputs.for_alerting }}
           BENCHMARK_NAME: ${{ inputs.benchmark_name }}
           WAREHOUSES: ${{ inputs.warehouses }}
           ITEMS: ${{ inputs.items }}

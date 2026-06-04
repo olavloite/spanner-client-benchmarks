@@ -42,6 +42,11 @@ on:
         required: false
         type: string
         default: 'manual-tpcc'
+      for_alerting:
+        description: 'Mark metrics for alerting'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   prepare:
@@ -54,6 +59,7 @@ jobs:
       benchmark_name: ${{ steps.set-params.outputs.benchmark_name }}
       warehouses: ${{ steps.set-params.outputs.warehouses }}
       items: ${{ steps.set-params.outputs.items }}
+      for_alerting: ${{ steps.set-params.outputs.for_alerting }}
     steps:
       - id: set-params
         run: |
@@ -77,12 +83,14 @@ jobs:
             BENCHMARK_NAME="scheduled-tpcc-$CLIENT"
             WAREHOUSES=""
             ITEMS=""
+            FOR_ALERTING="true"
           else
             ACTION="${{ inputs.action }}"
             WAREHOUSES="${{ inputs.warehouses }}"
             ITEMS="${{ inputs.items }}"
             DURATION="${{ inputs.duration }}"
             BENCHMARK_NAME="${{ inputs.benchmark_name }}"
+            FOR_ALERTING="${{ inputs.for_alerting }}"
             
             if [ "$ACTION" = "tpcc-init (schema and data populator)" ]; then
               CLIENTS_JSON='["java"]'
@@ -103,6 +111,7 @@ jobs:
           echo "benchmark_name=$BENCHMARK_NAME" >> $GITHUB_OUTPUT
           echo "warehouses=$WAREHOUSES" >> $GITHUB_OUTPUT
           echo "items=$ITEMS" >> $GITHUB_OUTPUT
+          echo "for_alerting=$FOR_ALERTING" >> $GITHUB_OUTPUT
 
   run-benchmarks:
     name: Run TPC-C Benchmark
@@ -116,5 +125,6 @@ jobs:
       benchmark_name: ${{ needs.prepare.outputs.benchmark_name }}
       warehouses: ${{ needs.prepare.outputs.warehouses }}
       items: ${{ needs.prepare.outputs.items }}
+      for_alerting: ${{ needs.prepare.outputs.for_alerting }}
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}

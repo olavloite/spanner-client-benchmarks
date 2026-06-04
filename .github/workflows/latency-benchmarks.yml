@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '42 5 * * *'
   workflow_dispatch:
+    inputs:
+      for_alerting:
+        description: 'Mark metrics for alerting'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   run:
@@ -11,5 +17,6 @@ jobs:
     with:
       benchmark_types: '["point-select", "select-update"]'
       duration: '2h'
+      for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
