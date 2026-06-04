@@ -30,6 +30,23 @@ class BaseBenchmarkTest(unittest.TestCase):
         cls.server_executor = futures.ThreadPoolExecutor(max_workers=10)
         cls.server = grpc.server(cls.server_executor)
         cls.servicer = SpannerServicer()
+
+        def custom_streaming_read(request, context):
+            cls.servicer._requests.append(request)
+            cls.servicer.mock_spanner.pop_error(context)
+            started_transaction = (
+                cls.servicer._SpannerServicer__maybe_create_transaction(request)
+            )
+            sql_key = f"read:{request.table}"
+            partials = cls.servicer.mock_spanner.get_result_as_partial_result_sets(
+                sql_key
+            )
+            if started_transaction:
+                partials[0].metadata.transaction = started_transaction
+            for result in partials:
+                yield result
+
+        cls.servicer.StreamingRead = custom_streaming_read
         spanner_grpc.add_SpannerServicer_to_server(cls.servicer, cls.server)
         cls.admin_servicer = DatabaseAdminServicer()
         database_admin_grpc.add_DatabaseAdminServicer_to_server(
@@ -210,6 +227,40 @@ class BaseBenchmarkTest(unittest.TestCase):
         mock.add_result(
             "select count(distinct s.item_id) from order_line ol join stock s on s.warehouse_id = ol.warehouse_id and s.item_id = ol.item_id where ol.warehouse_id = @w and ol.district_id = @d and ol.order_id >= @min_order_id and ol.order_id < @next_order_id and s.quantity < @threshold",
             make_result_set([("count", types.TypeCode.INT64)], [["0"]]),
+        )
+        mock.add_result(
+            "SELECT item_id, quantity FROM stock WHERE warehouse_id = @w AND item_id IN UNNEST(@items)",
+            make_result_set(
+                [("item_id", types.TypeCode.INT64), ("quantity", types.TypeCode.INT64)],
+                [["100", "50"]],
+            ),
+        )
+        mock.add_result(
+            "SELECT DISTINCT s.item_id FROM order_line ol JOIN stock s ON s.warehouse_id = ol.warehouse_id AND s.item_id = ol.item_id WHERE ol.warehouse_id = @w AND ol.district_id = @d AND ol.order_id >= @min_order_id AND ol.order_id < @next_order_id AND s.quantity < @threshold",
+            make_result_set([("item_id", types.TypeCode.INT64)], [["100"]]),
+        )
+        mock.add_result(
+            "read:customer",
+            make_result_set(
+                [
+                    ("balance", types.TypeCode.FLOAT64),
+                    ("first_name", types.TypeCode.STRING),
+                    ("last_name", types.TypeCode.STRING),
+                ],
+                [[100.0, "first", "last"]],
+            ),
+        )
+        mock.add_result(
+            "read:order_line",
+            make_result_set(
+                [
+                    ("order_line_id", types.TypeCode.INT64),
+                    ("item_id", types.TypeCode.INT64),
+                    ("quantity", types.TypeCode.INT64),
+                    ("amount", types.TypeCode.FLOAT64),
+                ],
+                [["1", "100", "5", 25.0]],
+            ),
         )
 
     def wait_for_requests(self, request_class, timeout_seconds=5.0, min_count=1):

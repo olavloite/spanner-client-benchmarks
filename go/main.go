@@ -126,6 +126,7 @@ func run(ctx context.Context, args []string) error {
 					&cli.IntFlag{Name: "warehouses", Value: 1, Usage: "Scale factor (number of warehouses)"},
 					&cli.IntFlag{Name: "clients", Value: 10, Usage: "Number of parallel worker clients"},
 					&cli.IntFlag{Name: "items", Value: 100000, Usage: "Number of items in catalog"},
+					&cli.BoolFlag{Name: "extended", Value: false, Usage: "Run TPC-C benchmark with extended coverage of client library features"},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					return executeTPCCBenchmark(ctx, cmd)

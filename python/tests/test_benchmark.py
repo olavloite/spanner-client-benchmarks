@@ -270,3 +270,54 @@ class TestBenchmarkWorkloads(BaseBenchmarkTest):
 
         cpu_metric = self.find_metric(metrics_data, CPU_UTILIZATION_NAME)
         self.assert_metric_attributes(cpu_metric, expected_attrs)
+
+    def test_tpcc_extended_workload(self):
+        args = [
+            "main.py",
+            "-p",
+            "fake-project",
+            "-i",
+            "fake-instance",
+            "-d",
+            "fake-database",
+            "--host",
+            f"localhost:{self.port}",
+            "--duration",
+            "1s",
+            "--resource-probe-interval",
+            "10ms",
+            "tpcc",
+            "--warehouses",
+            "1",
+            "--clients",
+            "2",
+            "--items",
+            "10",
+            "--extended",
+        ]
+
+        with patch("sys.argv", args), patch("os._exit"):
+            main()
+
+        from google.cloud.spanner_v1.types import spanner as spanner_types
+
+        # Verify that at least one execute sql request is executed
+        self.wait_for_requests(spanner_types.ExecuteSqlRequest, min_count=1)
+
+        metrics_data = self.reader.get_metrics_data()
+        self.assert_resource_attributes(metrics_data)
+
+        expected_attrs = {
+            "client": "python-client",
+            "benchmark_type": "tpcc",
+            "extended": "true",
+        }
+
+        op_count_metric = self.find_metric(metrics_data, OPERATION_COUNT_NAME)
+        self.assert_metric_attributes(op_count_metric, expected_attrs)
+
+        mem_metric = self.find_metric(metrics_data, MEMORY_USAGE_NAME)
+        self.assert_metric_attributes(mem_metric, expected_attrs)
+
+        cpu_metric = self.find_metric(metrics_data, CPU_UTILIZATION_NAME)
+        self.assert_metric_attributes(cpu_metric, expected_attrs)

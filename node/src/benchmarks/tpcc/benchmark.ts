@@ -6,6 +6,10 @@ import {
   executeOrderStatus,
   executeDelivery,
   executeStockLevel,
+  executeNewOrderMutations,
+  executePaymentMutationsDirect,
+  executeOrderStatusReads,
+  executeStockLevelPartitioned,
 } from './transactions';
 import {parseDuration} from '../../config/duration';
 
@@ -24,11 +28,16 @@ export class TpccBenchmarkRunner {
   private clients: number;
   private items: number;
   private durationMs: number | null;
+  private extended: boolean;
   private attrNewOrder: Record<string, any>;
+  private attrNewOrderMutations: Record<string, any>;
   private attrPayment: Record<string, any>;
+  private attrPaymentMutationsDirect: Record<string, any>;
   private attrOrderStatus: Record<string, any>;
+  private attrOrderStatusReads: Record<string, any>;
   private attrDelivery: Record<string, any>;
   private attrStockLevel: Record<string, any>;
+  private attrStockLevelPartitioned: Record<string, any>;
   private baseAttributes: Record<string, any>;
   private isStopped = false;
 
@@ -45,7 +54,8 @@ export class TpccBenchmarkRunner {
     items: number,
     durationMs: number | null,
     forAlerting: boolean,
-    benchmarkName: string
+    benchmarkName: string,
+    extended = false
   ) {
     this.database = database;
     this.latencyHistogram = latencyHistogram;
@@ -58,6 +68,7 @@ export class TpccBenchmarkRunner {
     this.clients = clients;
     this.items = items;
     this.durationMs = durationMs;
+    this.extended = extended;
     this.baseAttributes = {
       benchmark_type: 'tpcc',
       for_alerting: forAlerting,
@@ -65,22 +76,41 @@ export class TpccBenchmarkRunner {
       client: 'node-client',
       concurrent_clients: clients,
     };
+    if (extended) {
+      this.baseAttributes.extended = true;
+    }
     this.attrNewOrder = {...this.baseAttributes, transaction_type: 'new_order'};
+    this.attrNewOrderMutations = {
+      ...this.baseAttributes,
+      transaction_type: 'new_order_mutations',
+    };
     this.attrPayment = {...this.baseAttributes, transaction_type: 'payment'};
+    this.attrPaymentMutationsDirect = {
+      ...this.baseAttributes,
+      transaction_type: 'payment_mutations_direct',
+    };
     this.attrOrderStatus = {
       ...this.baseAttributes,
       transaction_type: 'order_status',
+    };
+    this.attrOrderStatusReads = {
+      ...this.baseAttributes,
+      transaction_type: 'order_status_reads',
     };
     this.attrDelivery = {...this.baseAttributes, transaction_type: 'delivery'};
     this.attrStockLevel = {
       ...this.baseAttributes,
       transaction_type: 'stock_level',
     };
+    this.attrStockLevelPartitioned = {
+      ...this.baseAttributes,
+      transaction_type: 'stock_level_partitioned',
+    };
   }
 
   public async run(): Promise<void> {
     console.log(
-      `Starting TPC-C Benchmark with Scale Factor (Warehouses): ${this.scaleFactor}, Parallel Clients: ${this.clients}, Items: ${this.items}`
+      `Starting TPC-C Benchmark with Scale Factor (Warehouses): ${this.scaleFactor}, Parallel Clients: ${this.clients}, Items: ${this.items}${this.extended ? ' [EXTENDED MODE]' : ''}`
     );
 
     this.startResourceMonitoring();
@@ -134,26 +164,88 @@ export class TpccBenchmarkRunner {
       let success = false;
 
       try {
-        if (prob < 45) {
-          txType = 'new_order';
-          attr = this.attrNewOrder;
-          await executeNewOrder(this.database, this.scaleFactor, this.items);
-        } else if (prob < 88) {
-          txType = 'payment';
-          attr = this.attrPayment;
-          await executePayment(this.database, this.scaleFactor);
-        } else if (prob < 92) {
-          txType = 'order_status';
-          attr = this.attrOrderStatus;
-          await executeOrderStatus(this.database, this.scaleFactor);
-        } else if (prob < 96) {
-          txType = 'delivery';
-          attr = this.attrDelivery;
-          await executeDelivery(this.database, this.scaleFactor);
+        if (this.extended) {
+          if (prob < 25) {
+            txType = 'new_order';
+            attr = this.attrNewOrder;
+            await executeNewOrder(
+              this.database,
+              this.scaleFactor,
+              this.items,
+              true
+            );
+          } else if (prob < 45) {
+            txType = 'new_order_mutations';
+            attr = this.attrNewOrderMutations;
+            await executeNewOrderMutations(
+              this.database,
+              this.scaleFactor,
+              this.items,
+              true
+            );
+          } else if (prob < 78) {
+            txType = 'payment';
+            attr = this.attrPayment;
+            await executePayment(this.database, this.scaleFactor, true);
+          } else if (prob < 88) {
+            txType = 'payment_mutations_direct';
+            attr = this.attrPaymentMutationsDirect;
+            await executePaymentMutationsDirect(
+              this.database,
+              this.scaleFactor,
+              true
+            );
+          } else if (prob < 90) {
+            txType = 'order_status';
+            attr = this.attrOrderStatus;
+            await executeOrderStatus(this.database, this.scaleFactor, true);
+          } else if (prob < 92) {
+            txType = 'order_status_reads';
+            attr = this.attrOrderStatusReads;
+            await executeOrderStatusReads(
+              this.database,
+              this.scaleFactor,
+              true
+            );
+          } else if (prob < 96) {
+            txType = 'delivery';
+            attr = this.attrDelivery;
+            await executeDelivery(this.database, this.scaleFactor, true);
+          } else if (prob < 98) {
+            txType = 'stock_level';
+            attr = this.attrStockLevel;
+            await executeStockLevel(this.database, this.scaleFactor, true);
+          } else {
+            txType = 'stock_level_partitioned';
+            attr = this.attrStockLevelPartitioned;
+            await executeStockLevelPartitioned(
+              this.database,
+              this.scaleFactor,
+              true
+            );
+          }
         } else {
-          txType = 'stock_level';
-          attr = this.attrStockLevel;
-          await executeStockLevel(this.database, this.scaleFactor);
+          if (prob < 45) {
+            txType = 'new_order';
+            attr = this.attrNewOrder;
+            await executeNewOrder(this.database, this.scaleFactor, this.items);
+          } else if (prob < 88) {
+            txType = 'payment';
+            attr = this.attrPayment;
+            await executePayment(this.database, this.scaleFactor);
+          } else if (prob < 92) {
+            txType = 'order_status';
+            attr = this.attrOrderStatus;
+            await executeOrderStatus(this.database, this.scaleFactor);
+          } else if (prob < 96) {
+            txType = 'delivery';
+            attr = this.attrDelivery;
+            await executeDelivery(this.database, this.scaleFactor);
+          } else {
+            txType = 'stock_level';
+            attr = this.attrStockLevel;
+            await executeStockLevel(this.database, this.scaleFactor);
+          }
         }
         success = true;
       } catch (err: any) {

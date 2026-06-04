@@ -11,9 +11,13 @@ from opentelemetry.metrics import Counter, Histogram
 from .transactions import (
     execute_delivery,
     execute_new_order,
+    execute_new_order_mutations,
     execute_order_status,
+    execute_order_status_reads,
     execute_payment,
+    execute_payment_mutations_direct,
     execute_stock_level,
+    execute_stock_level_partitioned,
 )
 
 
@@ -51,6 +55,7 @@ class TpccBenchmarkRunner:
         duration_sec: float,
         for_alerting: bool,
         benchmark_name: str,
+        extended: bool = False,
     ):
         self.database = database
         self.latency_histogram = latency_histogram
@@ -65,6 +70,7 @@ class TpccBenchmarkRunner:
         self.duration_sec = duration_sec
         self.for_alerting = for_alerting
         self.benchmark_name = benchmark_name
+        self.extended = extended
         self.base_attributes = {
             "benchmark_type": "tpcc",
             "for_alerting": str(self.for_alerting).lower(),
@@ -72,14 +78,28 @@ class TpccBenchmarkRunner:
             "client": "python-client",
             "concurrent_clients": self.clients,
         }
+        if self.extended:
+            self.base_attributes["extended"] = "true"
         self.attr_new_order = dict(self.base_attributes, transaction_type="new_order")
+        self.attr_new_order_mutations = dict(
+            self.base_attributes, transaction_type="new_order_mutations"
+        )
         self.attr_payment = dict(self.base_attributes, transaction_type="payment")
+        self.attr_payment_mutations_direct = dict(
+            self.base_attributes, transaction_type="payment_mutations_direct"
+        )
         self.attr_order_status = dict(
             self.base_attributes, transaction_type="order_status"
+        )
+        self.attr_order_status_reads = dict(
+            self.base_attributes, transaction_type="order_status_reads"
         )
         self.attr_delivery = dict(self.base_attributes, transaction_type="delivery")
         self.attr_stock_level = dict(
             self.base_attributes, transaction_type="stock_level"
+        )
+        self.attr_stock_level_partitioned = dict(
+            self.base_attributes, transaction_type="stock_level_partitioned"
         )
         self.is_stopped = False
 
@@ -134,8 +154,9 @@ class TpccBenchmarkRunner:
             pass
 
     def run(self) -> None:
+        extended_str = " [EXTENDED MODE]" if self.extended else ""
         print(
-            f"Starting TPC-C Benchmark with Scale Factor (Warehouses): {self.scale_factor}, Parallel Clients: {self.clients}, Items: {self.items}"
+            f"Starting TPC-C Benchmark with Scale Factor (Warehouses): {self.scale_factor}, Parallel Clients: {self.clients}, Items: {self.items}{extended_str}"
         )
 
         self._start_resource_monitoring()
@@ -172,26 +193,96 @@ class TpccBenchmarkRunner:
                 success = False
 
                 try:
-                    if prob < 45:
-                        tx_type = "new_order"
-                        attr = self.attr_new_order
-                        execute_new_order(self.database, self.scale_factor, self.items)
-                    elif prob < 88:
-                        tx_type = "payment"
-                        attr = self.attr_payment
-                        execute_payment(self.database, self.scale_factor)
-                    elif prob < 92:
-                        tx_type = "order_status"
-                        attr = self.attr_order_status
-                        execute_order_status(self.database, self.scale_factor)
-                    elif prob < 96:
-                        tx_type = "delivery"
-                        attr = self.attr_delivery
-                        execute_delivery(self.database, self.scale_factor)
+                    if self.extended:
+                        if prob < 25:
+                            tx_type = "new_order"
+                            attr = self.attr_new_order
+                            execute_new_order(
+                                self.database,
+                                self.scale_factor,
+                                self.items,
+                                extended=True,
+                            )
+                        elif prob < 45:
+                            tx_type = "new_order_mutations"
+                            attr = self.attr_new_order_mutations
+                            execute_new_order_mutations(
+                                self.database, self.scale_factor, self.items
+                            )
+                        elif prob < 78:
+                            tx_type = "payment"
+                            attr = self.attr_payment
+                            execute_payment(
+                                self.database, self.scale_factor, extended=True
+                            )
+                        elif prob < 88:
+                            tx_type = "payment_mutations_direct"
+                            attr = self.attr_payment_mutations_direct
+                            execute_payment_mutations_direct(
+                                self.database, self.scale_factor
+                            )
+                        elif prob < 90:
+                            tx_type = "order_status"
+                            attr = self.attr_order_status
+                            execute_order_status(
+                                self.database, self.scale_factor, extended=True
+                            )
+                        elif prob < 92:
+                            tx_type = "order_status_reads"
+                            attr = self.attr_order_status_reads
+                            execute_order_status_reads(self.database, self.scale_factor)
+                        elif prob < 96:
+                            tx_type = "delivery"
+                            attr = self.attr_delivery
+                            execute_delivery(
+                                self.database, self.scale_factor, extended=True
+                            )
+                        elif prob < 98:
+                            tx_type = "stock_level"
+                            attr = self.attr_stock_level
+                            execute_stock_level(
+                                self.database, self.scale_factor, extended=True
+                            )
+                        else:
+                            tx_type = "stock_level_partitioned"
+                            attr = self.attr_stock_level_partitioned
+                            execute_stock_level_partitioned(
+                                self.database, self.scale_factor
+                            )
                     else:
-                        tx_type = "stock_level"
-                        attr = self.attr_stock_level
-                        execute_stock_level(self.database, self.scale_factor)
+                        if prob < 45:
+                            tx_type = "new_order"
+                            attr = self.attr_new_order
+                            execute_new_order(
+                                self.database,
+                                self.scale_factor,
+                                self.items,
+                                extended=False,
+                            )
+                        elif prob < 88:
+                            tx_type = "payment"
+                            attr = self.attr_payment
+                            execute_payment(
+                                self.database, self.scale_factor, extended=False
+                            )
+                        elif prob < 92:
+                            tx_type = "order_status"
+                            attr = self.attr_order_status
+                            execute_order_status(
+                                self.database, self.scale_factor, extended=False
+                            )
+                        elif prob < 96:
+                            tx_type = "delivery"
+                            attr = self.attr_delivery
+                            execute_delivery(
+                                self.database, self.scale_factor, extended=False
+                            )
+                        else:
+                            tx_type = "stock_level"
+                            attr = self.attr_stock_level
+                            execute_stock_level(
+                                self.database, self.scale_factor, extended=False
+                            )
                     success = True
                 except Exception as err:
                     print(f"TPC-C transaction {tx_type} failed: {err}", file=sys.stderr)

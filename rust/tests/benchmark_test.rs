@@ -324,7 +324,130 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
                 ..Default::default()
             });
         }
-        tx.try_send(Ok(result_set)).unwrap();
+        tx.try_send(Ok(result_set))
+            .expect("Failed to send mock result_set");
+
+        Ok(Response::from(rx))
+    });
+
+    mock.expect_streaming_read().returning(move |req| {
+        let req = req.into_inner();
+        let table = req.table;
+        let transaction = req
+            .transaction
+            .and_then(|t| t.selector)
+            .and_then(|s| match s {
+                mock_v1::transaction_selector::Selector::Begin(_)
+                | mock_v1::transaction_selector::Selector::Id(_) => Some(mock_v1::Transaction {
+                    id: vec![1, 2, 3],
+                    ..Default::default()
+                }),
+                _ => None,
+            });
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        let mut result_set = if table == "district" {
+            mock_v1::PartialResultSet {
+                metadata: Some(mock_v1::ResultSetMetadata {
+                    row_type: Some(mock_v1::StructType {
+                        fields: vec![mock_field("next_order_id", mock_v1::TypeCode::Int64)],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![string_value("1000")],
+                last: true,
+                ..Default::default()
+            }
+        } else if table == "customer" {
+            if req.columns.len() == 2 {
+                mock_v1::PartialResultSet {
+                    metadata: Some(mock_v1::ResultSetMetadata {
+                        row_type: Some(mock_v1::StructType {
+                            fields: vec![
+                                mock_field("discount", mock_v1::TypeCode::Float64),
+                                mock_field("last_name", mock_v1::TypeCode::String),
+                            ],
+                        }),
+                        ..Default::default()
+                    }),
+                    values: vec![number_value(0.10), string_value("last_name")],
+                    last: true,
+                    ..Default::default()
+                }
+            } else {
+                mock_v1::PartialResultSet {
+                    metadata: Some(mock_v1::ResultSetMetadata {
+                        row_type: Some(mock_v1::StructType {
+                            fields: vec![
+                                mock_field("balance", mock_v1::TypeCode::Float64),
+                                mock_field("first_name", mock_v1::TypeCode::String),
+                                mock_field("last_name", mock_v1::TypeCode::String),
+                            ],
+                        }),
+                        ..Default::default()
+                    }),
+                    values: vec![
+                        number_value(100.0),
+                        string_value("first"),
+                        string_value("last"),
+                    ],
+                    last: true,
+                    ..Default::default()
+                }
+            }
+        } else if table == "stock" {
+            mock_v1::PartialResultSet {
+                metadata: Some(mock_v1::ResultSetMetadata {
+                    row_type: Some(mock_v1::StructType {
+                        fields: vec![
+                            mock_field("item_id", mock_v1::TypeCode::Int64),
+                            mock_field("quantity", mock_v1::TypeCode::Int64),
+                        ],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![string_value("123"), string_value("50")],
+                last: true,
+                ..Default::default()
+            }
+        } else if table == "order_line" {
+            mock_v1::PartialResultSet {
+                metadata: Some(mock_v1::ResultSetMetadata {
+                    row_type: Some(mock_v1::StructType {
+                        fields: vec![
+                            mock_field("order_line_id", mock_v1::TypeCode::Int64),
+                            mock_field("item_id", mock_v1::TypeCode::Int64),
+                            mock_field("quantity", mock_v1::TypeCode::Int64),
+                            mock_field("amount", mock_v1::TypeCode::Float64),
+                        ],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![
+                    string_value("1"),
+                    string_value("123"),
+                    string_value("5"),
+                    number_value(25.0),
+                ],
+                last: true,
+                ..Default::default()
+            }
+        } else {
+            mock_v1::PartialResultSet {
+                last: true,
+                ..Default::default()
+            }
+        };
+
+        if let Some(meta) = &mut result_set.metadata {
+            meta.transaction = transaction;
+        } else {
+            result_set.metadata = Some(mock_v1::ResultSetMetadata {
+                transaction,
+                ..Default::default()
+            });
+        }
+        tx.try_send(Ok(result_set))
+            .expect("Failed to send mock result_set");
 
         Ok(Response::from(rx))
     });
@@ -465,7 +588,37 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
         run_benchmark(args).await?;
     }
 
-    // 7. Assert metrics have been emitted correctly
+    // 7. Test Tpcc Extended Workload
+    {
+        let args = Args::try_parse_from(vec![
+            "benchmark",
+            "--project",
+            "test-project",
+            "--instance",
+            "test-instance",
+            "--database",
+            "test-database",
+            "--duration",
+            "1s",
+            "--host",
+            &address,
+            "--threads",
+            "2",
+            "--resource-probe-interval",
+            "10ms",
+            "tpcc",
+            "--warehouses",
+            "1",
+            "--clients",
+            "2",
+            "--extended",
+            "true",
+        ])?;
+
+        run_benchmark(args).await?;
+    }
+
+    // 8. Assert metrics have been emitted correctly
     provider.force_flush()?;
     let metrics = exporter.get_finished_metrics()?;
     assert!(

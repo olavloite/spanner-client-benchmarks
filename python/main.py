@@ -255,6 +255,12 @@ def main():
     tpcc_parser.add_argument(
         "--items", type=int, default=100000, help="Number of items in catalog"
     )
+    tpcc_parser.add_argument(
+        "--extended",
+        action="store_true",
+        default=False,
+        help="Run TPC-C benchmark with extended coverage of client library features",
+    )
 
     args = parser.parse_args()
 
@@ -415,6 +421,7 @@ def main():
             duration_sec=duration_sec,
             for_alerting=args.for_alerting,
             benchmark_name=args.benchmark_name,
+            extended=args.extended,
         )
     else:
         print(
