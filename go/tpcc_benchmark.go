@@ -75,7 +75,9 @@ func executeTPCCBenchmark(ctx context.Context, cmd *cli.Command) error {
 		durationCtx = runCtx
 	}
 
-	startResourceMonitoring(durationCtx, memoryUsageHistogram, cpuUtilizationHistogram, cfg.ResourceProbeInterval, attributes)
+	rm := NewResourceMonitor(memoryUsageHistogram, cpuUtilizationHistogram, cfg.ResourceProbeInterval, attributes)
+	rm.Start(durationCtx)
+	defer rm.Stop()
 
 	fmt.Printf("Starting TPC-C Benchmark for %s, Scale Factor (Warehouses): %d, Parallel Clients: %d, Items: %d\n", cfg.DurationStr, warehouses, clients, items)
 

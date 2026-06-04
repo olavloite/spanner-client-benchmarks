@@ -13,7 +13,7 @@ import {createSpannerClient} from './src/spanner/client';
 import {PointSelectBenchmark} from './src/benchmarks/point-select';
 import {SelectAndUpdateBenchmark} from './src/benchmarks/select-update';
 import {ReadLargeResultSetBenchmark} from './src/benchmarks/read-large-result-set';
-import {parseDuration} from './src/config/duration';
+import {parseDuration} from './src/utils/duration';
 import {AbstractBenchmark, LoadType} from './src/benchmarks/abstract-benchmark';
 
 /**
