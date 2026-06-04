@@ -1,0 +1,61 @@
+# Gemini & Jetski Developer Instructions
+
+This repository contains multi-language benchmarks for Cloud Spanner. To maintain code quality, consistency, and build integrity, all Gemini model assistants, Jetski/Antigravity agents, and developer bots MUST adhere to the following rules and checklist before declaring a task as "done".
+
+## 📋 Pre-completion Checklist
+Before you state that a task is complete, you **MUST** run the code formatters and linters for all languages and directories that you have touched.
+
+### Formatting Commands by Language/Directory
+
+#### ☕ Java (Directories: `java`, `analyzer`)
+- **Action**: Run the formatter.
+- **Command**:
+  ```bash
+  mvn fmt:format
+  ```
+
+#### 🐹 Go (Directory: `go`)
+- **Action**: Run the formatter.
+- **Command**:
+  ```bash
+  gofmt -s -w .
+  ```
+
+#### 🐍 Python (Directory: `python`)
+- **Action**: Run the formatter and linter fix.
+- **Command**:
+  ```bash
+  ruff format .
+  ruff check --fix .
+  ```
+
+#### 📦 Node.js (Directory: `node`)
+- **Action**: Run the formatter.
+- **Command**:
+  ```bash
+  npm run format
+  ```
+
+#### 🦀 Rust (Directory: `rust`)
+- **Action**: Run the formatter (Rust and TOML).
+- **Command**:
+  ```bash
+  cargo fmt
+  npx @taplo/cli fmt
+  ```
+
+---
+
+## 🛠️ Code Conventions & Rules
+
+### 1. General Code Quality
+* **Avoid Code Duplication**: Do not write duplicate code. Use idiomatic methods, helper functions, or abstractions (such as abstract base classes and interfaces) to share logic.
+* **Keep Methods Small**: Avoid writing very large methods. Break down routines into small, focused, single-responsibility helper functions to keep code readable.
+* **Manage File Size**: Do not create excessively large source files unless strictly necessary. Separate distinct business concerns and logic into distinct, modular files. Ensure code that naturally belongs together resides in the same file.
+* **Idiomatic Code**: Always write clean, idiomatic code that aligns with the established standards and best practices of the target language.
+
+### 2. Rust-Specific Guidelines
+* **Variable Naming**: Always use full words for variable names to ensure readability. Avoid abbreviations unless they are standard/common (e.g. `db` for database is allowed, but `rs` instead of `result_set` is **NOT** allowed).
+* **Avoid `unwrap()` in Tests**: Try to avoid `unwrap()` in test files. Prefer using `.expect("clear error message description")` or returning a `Result` from the test function.
+* **Explicit Assertions**: Add explicit, descriptive error messages for assertions in Rust code (e.g. use `.expect(...)` or custom assertion messages). Do not use `.wrap()`.
+
