@@ -1,5 +1,6 @@
 import abc
 import math
+import os
 import random
 import sys
 import threading
@@ -10,6 +11,24 @@ from typing import Optional
 
 from google.cloud.spanner_v1.database import Database
 from opentelemetry.metrics import Counter, Histogram
+
+
+def _get_cpu_limit() -> float:
+    limit_str = os.environ.get("BENCHMARK_CPU_LIMIT")
+    if limit_str:
+        try:
+            limit = float(limit_str)
+            if limit > 0:
+                return limit
+        except ValueError:
+            pass
+    try:
+        return float(len(os.sched_getaffinity(0)))
+    except AttributeError:
+        return float(os.cpu_count() or 1)
+
+
+CPU_LIMIT = _get_cpu_limit()
 
 
 class LoadType(str, Enum):
@@ -334,7 +353,9 @@ class AbstractBenchmark(abc.ABC):
             elapsed_wall = now_wall_time - self._last_wall_time
             if elapsed_wall > 0 and self.cpu_utilization_histogram:
                 cpu_util = (now_cpu_time - self._last_cpu_time) / elapsed_wall
-                self.cpu_utilization_histogram.record(float(cpu_util), self.attributes)
+                self.cpu_utilization_histogram.record(
+                    float(cpu_util / CPU_LIMIT), self.attributes
+                )
 
             self._last_cpu_time = now_cpu_time
             self._last_wall_time = now_wall_time

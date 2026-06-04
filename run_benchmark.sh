@@ -83,9 +83,9 @@ else
   if [ -n "$BURST_FRACTION" ]; then ARGS="${ARGS},--burst-fraction=$BURST_FRACTION"; fi
 fi
 
-ENV_FLAGS=""
+ENV_FLAGS="--set-env-vars=BENCHMARK_CPU_LIMIT=$CPU"
 if [ "$SPANNER_DISABLE_BUILTIN_METRICS" = "true" ]; then
-  ENV_FLAGS="--set-env-vars=SPANNER_DISABLE_BUILTIN_METRICS=true"
+  ENV_FLAGS="--set-env-vars=SPANNER_DISABLE_BUILTIN_METRICS=true,BENCHMARK_CPU_LIMIT=$CPU"
 fi
 
 # Create or update the Cloud Run Job

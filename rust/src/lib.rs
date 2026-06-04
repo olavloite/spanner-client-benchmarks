@@ -345,12 +345,29 @@ fn start_resource_monitoring(
     None
 }
 
+fn get_cpu_limit() -> f64 {
+    static CPU_LIMIT: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *CPU_LIMIT.get_or_init(|| {
+        if let Ok(limit_str) = std::env::var("BENCHMARK_CPU_LIMIT") {
+            if let Ok(limit) = limit_str.parse::<f64>() {
+                if limit > 0.0 {
+                    return limit;
+                }
+            }
+        }
+        std::thread::available_parallelism()
+            .map(|n| n.get() as f64)
+            .unwrap_or(1.0)
+    })
+}
+
 async fn run_resource_monitor_loop(
     probe_duration: std::time::Duration,
     metrics: BenchmarkMetrics,
     attributes: Vec<KeyValue>,
 ) {
     let mut sys = sysinfo::System::new();
+    let cpu_limit = get_cpu_limit();
     if let Ok(pid) = sysinfo::get_current_pid() {
         let mut interval = tokio::time::interval(probe_duration);
         loop {
@@ -360,7 +377,7 @@ async fn run_resource_monitor_loop(
                 let memory = process.memory() as f64;
                 let cpu = (process.cpu_usage() / 100.0) as f64;
                 metrics.memory_usage.record(memory, &attributes);
-                metrics.cpu_utilization.record(cpu, &attributes);
+                metrics.cpu_utilization.record(cpu / cpu_limit, &attributes);
             }
         }
     }
