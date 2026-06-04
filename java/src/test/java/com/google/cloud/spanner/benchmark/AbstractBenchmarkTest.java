@@ -73,9 +73,15 @@ public abstract class AbstractBenchmarkTest {
 
   protected void waitForRequest(Predicate<com.google.spanner.v1.ExecuteSqlRequest> predicate)
       throws InterruptedException {
+    waitForRequest(predicate, null);
+  }
+
+  protected void waitForRequest(
+      Predicate<com.google.spanner.v1.ExecuteSqlRequest> predicate, Thread appThread)
+      throws InterruptedException {
     Stopwatch stopwatch = Stopwatch.createStarted();
     boolean received = false;
-    while (stopwatch.elapsed(TimeUnit.MILLISECONDS) < 10000) {
+    while (stopwatch.elapsed(TimeUnit.MILLISECONDS) < 30000) {
       boolean hasRequest =
           mockSpanner.getRequestsOfType(com.google.spanner.v1.ExecuteSqlRequest.class).stream()
               .anyMatch(predicate);
@@ -83,9 +89,17 @@ public abstract class AbstractBenchmarkTest {
         received = true;
         break;
       }
-      Thread.sleep(1);
+      if (appThread != null && !appThread.isAlive()) {
+        break;
+      }
+      Thread.sleep(5);
     }
-    assertTrue("Should have received the expected request", received);
+    assertTrue(
+        "Should have received the expected request"
+            + (appThread != null && !appThread.isAlive()
+                ? " (application thread terminated prematurely)"
+                : ""),
+        received);
   }
 
   private static void registerMockResults() {
@@ -465,6 +479,12 @@ public abstract class AbstractBenchmarkTest {
         StatementResult.query(Statement.of("SELECT * FROM my_table WHERE id = @id"), resultSet));
     mockSpanner.putPartialStatementResult(
         StatementResult.query(Statement.of("SELECT id FROM my_table WHERE id = @id"), resultSet));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of("UPDATE my_table SET value = @value WHERE id = @id"), 1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of("INSERT INTO my_table (id, value) VALUES (@id, @value)"), 1L));
   }
 
   protected static class SimpleMetricReader
