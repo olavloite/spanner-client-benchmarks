@@ -3,10 +3,10 @@ name: TPC-C Benchmark Runner
 on:
   schedule:
     - cron: '7 19 * * *'   # Java
-    - cron: '14 21 * * *'  # Go
-    - cron: '21 23 * * *'  # Node
-    - cron: '28 1 * * *'   # Python
-    - cron: '35 3 * * *'   # Rust
+    - cron: '44 20 * * *'  # Go
+    - cron: '21 22 * * *'  # Node
+    - cron: '43 23 * * *'  # Python
+    - cron: '35 0 * * *'   # Rust
   workflow_dispatch:
     inputs:
       action:
@@ -62,10 +62,10 @@ jobs:
             HOUR=$(echo "${{ github.event.schedule }}" | cut -d' ' -f2)
             case "$HOUR" in
               19) CLIENT="java" ;;   # 19:07 UTC
-              21) CLIENT="go" ;;     # 21:14 UTC
-              23) CLIENT="node" ;;   # 23:21 UTC
-              1)  CLIENT="python" ;; # 01:28 UTC
-              3)  CLIENT="rust" ;;   # 03:35 UTC
+              20) CLIENT="go" ;;     # 20:44 UTC
+              22) CLIENT="node" ;;   # 22:21 UTC
+              23) CLIENT="python" ;; # 23:43 UTC
+              0)  CLIENT="rust" ;;   # 00:35 UTC
               *)
                 echo "Unknown schedule hour: $HOUR"
                 exit 1
