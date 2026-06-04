@@ -8,9 +8,7 @@ import io.opentelemetry.api.metrics.LongHistogram;
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
 import javax.annotation.Nonnull;
 
 public abstract class AbstractBenchmark {
@@ -37,7 +35,7 @@ public abstract class AbstractBenchmark {
   protected final LongHistogram memoryUsageHistogram;
   protected final DoubleHistogram cpuUtilizationHistogram;
   protected final String resourceProbeInterval;
-  private ScheduledExecutorService resourceMonitorExecutor;
+  private ResourceMonitor resourceMonitor;
 
   public AbstractBenchmark(
       DatabaseClient client,
@@ -132,15 +130,15 @@ public abstract class AbstractBenchmark {
       }
       System.out.println("Benchmark duration reached. Stopping...");
       generatorThread.interrupt();
-      if (resourceMonitorExecutor != null) {
-        resourceMonitorExecutor.shutdownNow();
+      if (resourceMonitor != null) {
+        resourceMonitor.stop();
       }
       executor.shutdownNow();
     } catch (InterruptedException e) {
       System.out.println("Benchmark interrupted.");
       generatorThread.interrupt();
-      if (resourceMonitorExecutor != null) {
-        resourceMonitorExecutor.shutdownNow();
+      if (resourceMonitor != null) {
+        resourceMonitor.stop();
       }
       executor.shutdownNow();
     }
@@ -193,34 +191,10 @@ public abstract class AbstractBenchmark {
   }
 
   private void startResourceMonitoring() {
-    if (resourceProbeInterval != null && !resourceProbeInterval.isEmpty()) {
-      Duration probeDuration = parseDuration(resourceProbeInterval);
-      if (probeDuration != null && probeDuration.toMillis() > 0) {
-        resourceMonitorExecutor = Executors.newSingleThreadScheduledExecutor();
-        resourceMonitorExecutor.scheduleAtFixedRate(
-            this::probeResourceUsage, 0, probeDuration.toMillis(), TimeUnit.MILLISECONDS);
-      }
-    }
-  }
-
-  private void probeResourceUsage() {
-    try {
-      long usedMemory =
-          java.lang.management.ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
-      if (memoryUsageHistogram != null) {
-        memoryUsageHistogram.record(usedMemory, getAttributes());
-      }
-      java.lang.management.OperatingSystemMXBean osBean =
-          java.lang.management.ManagementFactory.getOperatingSystemMXBean();
-      if (osBean instanceof com.sun.management.OperatingSystemMXBean) {
-        double cpuLoad = ((com.sun.management.OperatingSystemMXBean) osBean).getProcessCpuLoad();
-        if (cpuLoad >= 0 && cpuUtilizationHistogram != null) {
-          cpuUtilizationHistogram.record(cpuLoad, getAttributes());
-        }
-      }
-    } catch (Exception e) {
-      // Ignore exceptions in resource monitoring
-    }
+    resourceMonitor =
+        new ResourceMonitor(
+            resourceProbeInterval, memoryUsageHistogram, cpuUtilizationHistogram, getAttributes());
+    resourceMonitor.start();
   }
 
   protected abstract void executeOperation() throws Exception;

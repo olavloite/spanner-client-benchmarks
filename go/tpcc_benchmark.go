@@ -83,7 +83,9 @@ func executeTPCCBenchmark(ctx context.Context, cmd *cli.Command) error {
 		durationCtx = runCtx
 	}
 
-	startResourceMonitoring(durationCtx, memoryUsageHistogram, cpuUtilizationHistogram, cfg.ResourceProbeInterval, attributes)
+	rm := NewResourceMonitor(memoryUsageHistogram, cpuUtilizationHistogram, cfg.ResourceProbeInterval, attributes)
+	rm.Start(durationCtx)
+	defer rm.Stop()
 
 	extendedModeStr := ""
 	if extended {

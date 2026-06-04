@@ -1,6 +1,7 @@
 pub mod load_type;
 pub mod point_select;
 pub mod read_large_result_set;
+pub mod resource_monitor;
 pub mod select_update;
 pub mod tpcc;
 
@@ -329,62 +330,6 @@ pub fn run_task(
     .boxed()
 }
 
-fn start_resource_monitoring(
-    probe_interval_str: &str,
-    metrics: BenchmarkMetrics,
-    attributes: Vec<KeyValue>,
-) -> Option<tokio::task::JoinHandle<()>> {
-    if probe_interval_str != "0" && probe_interval_str != "0s" && !probe_interval_str.is_empty() {
-        if let Some(probe_duration) = load_type::parse_duration(probe_interval_str) {
-            if probe_duration.as_millis() > 0 {
-                let handle = tokio::spawn(async move {
-                    run_resource_monitor_loop(probe_duration, metrics, attributes).await;
-                });
-                return Some(handle);
-            }
-        }
-    }
-    None
-}
-
-fn get_cpu_limit() -> f64 {
-    static CPU_LIMIT: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
-    *CPU_LIMIT.get_or_init(|| {
-        if let Ok(limit_str) = std::env::var("BENCHMARK_CPU_LIMIT") {
-            if let Ok(limit) = limit_str.parse::<f64>() {
-                if limit > 0.0 {
-                    return limit;
-                }
-            }
-        }
-        std::thread::available_parallelism()
-            .map(|n| n.get() as f64)
-            .unwrap_or(1.0)
-    })
-}
-
-async fn run_resource_monitor_loop(
-    probe_duration: std::time::Duration,
-    metrics: BenchmarkMetrics,
-    attributes: Vec<KeyValue>,
-) {
-    let mut sys = sysinfo::System::new();
-    let cpu_limit = get_cpu_limit();
-    if let Ok(pid) = sysinfo::get_current_pid() {
-        let mut interval = tokio::time::interval(probe_duration);
-        loop {
-            interval.tick().await;
-            sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
-            if let Some(process) = sys.process(pid) {
-                let memory = process.memory() as f64;
-                let cpu = (process.cpu_usage() / 100.0) as f64;
-                metrics.memory_usage.record(memory, &attributes);
-                metrics.cpu_utilization.record(cpu / cpu_limit, &attributes);
-            }
-        }
-    }
-}
-
 pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
     // Validation
     match args.load_type {
@@ -465,7 +410,7 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         if extended {
             base_attributes.push(KeyValue::new("extended", true));
         }
-        let monitor_handle = start_resource_monitoring(
+        let _monitor = resource_monitor::ResourceMonitor::start(
             &args.resource_probe_interval,
             metrics.clone(),
             base_attributes.clone(),
@@ -481,9 +426,6 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
             extended,
         )
         .await;
-        if let Some(handle) = monitor_handle {
-            handle.abort();
-        }
         if is_owned_provider {
             let _ = _meter_provider.shutdown();
         }
@@ -528,7 +470,7 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         args.command, args.duration, tps, args.threads
     );
 
-    let monitor_handle = start_resource_monitoring(
+    let _monitor = resource_monitor::ResourceMonitor::start(
         &args.resource_probe_interval,
         metrics.clone(),
         attributes.clone(),
@@ -561,10 +503,6 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
 
     // Wait for all active worker tasks to complete
     let _ = semaphore.acquire_many(args.threads as u32).await;
-
-    if let Some(handle) = monitor_handle {
-        handle.abort();
-    }
 
     println!("Benchmark completed successfully.");
     if is_owned_provider {
