@@ -7,8 +7,6 @@ import (
 
 	"os"
 	"os/signal"
-	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -37,16 +35,6 @@ const (
 	memoryUsageName    = "spanner_client_benchmarks/memory_usage"
 	cpuUtilizationName = "spanner_client_benchmarks/cpu_utilization"
 )
-
-var cpuLimit = func() float64 {
-	limit := float64(runtime.NumCPU())
-	if limitStr := os.Getenv("BENCHMARK_CPU_LIMIT"); limitStr != "" {
-		if val, err := strconv.ParseFloat(limitStr, 64); err == nil && val > 0 {
-			limit = val
-		}
-	}
-	return limit
-}()
 
 type Benchmark interface {
 	Execute(ctx context.Context, client *spanner.Client, tableName string, minId, maxId int64) error
@@ -263,8 +251,12 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 		durationCtx = runCtx
 	}
 
+	rm := NewResourceMonitor(memoryUsageHistogram, cpuUtilizationHistogram, cfg.ResourceProbeInterval, attributes)
+	rm.Start(durationCtx)
+	defer rm.Stop()
+
 	// Run loop
-	runBenchmark(durationCtx, b, client, latencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cfg.ResourceProbeInterval, cfg.Table, tps, cfg.Threads, 1, numRows, attributes, loadType, cycleDurationStr, peakFactor, burstFactor, burstDuration, burstFraction)
+	runBenchmark(durationCtx, b, client, latencyHistogram, operationCounter, errorCounter, cfg.Table, tps, cfg.Threads, 1, numRows, attributes, loadType, cycleDurationStr, peakFactor, burstFactor, burstDuration, burstFraction)
 
 	return nil
 }
@@ -398,11 +390,9 @@ func createSpannerClient(ctx context.Context, project, instance, database, host 
 	return spanner.NewClient(ctx, databaseName, clientOpts...)
 }
 
-func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, latencyHistogram metric.Float64Histogram, operationCounter metric.Int64Counter, errorCounter metric.Int64Counter, memoryUsageHistogram metric.Float64Histogram, cpuUtilizationHistogram metric.Float64Histogram, resourceProbeIntervalStr string, tableName string, targetTPS float64, concurrentThreads int, minId, maxId int64, attributes metric.MeasurementOption, loadType LoadType, cycleDurationStr string, peakFactor, burstFactor, burstDuration, burstFraction float64) {
+func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, latencyHistogram metric.Float64Histogram, operationCounter metric.Int64Counter, errorCounter metric.Int64Counter, tableName string, targetTPS float64, concurrentThreads int, minId, maxId int64, attributes metric.MeasurementOption, loadType LoadType, cycleDurationStr string, peakFactor, burstFactor, burstDuration, burstFraction float64) {
 	tasks := make(chan struct{}, 1000000) // large buffered channel to simulate unbounded queue
 	wg := &sync.WaitGroup{}
-
-	startResourceMonitoring(ctx, memoryUsageHistogram, cpuUtilizationHistogram, resourceProbeIntervalStr, attributes)
 
 	// Start worker goroutines
 	for i := 0; i < concurrentThreads; i++ {
@@ -441,52 +431,4 @@ func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, late
 	}
 
 	generator.Run(ctx, b, client, latencyHistogram, operationCounter, errorCounter, tableName, targetTPS, concurrentThreads, minId, maxId, attributes, cycleDurationStr, peakFactor, burstFactor, burstDuration, burstFraction, tasks, wg)
-}
-
-func startResourceMonitoring(ctx context.Context, memoryUsageHistogram metric.Float64Histogram, cpuUtilizationHistogram metric.Float64Histogram, resourceProbeIntervalStr string, attributes metric.MeasurementOption) {
-	if resourceProbeIntervalStr != "0" && resourceProbeIntervalStr != "0s" && resourceProbeIntervalStr != "" {
-		interval := ParseDuration(resourceProbeIntervalStr)
-		if interval > 0 {
-			go func() {
-				ticker := time.NewTicker(interval)
-				defer ticker.Stop()
-				var lastUtime int64
-				var lastStime int64
-				var lastWall time.Time
-				initialized := false
-
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					case now := <-ticker.C:
-						probeResourceUsage(ctx, memoryUsageHistogram, cpuUtilizationHistogram, attributes, now, &lastUtime, &lastStime, &lastWall, &initialized)
-					}
-				}
-			}()
-		}
-	}
-}
-
-func probeResourceUsage(ctx context.Context, memoryUsageHistogram metric.Float64Histogram, cpuUtilizationHistogram metric.Float64Histogram, attributes metric.MeasurementOption, now time.Time, lastUtime *int64, lastStime *int64, lastWall *time.Time, initialized *bool) {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	memoryUsageHistogram.Record(ctx, float64(m.Alloc), attributes)
-
-	var rusage syscall.Rusage
-	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &rusage); err == nil {
-		utime := int64(rusage.Utime.Sec)*1e6 + int64(rusage.Utime.Usec)
-		stime := int64(rusage.Stime.Sec)*1e6 + int64(rusage.Stime.Usec)
-		if *initialized {
-			elapsedWall := now.Sub(*lastWall).Seconds()
-			if elapsedWall > 0 {
-				cpuUtil := (float64((utime-*lastUtime)+(stime-*lastStime)) / 1e6) / elapsedWall
-				cpuUtilizationHistogram.Record(ctx, cpuUtil/cpuLimit, attributes)
-			}
-		}
-		*lastUtime = utime
-		*lastStime = stime
-		*lastWall = now
-		*initialized = true
-	}
 }

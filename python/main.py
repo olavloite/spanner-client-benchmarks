@@ -3,7 +3,6 @@ import os
 import signal
 import sys
 
-from src.config.duration import parse_duration
 from src.metrics.otel import (
     CPU_UTILIZATION_NAME,
     ERROR_COUNT_NAME,
@@ -13,6 +12,7 @@ from src.metrics.otel import (
     READ_LATENCY_NAME,
     setup_metrics,
 )
+from src.utils.duration import parse_duration
 
 
 def _safe_call(action):
