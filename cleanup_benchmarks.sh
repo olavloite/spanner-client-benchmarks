@@ -32,7 +32,7 @@ for line in sys.stdin:
 
   RUNNING_DIGESTS=""
   for job in $JOBS_TO_DELETE; do
-    if [[ $job == spanner-$CLIENT_TYPE-benchmark-job-* ]]; then
+    if [[ $job == spanner-$CLIENT_TYPE-benchmark-job-* ]] || [[ $job =~ ^spanner-benchmark-.*-$CLIENT_TYPE-[0-9]+-[a-z0-9]+$ ]]; then
       # Check if job has active executions
       ACTIVE_EXECS=$(gcloud run jobs executions list --project="$PROJECT_ID" --region="$REGION" --job="$job" --format="value(metadata.name,status.completionTime)" | python3 -c "
 import sys
