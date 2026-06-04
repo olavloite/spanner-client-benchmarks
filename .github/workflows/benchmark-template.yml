@@ -70,6 +70,11 @@ on:
         required: false
         type: string
         default: ''
+      disable_builtin_metrics:
+        description: 'Disable Spanner built-in metrics (optional)'
+        required: false
+        type: string
+        default: 'false'
     secrets:
       GCP_SA_KEY:
         required: true
@@ -118,4 +123,5 @@ jobs:
           BENCHMARK_NAME: ${{ inputs.benchmark_name }}
           WAREHOUSES: ${{ inputs.warehouses }}
           ITEMS: ${{ inputs.items }}
+          SPANNER_DISABLE_BUILTIN_METRICS: ${{ inputs.disable_builtin_metrics }}
         run: ./run_benchmark.sh ${{ matrix.client }}

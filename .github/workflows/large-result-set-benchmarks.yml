@@ -11,5 +11,6 @@ jobs:
     with:
       benchmark_types: '["read-large-result-set"]'
       duration: '1h'
+      disable_builtin_metrics: 'true'
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
