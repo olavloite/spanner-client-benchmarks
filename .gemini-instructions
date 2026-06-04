@@ -53,6 +53,8 @@ Before you state that a task is complete, you **MUST** run the code formatters a
 * **Keep Methods Small**: Avoid writing very large methods. Break down routines into small, focused, single-responsibility helper functions to keep code readable.
 * **Manage File Size**: Do not create excessively large source files unless strictly necessary. Separate distinct business concerns and logic into distinct, modular files. Ensure code that naturally belongs together resides in the same file.
 * **Idiomatic Code**: Always write clean, idiomatic code that aligns with the established standards and best practices of the target language.
+* **Use Imports**: Add explicit imports instead of using fully qualified type names in source code across all languages (e.g., use `import com.google.cloud.spanner.Options;` instead of writing `com.google.cloud.spanner.Options.tag(...)` inline).
+
 
 ### 2. Rust-Specific Guidelines
 * **Variable Naming**: Always use full words for variable names to ensure readability. Avoid abbreviations unless they are standard/common (e.g. `db` for database is allowed, but `rs` instead of `result_set` is **NOT** allowed).

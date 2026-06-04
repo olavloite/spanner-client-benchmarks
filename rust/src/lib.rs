@@ -88,6 +88,8 @@ pub enum Commands {
         clients: usize,
         #[arg(long, default_value_t = 100000)]
         items: i64,
+        #[arg(long, default_value_t = false, action = ArgAction::Set)]
+        extended: bool,
     },
 }
 
@@ -392,9 +394,10 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         warehouses,
         clients,
         items,
+        extended,
     } = args.command
     {
-        let base_attributes = vec![
+        let mut base_attributes = vec![
             KeyValue::new("benchmark_type", "tpcc"),
             KeyValue::new("for_alerting", args.for_alerting),
             KeyValue::new(
@@ -404,6 +407,9 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
             KeyValue::new("client", "rust-client"),
             KeyValue::new("concurrent_clients", clients as i64),
         ];
+        if extended {
+            base_attributes.push(KeyValue::new("extended", true));
+        }
         let _monitor = resource_monitor::ResourceMonitor::start(
             &args.resource_probe_interval,
             metrics.clone(),
@@ -417,6 +423,7 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
             duration,
             metrics,
             base_attributes,
+            extended,
         )
         .await;
         if is_owned_provider {

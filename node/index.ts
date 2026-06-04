@@ -175,6 +175,11 @@ async function main() {
     )
     .option('--clients <clients>', 'Number of parallel worker clients', '10')
     .option('--items <items>', 'Number of items in catalog', '100000')
+    .option(
+      '--extended',
+      'Run TPC-C benchmark with extended coverage of client library features',
+      false
+    )
     .action(async subCommandOptions => {
       const globalOptions = program.opts();
       await runBenchmarkAction('tpcc', globalOptions, subCommandOptions);
@@ -412,6 +417,7 @@ async function runBenchmarkAction(
     const warehouses = parseInt(subOpts.warehouses, 10);
     const clients = parseInt(subOpts.clients, 10);
     const items = parseInt(subOpts.items, 10);
+    const extended = !!subOpts.extended;
     benchmark = new TpccBenchmarkRunner(
       database,
       latencyHistogram,
@@ -425,7 +431,8 @@ async function runBenchmarkAction(
       items,
       parsedDurationMs,
       forAlerting,
-      benchmarkName
+      benchmarkName,
+      extended
     );
   } else {
     console.error(

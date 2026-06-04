@@ -1,9 +1,11 @@
 package com.google.cloud.spanner.benchmark.tpcc;
 
+import com.google.cloud.spanner.BatchClient;
 import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.ResultSet;
 import com.google.cloud.spanner.Statement;
 import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.common.AttributesBuilder;
 import io.opentelemetry.api.metrics.DoubleHistogram;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.LongHistogram;
@@ -16,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 public class TpccBenchmark {
 
   private final DatabaseClient client;
+  private final BatchClient batchClient;
   private final LongHistogram latencyHistogram;
   private final LongCounter operationCounter;
   private final LongCounter errorCounter;
@@ -23,12 +26,17 @@ public class TpccBenchmark {
   private final int clients;
   private final int items;
   private final Duration duration;
+  private final boolean extended;
   private final Attributes baseAttributes;
   private final Attributes newOrderAttributes;
+  private final Attributes newOrderMutationsAttributes;
   private final Attributes paymentAttributes;
+  private final Attributes paymentMutationsDirectAttributes;
   private final Attributes orderStatusAttributes;
+  private final Attributes orderStatusReadsAttributes;
   private final Attributes deliveryAttributes;
   private final Attributes stockLevelAttributes;
+  private final Attributes stockLevelPartitionedAttributes;
 
   private final LongHistogram memoryUsageHistogram;
   private final DoubleHistogram cpuUtilizationHistogram;
@@ -37,6 +45,7 @@ public class TpccBenchmark {
 
   public TpccBenchmark(
       DatabaseClient client,
+      BatchClient batchClient,
       LongHistogram latencyHistogram,
       LongCounter operationCounter,
       LongCounter errorCounter,
@@ -48,8 +57,10 @@ public class TpccBenchmark {
       int items,
       Duration duration,
       boolean forAlerting,
-      String benchmarkName) {
+      String benchmarkName,
+      boolean extended) {
     this.client = client;
+    this.batchClient = batchClient;
     this.latencyHistogram = latencyHistogram;
     this.operationCounter = operationCounter;
     this.errorCounter = errorCounter;
@@ -60,23 +71,37 @@ public class TpccBenchmark {
     this.clients = clients;
     this.items = items;
     this.duration = duration;
-    this.baseAttributes =
+    this.extended = extended;
+
+    AttributesBuilder baseAttributesBuilder =
         Attributes.builder()
             .put("benchmark_type", "tpcc")
             .put("for_alerting", forAlerting)
             .put("benchmark_name", benchmarkName != null ? benchmarkName : "")
             .put("client", "java-client")
-            .put("concurrent_clients", clients)
-            .build();
+            .put("concurrent_clients", clients);
+    if (extended) {
+      baseAttributesBuilder.put("extended", true);
+    }
+    this.baseAttributes = baseAttributesBuilder.build();
+
     this.newOrderAttributes =
         baseAttributes.toBuilder().put("transaction_type", "new_order").build();
+    this.newOrderMutationsAttributes =
+        baseAttributes.toBuilder().put("transaction_type", "new_order_mutations").build();
     this.paymentAttributes = baseAttributes.toBuilder().put("transaction_type", "payment").build();
+    this.paymentMutationsDirectAttributes =
+        baseAttributes.toBuilder().put("transaction_type", "payment_mutations_direct").build();
     this.orderStatusAttributes =
         baseAttributes.toBuilder().put("transaction_type", "order_status").build();
+    this.orderStatusReadsAttributes =
+        baseAttributes.toBuilder().put("transaction_type", "order_status_reads").build();
     this.deliveryAttributes =
         baseAttributes.toBuilder().put("transaction_type", "delivery").build();
     this.stockLevelAttributes =
         baseAttributes.toBuilder().put("transaction_type", "stock_level").build();
+    this.stockLevelPartitionedAttributes =
+        baseAttributes.toBuilder().put("transaction_type", "stock_level_partitioned").build();
   }
 
   public void run() {
@@ -86,7 +111,8 @@ public class TpccBenchmark {
             + ", Parallel Clients: "
             + clients
             + ", Items: "
-            + items);
+            + items
+            + (extended ? " [EXTENDED MODE]" : ""));
 
     startResourceMonitoring();
 
@@ -123,24 +149,56 @@ public class TpccBenchmark {
               boolean success = false;
 
               try {
-                if (prob < 45) {
-                  currentAttributes = newOrderAttributes;
-                  TpccTransactions.executeNewOrder(client, scaleFactor, items);
-                } else if (prob < 88) {
-                  currentAttributes = paymentAttributes;
-                  TpccTransactions.executePayment(client, scaleFactor);
-                } else if (prob < 92) {
-                  currentAttributes = orderStatusAttributes;
-                  TpccTransactions.executeOrderStatus(client, scaleFactor);
-                } else if (prob < 96) {
-                  currentAttributes = deliveryAttributes;
-                  TpccTransactions.executeDelivery(client, scaleFactor);
+                if (extended) {
+                  if (prob < 25) {
+                    currentAttributes = newOrderAttributes;
+                    TpccTransactions.executeNewOrder(client, scaleFactor, items, true);
+                  } else if (prob < 45) {
+                    currentAttributes = newOrderMutationsAttributes;
+                    TpccTransactions.executeNewOrderMutations(client, scaleFactor, items);
+                  } else if (prob < 78) {
+                    currentAttributes = paymentAttributes;
+                    TpccTransactions.executePayment(client, scaleFactor, true);
+                  } else if (prob < 88) {
+                    currentAttributes = paymentMutationsDirectAttributes;
+                    TpccTransactions.executePaymentMutationsDirect(client, scaleFactor);
+                  } else if (prob < 90) {
+                    currentAttributes = orderStatusAttributes;
+                    TpccTransactions.executeOrderStatus(client, scaleFactor, true);
+                  } else if (prob < 92) {
+                    currentAttributes = orderStatusReadsAttributes;
+                    TpccTransactions.executeOrderStatusReads(client, scaleFactor);
+                  } else if (prob < 96) {
+                    currentAttributes = deliveryAttributes;
+                    TpccTransactions.executeDelivery(client, scaleFactor, true);
+                  } else if (prob < 98) {
+                    currentAttributes = stockLevelAttributes;
+                    TpccTransactions.executeStockLevel(client, scaleFactor, true);
+                  } else {
+                    currentAttributes = stockLevelPartitionedAttributes;
+                    TpccTransactions.executeStockLevelPartitioned(batchClient, scaleFactor);
+                  }
                 } else {
-                  currentAttributes = stockLevelAttributes;
-                  TpccTransactions.executeStockLevel(client, scaleFactor);
+                  if (prob < 45) {
+                    currentAttributes = newOrderAttributes;
+                    TpccTransactions.executeNewOrder(client, scaleFactor, items, false);
+                  } else if (prob < 88) {
+                    currentAttributes = paymentAttributes;
+                    TpccTransactions.executePayment(client, scaleFactor, false);
+                  } else if (prob < 92) {
+                    currentAttributes = orderStatusAttributes;
+                    TpccTransactions.executeOrderStatus(client, scaleFactor, false);
+                  } else if (prob < 96) {
+                    currentAttributes = deliveryAttributes;
+                    TpccTransactions.executeDelivery(client, scaleFactor, false);
+                  } else {
+                    currentAttributes = stockLevelAttributes;
+                    TpccTransactions.executeStockLevel(client, scaleFactor, false);
+                  }
                 }
                 success = true;
               } catch (Exception e) {
+                e.printStackTrace();
                 errorCounter.add(1, currentAttributes);
               } finally {
                 if (success) {

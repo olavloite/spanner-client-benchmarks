@@ -485,6 +485,70 @@ public abstract class AbstractBenchmarkTest {
     mockSpanner.putPartialStatementResult(
         StatementResult.update(
             Statement.of("INSERT INTO my_table (id, value) VALUES (@id, @value)"), 1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of(
+                "UPDATE district SET next_order_id = @next WHERE warehouse_id = @w AND district_id = @d"),
+            1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of(
+                "INSERT INTO orders (warehouse_id, district_id, order_id, customer_id, entry_date, item_count, all_local) "
+                    + "VALUES (@w, @d, @o, @c, @dt, @cnt, 1)"),
+            1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of(
+                "INSERT INTO new_orders (warehouse_id, district_id, order_id, created_timestamp) "
+                    + "VALUES (@w, @d, @o, @dt)"),
+            1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of(
+                "INSERT INTO order_line (warehouse_id, district_id, order_id, order_line_id, item_id, quantity, amount, dist_info) "
+                    + "VALUES (@w, @d, @o, @ol, @i, @qty, @amt, 'distinfo')"),
+            1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of(
+                "UPDATE stock SET quantity = quantity - @qty, order_count = order_count + 1 "
+                    + "WHERE warehouse_id = @w AND item_id = @i"),
+            1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of("UPDATE warehouse SET ytd = ytd + @amt WHERE warehouse_id = @w"), 1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of(
+                "UPDATE district SET ytd = ytd + @amt WHERE warehouse_id = @w AND district_id = @d"),
+            1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of(
+                "UPDATE customer SET balance = balance - @amt, ytd_payment = ytd_payment + @amt, payment_count = payment_count + 1 "
+                    + "WHERE warehouse_id = @w AND district_id = @d AND customer_id = @c"),
+            1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of(
+                "INSERT INTO history (warehouse_id, district_id, history_id, customer_id, date, amount, data) "
+                    + "VALUES (@w, @d, @h, @c, @dt, @amt, 'history')"),
+            1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of(
+                "DELETE FROM new_orders WHERE warehouse_id = @w AND district_id = @d AND order_id = @o"),
+            1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of(
+                "UPDATE orders SET carrier_id = @c WHERE warehouse_id = @w AND district_id = @d AND order_id = @o"),
+            1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of(
+                "UPDATE order_line SET delivery_date = @dt WHERE warehouse_id = @w AND district_id = @d AND order_id = @o"),
+            1L));
   }
 
   protected static class SimpleMetricReader

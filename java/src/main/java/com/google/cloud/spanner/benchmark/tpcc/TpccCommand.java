@@ -4,6 +4,7 @@ import static com.google.cloud.spanner.benchmark.BenchmarkApp.LATENCY_NAME;
 import static com.google.cloud.spanner.benchmark.BenchmarkApp.METER_NAME;
 
 import com.google.cloud.NoCredentials;
+import com.google.cloud.spanner.BatchClient;
 import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.DatabaseId;
 import com.google.cloud.spanner.Spanner;
@@ -41,6 +42,12 @@ public class TpccCommand implements Runnable {
       defaultValue = "100000")
   private int items;
 
+  @Option(
+      names = {"--extended"},
+      description = "Run TPC-C benchmark with extended coverage of client library features",
+      defaultValue = "false")
+  private boolean extended;
+
   @Override
   public void run() {
     try {
@@ -59,10 +66,10 @@ public class TpccCommand implements Runnable {
       }
       SpannerOptions spannerOptions = spannerOptionsBuilder.build();
       try (Spanner spanner = spannerOptions.getService()) {
-        DatabaseClient client =
-            spanner.getDatabaseClient(
-                DatabaseId.of(
-                    parent.getProjectId(), parent.getInstanceId(), parent.getDatabaseId()));
+        DatabaseId databaseId =
+            DatabaseId.of(parent.getProjectId(), parent.getInstanceId(), parent.getDatabaseId());
+        DatabaseClient client = spanner.getDatabaseClient(databaseId);
+        BatchClient batchClient = spanner.getBatchClient(databaseId);
 
         Duration duration = AbstractBenchmark.parseDuration(parent.getDuration());
         boolean forAlerting = parent.isForAlerting();
@@ -71,6 +78,7 @@ public class TpccCommand implements Runnable {
         TpccBenchmark benchmark =
             new TpccBenchmark(
                 client,
+                batchClient,
                 metrics.latencyHistogram,
                 metrics.operationCounter,
                 metrics.errorCounter,
@@ -82,7 +90,8 @@ public class TpccCommand implements Runnable {
                 items,
                 duration,
                 forAlerting,
-                benchmarkName);
+                benchmarkName,
+                extended);
         benchmark.run();
       }
     } catch (Exception e) {

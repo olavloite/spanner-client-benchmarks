@@ -32,6 +32,7 @@ func executeTPCCBenchmark(ctx context.Context, cmd *cli.Command) error {
 	warehouses := int(cmd.Int("warehouses"))
 	clients := int(cmd.Int("clients"))
 	items := int(cmd.Int("items"))
+	extended := cmd.Bool("extended")
 
 	latencyHistogram, _, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cleanupMetrics, err := setupMetrics(runCtx, cfg.Project, cfg.Host, cfg.BenchmarkName)
 	if err != nil {
@@ -52,13 +53,20 @@ func executeTPCCBenchmark(ctx context.Context, cmd *cli.Command) error {
 		attribute.String("client", "go-client"),
 		attribute.Int("concurrent_clients", clients),
 	}
+	if extended {
+		baseAttributeList = append(baseAttributeList, attribute.Bool("extended", true))
+	}
 	attributes := metric.WithAttributes(baseAttributeList...)
 
 	attrNewOrder := metric.WithAttributes(append(baseAttributeList, attribute.String("transaction_type", "new_order"))...)
+	attrNewOrderMutations := metric.WithAttributes(append(baseAttributeList, attribute.String("transaction_type", "new_order_mutations"))...)
 	attrPayment := metric.WithAttributes(append(baseAttributeList, attribute.String("transaction_type", "payment"))...)
+	attrPaymentMutationsDirect := metric.WithAttributes(append(baseAttributeList, attribute.String("transaction_type", "payment_mutations_direct"))...)
 	attrOrderStatus := metric.WithAttributes(append(baseAttributeList, attribute.String("transaction_type", "order_status"))...)
+	attrOrderStatusReads := metric.WithAttributes(append(baseAttributeList, attribute.String("transaction_type", "order_status_reads"))...)
 	attrDelivery := metric.WithAttributes(append(baseAttributeList, attribute.String("transaction_type", "delivery"))...)
 	attrStockLevel := metric.WithAttributes(append(baseAttributeList, attribute.String("transaction_type", "stock_level"))...)
+	attrStockLevelPartitioned := metric.WithAttributes(append(baseAttributeList, attribute.String("transaction_type", "stock_level_partitioned"))...)
 
 	// Setup duration context timeout if not infinite
 	var durationCtx context.Context
@@ -79,7 +87,11 @@ func executeTPCCBenchmark(ctx context.Context, cmd *cli.Command) error {
 	rm.Start(durationCtx)
 	defer rm.Stop()
 
-	fmt.Printf("Starting TPC-C Benchmark for %s, Scale Factor (Warehouses): %d, Parallel Clients: %d, Items: %d\n", cfg.DurationStr, warehouses, clients, items)
+	extendedModeStr := ""
+	if extended {
+		extendedModeStr = " [EXTENDED MODE]"
+	}
+	fmt.Printf("Starting TPC-C Benchmark for %s, Scale Factor (Warehouses): %d, Parallel Clients: %d, Items: %d%s\n", cfg.DurationStr, warehouses, clients, items, extendedModeStr)
 
 	// Assert database capacity
 	singleIter := client.Single().Query(durationCtx, spanner.Statement{SQL: "SELECT COUNT(*) FROM warehouse"})
@@ -115,26 +127,66 @@ func executeTPCCBenchmark(ctx context.Context, cmd *cli.Command) error {
 					txType := "new_order"
 
 					start := time.Now()
-					if prob < 45 {
-						txType = "new_order"
-						attr = attrNewOrder
-						err = executeNewOrder(durationCtx, client, warehouses, items)
-					} else if prob < 88 {
-						txType = "payment"
-						attr = attrPayment
-						err = executePayment(durationCtx, client, warehouses)
-					} else if prob < 92 {
-						txType = "order_status"
-						attr = attrOrderStatus
-						err = executeOrderStatus(durationCtx, client, warehouses)
-					} else if prob < 96 {
-						txType = "delivery"
-						attr = attrDelivery
-						err = executeDelivery(durationCtx, client, warehouses)
+					if extended {
+						if prob < 25 {
+							txType = "new_order"
+							attr = attrNewOrder
+							err = executeNewOrder(durationCtx, client, warehouses, items, true)
+						} else if prob < 45 {
+							txType = "new_order_mutations"
+							attr = attrNewOrderMutations
+							err = executeNewOrderMutations(durationCtx, client, warehouses, items)
+						} else if prob < 78 {
+							txType = "payment"
+							attr = attrPayment
+							err = executePayment(durationCtx, client, warehouses, true)
+						} else if prob < 88 {
+							txType = "payment_mutations_direct"
+							attr = attrPaymentMutationsDirect
+							err = executePaymentMutationsDirect(durationCtx, client, warehouses)
+						} else if prob < 90 {
+							txType = "order_status"
+							attr = attrOrderStatus
+							err = executeOrderStatus(durationCtx, client, warehouses, true)
+						} else if prob < 92 {
+							txType = "order_status_reads"
+							attr = attrOrderStatusReads
+							err = executeOrderStatusReads(durationCtx, client, warehouses)
+						} else if prob < 96 {
+							txType = "delivery"
+							attr = attrDelivery
+							err = executeDelivery(durationCtx, client, warehouses, true)
+						} else if prob < 98 {
+							txType = "stock_level"
+							attr = attrStockLevel
+							err = executeStockLevel(durationCtx, client, warehouses, true)
+						} else {
+							txType = "stock_level_partitioned"
+							attr = attrStockLevelPartitioned
+							err = executeStockLevelPartitioned(durationCtx, client, warehouses)
+						}
 					} else {
-						txType = "stock_level"
-						attr = attrStockLevel
-						err = executeStockLevel(durationCtx, client, warehouses)
+						if prob < 45 {
+							txType = "new_order"
+							attr = attrNewOrder
+							err = executeNewOrder(durationCtx, client, warehouses, items, false)
+						} else if prob < 88 {
+							txType = "payment"
+							attr = attrPayment
+							err = executePayment(durationCtx, client, warehouses, false)
+						} else if prob < 92 {
+							txType = "order_status"
+							attr = attrOrderStatus
+							err = executeOrderStatus(durationCtx, client, warehouses, false)
+						} else if prob < 96 {
+							txType = "delivery"
+							attr = attrDelivery
+							err = executeDelivery(durationCtx, client, warehouses, false)
+						} else {
+							txType = "stock_level"
+							attr = attrStockLevel
+							err = executeStockLevel(durationCtx, client, warehouses, false)
+						}
 					}
 
 					if err != nil {
