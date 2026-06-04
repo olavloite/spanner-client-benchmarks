@@ -27,9 +27,9 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
                           "-t",
                           "my_table",
                           "--tps",
-                          "1000",
+                          "10",
                           "--threads",
-                          "10"
+                          "2"
                         });
               } catch (Exception e) {
                 System.out.println("App terminated: " + e.getMessage());
@@ -38,7 +38,7 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
 
     thread.start();
 
-    waitForRequest(r -> r.getSql().contains("SELECT * FROM my_table"));
+    waitForRequest(r -> r.getSql().contains("SELECT * FROM my_table"), thread);
 
     // Interrupt the thread to stop the infinite loop
     thread.interrupt();
@@ -68,9 +68,9 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
                           "-t",
                           "my_table",
                           "--tps",
-                          "1000",
+                          "10",
                           "--threads",
-                          "10"
+                          "2"
                         });
               } catch (Exception e) {
                 System.out.println("App terminated: " + e.getMessage());
@@ -80,7 +80,8 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
     thread.start();
 
     waitForRequest(
-        r -> r.getSql().contains("UPDATE my_table") || r.getSql().contains("INSERT INTO my_table"));
+        r -> r.getSql().contains("UPDATE my_table") || r.getSql().contains("INSERT INTO my_table"),
+        thread);
 
     // Interrupt the thread to stop the infinite loop
     thread.interrupt();
@@ -110,9 +111,9 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
                           "-t",
                           "my_table",
                           "--tps",
-                          "5000",
-                          "--threads",
                           "10",
+                          "--threads",
+                          "2",
                           "--load-type",
                           "SPIKY",
                           "--burst-factor",
@@ -129,7 +130,7 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
 
     thread.start();
 
-    waitForRequest(r -> r.getSql().contains("SELECT * FROM my_table"));
+    waitForRequest(r -> r.getSql().contains("SELECT * FROM my_table"), thread);
 
     // Interrupt the thread to stop the infinite loop
     thread.interrupt();
@@ -159,9 +160,9 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
                           "-t",
                           "my_table",
                           "--tps",
-                          "1000",
-                          "--threads",
                           "10",
+                          "--threads",
+                          "2",
                           "--load-type",
                           "GRADUAL",
                           "--cycle-duration",
@@ -176,7 +177,7 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
 
     thread.start();
 
-    waitForRequest(r -> r.getSql().contains("SELECT * FROM my_table"));
+    waitForRequest(r -> r.getSql().contains("SELECT * FROM my_table"), thread);
 
     // Interrupt the thread to stop the infinite loop
     thread.interrupt();
@@ -208,9 +209,9 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
                           "--num-rows",
                           "10",
                           "--tps",
-                          "1000",
+                          "10",
                           "--threads",
-                          "5"
+                          "2"
                         });
               } catch (Exception e) {
                 System.out.println("App terminated: " + e.getMessage());
@@ -219,7 +220,7 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
 
     thread.start();
 
-    waitForRequest(r -> r.getSql().contains("SELECT\n  MOD(FARM_FINGERPRINT"));
+    waitForRequest(r -> r.getSql().contains("SELECT\n  MOD(FARM_FINGERPRINT"), thread);
 
     // Interrupt the thread to stop the infinite loop
     thread.interrupt();
@@ -262,7 +263,7 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
 
     thread.start();
 
-    waitForRequest(r -> r.getSql().contains("SELECT COUNT(*) FROM warehouse"));
+    waitForRequest(r -> r.getSql().contains("SELECT COUNT(*) FROM warehouse"), thread);
 
     thread.join(10000); // Wait for TPCC to naturally finish because of the 2s duration
   }
@@ -290,7 +291,7 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
                           "-t",
                           "my_table",
                           "--tps",
-                          "1000",
+                          "10",
                           "--threads",
                           "2"
                         });
