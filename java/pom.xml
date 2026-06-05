@@ -12,10 +12,10 @@
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <otel.version>1.32.0</otel.version>
+        <otel.version>1.62.0</otel.version>
         <otel.gcp.version>0.36.0</otel.gcp.version>
-        <spanner.version>6.117.0</spanner.version>
-        <grpc-gcp.version>1.10.0</grpc-gcp.version>
+        <spanner.version>6.118.0</spanner.version>
+        <grpc-gcp.version>1.11.0</grpc-gcp.version>
     </properties>
 
     <dependencyManagement>
@@ -23,7 +23,7 @@
             <dependency>
                 <groupId>com.google.cloud</groupId>
                 <artifactId>libraries-bom</artifactId>
-                <version>26.80.0</version>
+                <version>26.83.0</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -141,7 +141,7 @@
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
-            <version>2.0.16</version>
+            <version>2.0.18</version>
         </dependency>
     </dependencies>
 
@@ -150,7 +150,7 @@
             <plugin>
                 <groupId>com.spotify.fmt</groupId>
                 <artifactId>fmt-maven-plugin</artifactId>
-                <version>2.25</version>
+                <version>2.29</version>
                 <executions>
                     <execution>
                         <goals>
@@ -162,14 +162,14 @@
                     <dependency>
                         <groupId>com.google.googlejavaformat</groupId>
                         <artifactId>google-java-format</artifactId>
-                        <version>1.30.0</version>
+                        <version>1.35.0</version>
                     </dependency>
                 </dependencies>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <version>3.1.0</version>
+                <version>3.6.3</version>
                 <configuration>
                     <cleanupDaemonThreads>false</cleanupDaemonThreads>
                 </configuration>
@@ -178,7 +178,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
-                <version>3.6.1</version>
+                <version>3.11.0</version>
                 <executions>
                     <execution>
                         <id>copy-dependencies</id>
@@ -200,7 +200,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
-                <version>3.3.0</version>
+                <version>3.5.0</version>
                 <configuration>
                     <archive>
                         <manifest>
