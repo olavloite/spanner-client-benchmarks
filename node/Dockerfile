@@ -1,5 +1,5 @@
 # Stage 1: Build application against latest Spanner client source
-FROM node:20 AS build
+FROM node:22 AS build
 WORKDIR /app
 
 # Install git for cloning
@@ -21,7 +21,7 @@ ENV CLIENT_BRANCH=$CLIENT_BRANCH
 RUN chmod +x build_app.sh && ./build_app.sh
 
 # Stage 2: Production runtime image
-FROM node:20-slim
+FROM node:22-slim
 WORKDIR /app
 
 # Copy the compiled JavaScript from the build stage

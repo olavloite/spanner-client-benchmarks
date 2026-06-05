@@ -24,6 +24,7 @@ jobs:
     name: Analyze ${{ matrix.client }}
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       issues: write
     strategy:
       fail-fast: false
@@ -33,10 +34,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
         with:
-          java-version: '17'
+          java-version: '25'
           distribution: 'temurin'
           cache: 'maven'
 
@@ -62,6 +63,7 @@ jobs:
           if [ -n "$TARGET_DATE" ]; then ARGS="$ARGS --date $TARGET_DATE"; fi
           if [ -n "$BASELINE_DATE" ]; then ARGS="$ARGS --baseline-date $BASELINE_DATE"; fi
           
+          set +e
           java -jar target/spanner-performance-analyzer.jar $ARGS
           exit_code=$?
           set -e
@@ -81,6 +83,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Map client to GitHub language colors
+          case "${{ matrix.client }}" in
+            java-client)   COLOR="b07219" ;;
+            go-client)     COLOR="00add8" ;;
+            node-client)   COLOR="339933" ;;
+            python-client) COLOR="3572a5" ;;
+            rust-client)   COLOR="dea584" ;;
+            *)             COLOR="1d76db" ;;
+          esac
+          
+          gh label create "performance-regression" --color "d93f0b" --description "Performance Regression Alerts" || true
+          gh label create "${{ matrix.client }}" --color "$COLOR" || true
+          
           gh issue create \
             --title "Performance Regression Alert [${{ matrix.client }}] - $(date +%F)" \
             --body-file analyzer/regression_summary.md \
@@ -103,5 +118,3 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             cat analyzer/regression_summary.md >> $GITHUB_STEP_SUMMARY
           fi
-
-
