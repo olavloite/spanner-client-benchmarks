@@ -12,7 +12,7 @@ export interface IBenchmark {
     database: Database,
     tableName: string,
     minId: number,
-    maxId: number
+    maxId: number,
   ): Promise<void>;
   getName(): string;
   getType(): string;
@@ -75,7 +75,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
     peakFactor = 2.0,
     burstFactor = 1.0,
     burstDuration = 1.0,
-    burstFraction = 0.1
+    burstFraction = 0.1,
   ) {
     this.database = database;
     this.latencyHistogram = latencyHistogram;
@@ -124,7 +124,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
     database: Database,
     tableName: string,
     minId: number,
-    maxId: number
+    maxId: number,
   ): Promise<void>;
   abstract getName(): string;
   abstract getType(): string;
@@ -135,7 +135,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
   public async run(): Promise<void> {
     console.log(`Starting ${this.getName()}`);
     console.log(
-      `Parameters: TPS=${this.tps}, Max Workers=${this.threads}, MinID=${this.minId}, MaxID=${this.maxId}`
+      `Parameters: TPS=${this.tps}, Max Workers=${this.threads}, MinID=${this.minId}, MaxID=${this.maxId}`,
     );
 
     this.startResourceMonitoring();
@@ -145,7 +145,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
     if (durationMs !== null) {
       timeoutId = setTimeout(() => {
         console.log(
-          'Benchmark duration reached. Stopping workload generator...'
+          'Benchmark duration reached. Stopping workload generator...',
         );
         this.stop();
       }, durationMs);
@@ -199,7 +199,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
           clearInterval(waiter);
           if (timeoutId) clearTimeout(timeoutId);
           console.log(
-            'All outstanding active tasks completed. Benchmark run finished.'
+            'All outstanding active tasks completed. Benchmark run finished.',
           );
           resolve();
         }
@@ -233,7 +233,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
       } else {
         // Task queue is full, drop task to simulate unbounded network queue limits (parity with Go's 1M limit)
         console.error(
-          'Task dropped: workload queue is full (1M tasks exceeded)'
+          'Task dropped: workload queue is full (1M tasks exceeded)',
         );
       }
     }
@@ -298,7 +298,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
   private calculateCurrentRate(
     nowNs: bigint,
     startTimeNs: bigint,
-    inBurst: boolean
+    inBurst: boolean,
   ): number {
     if (this.loadType === LoadType.Spiky) {
       return inBurst ? this.rBurst : this.rNormal;
@@ -319,7 +319,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
       this.memoryUsageHistogram,
       this.cpuUtilizationHistogram,
       this.attributes,
-      () => this.isStopped
+      () => this.isStopped,
     );
     this.resourceMonitor.start();
   }

@@ -17,7 +17,7 @@ export class MockSpannerServer {
   public start(): Promise<number> {
     const PROTO_PATH = path.resolve(
       process.cwd(),
-      'node_modules/@google-cloud/spanner/build/protos/google/spanner/v1/spanner.proto'
+      'node_modules/@google-cloud/spanner/build/protos/google/spanner/v1/spanner.proto',
     );
     const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
       keepCase: true,
@@ -28,7 +28,7 @@ export class MockSpannerServer {
       includeDirs: [
         path.resolve(
           process.cwd(),
-          'node_modules/@google-cloud/spanner/build/protos'
+          'node_modules/@google-cloud/spanner/build/protos',
         ),
         path.resolve(process.cwd(), 'node_modules/google-gax/build/protos'),
       ],
@@ -61,7 +61,7 @@ export class MockSpannerServer {
             this.server.start();
             resolve(port);
           }
-        }
+        },
       );
     });
   }
@@ -161,7 +161,7 @@ export class MockSpannerServer {
     if (call.request.transaction?.begin) {
       this.transactionCounter++;
       const txId = Buffer.from(`tx-${this.transactionCounter}`).toString(
-        'base64'
+        'base64',
       );
       response.metadata = response.metadata || {};
       response.metadata.transaction = {id: txId};
@@ -192,7 +192,7 @@ export class MockSpannerServer {
     if (call.request.transaction?.begin) {
       this.transactionCounter++;
       const txId = Buffer.from(`tx-${this.transactionCounter}`).toString(
-        'base64'
+        'base64',
       );
       firstPart.metadata.transaction = {id: txId};
     }

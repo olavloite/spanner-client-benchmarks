@@ -25,7 +25,7 @@ async function main() {
   program
     .name('spanner-node-benchmark')
     .description(
-      'High-performance Spanner client library benchmark tool for Node.js (TypeScript)'
+      'High-performance Spanner client library benchmark tool for Node.js (TypeScript)',
     )
     .version('1.0.0')
     // Core Global options (Required flags match picocli and Go flag setups)
@@ -34,79 +34,79 @@ async function main() {
     .requiredOption('-d, --database <databaseId>', 'Spanner Database ID')
     .option(
       '--host <host>',
-      'Custom Spanner endpoint URL override (e.g. for emulators)'
+      'Custom Spanner endpoint URL override (e.g. for emulators)',
     )
     .option(
       '--duration <duration>',
       'Duration of the benchmark (e.g. 60s, 5m, 2h, inf). Defaults to inf (infinite).',
-      'inf'
+      'inf',
     )
     .option(
       '--for-alerting [value]',
       'Marks the metrics emitted for alerting/regression pipelines.',
       val => val === undefined || val === 'true' || val === '1',
-      false
+      false,
     )
     .option(
       '--benchmark-name <benchmarkName>',
       'Optional name to identify this benchmark run in metrics',
-      ''
+      '',
     )
     .option(
       '--resource-probe-interval <resourceProbeInterval>',
       'Interval for probing resource usage (e.g. 10s, 1m). Set to 0 to disable',
-      '10s'
+      '10s',
     )
     .option(
       '--load-type <loadType>',
       'Load type (steady, spiky, gradual)',
-      'steady'
+      'steady',
     )
     .option(
       '--cycle-duration <cycleDuration>',
-      'Duration of a full cycle for gradual load'
+      'Duration of a full cycle for gradual load',
     )
     .option(
       '--peak-factor <peakFactor>',
-      'Ratio of peak rate to average rate for gradual load'
+      'Ratio of peak rate to average rate for gradual load',
     )
     .option(
       '--burst-factor <burstFactor>',
-      'Ratio of burst rate to average rate'
+      'Ratio of burst rate to average rate',
     )
     .option(
       '--burst-duration <burstDuration>',
-      'Average duration of a burst in seconds'
+      'Average duration of a burst in seconds',
     )
     .option(
       '--burst-fraction <burstFraction>',
-      'Fraction of total time spent in the burst state'
+      'Fraction of total time spent in the burst state',
     );
 
   // Point Select Workload Subcommand
   program
     .command('point-select')
     .description(
-      'Execute the single point select workload (implicitly read-only single-use snapshot)'
+      'Execute the single point select workload (implicitly read-only single-use snapshot)',
     )
     .requiredOption('-t, --table <tableName>', 'Target database table name')
     .option('--tps <tps>', 'Target transactions per second throughput', '10')
     .option(
       '--threads <threads>',
       'Parallel async worker pool concurrency limit',
-      '100'
+      '100',
     )
     .option(
       '--num-rows <numRows>',
       'Number of rows in target database table',
-      '1000000'
+      '1000000',
     )
     .action(async subCommandOptions => {
       const globalOptions = program.opts();
       await runBenchmarkAction(
         'point-select',
         globalOptions,
-        subCommandOptions
+        subCommandOptions,
       );
     });
 
@@ -114,26 +114,26 @@ async function main() {
   program
     .command('select-update')
     .description(
-      'Execute the read-modify-write select and update workload inside Read-Write Transactions'
+      'Execute the read-modify-write select and update workload inside Read-Write Transactions',
     )
     .requiredOption('-t, --table <tableName>', 'Target database table name')
     .option('--tps <tps>', 'Target transactions per second throughput', '10')
     .option(
       '--threads <threads>',
       'Parallel async worker pool concurrency limit',
-      '100'
+      '100',
     )
     .option(
       '--num-rows <numRows>',
       'Number of rows in target database table',
-      '1000000'
+      '1000000',
     )
     .action(async subCommandOptions => {
       const globalOptions = program.opts();
       await runBenchmarkAction(
         'select-update',
         globalOptions,
-        subCommandOptions
+        subCommandOptions,
       );
     });
 
@@ -141,26 +141,26 @@ async function main() {
   program
     .command('read-large-result-set')
     .description(
-      'Execute the dynamic large result set iteration and client-side decoding workload scenario'
+      'Execute the dynamic large result set iteration and client-side decoding workload scenario',
     )
     .requiredOption('-t, --table <tableName>', 'Target database table name')
     .option('--tps <tps>', 'Target transactions per second throughput', '0.05')
     .option(
       '--threads <threads>',
       'Parallel async worker pool concurrency limit',
-      '100'
+      '100',
     )
     .option(
       '--num-rows <numRows>',
       'Number of rows to dynamically generate',
-      '100000'
+      '100000',
     )
     .action(async subCommandOptions => {
       const globalOptions = program.opts();
       await runBenchmarkAction(
         'read-large-result-set',
         globalOptions,
-        subCommandOptions
+        subCommandOptions,
       );
     });
 
@@ -171,14 +171,14 @@ async function main() {
     .option(
       '--warehouses <warehouses>',
       'Scale factor (number of warehouses)',
-      '1'
+      '1',
     )
     .option('--clients <clients>', 'Number of parallel worker clients', '10')
     .option('--items <items>', 'Number of items in catalog', '100000')
     .option(
       '--extended',
       'Run TPC-C benchmark with extended coverage of client library features',
-      false
+      false,
     )
     .action(async subCommandOptions => {
       const globalOptions = program.opts();
@@ -216,7 +216,7 @@ function validateAndFillLoadParams(loadType: LoadType, globalOpts: any) {
       globalOpts.burstFraction !== undefined
     ) {
       console.error(
-        'Error: Cannot specify burst or gradual load options when load-type is steady'
+        'Error: Cannot specify burst or gradual load options when load-type is steady',
       );
       process.exit(1);
     }
@@ -226,7 +226,7 @@ function validateAndFillLoadParams(loadType: LoadType, globalOpts: any) {
       globalOpts.peakFactor !== undefined
     ) {
       console.error(
-        'Error: Cannot specify gradual load options when load-type is spiky'
+        'Error: Cannot specify gradual load options when load-type is spiky',
       );
       process.exit(1);
     }
@@ -237,7 +237,7 @@ function validateAndFillLoadParams(loadType: LoadType, globalOpts: any) {
       globalOpts.burstFraction !== undefined
     ) {
       console.error(
-        'Error: Cannot specify burst load options when load-type is gradual'
+        'Error: Cannot specify burst load options when load-type is gradual',
       );
       process.exit(1);
     }
@@ -260,7 +260,7 @@ function validateAndFillLoadParams(loadType: LoadType, globalOpts: any) {
 async function runBenchmarkAction(
   type: 'point-select' | 'select-update' | 'read-large-result-set' | 'tpcc',
   globalOpts: any,
-  subOpts: any
+  subOpts: any,
 ) {
   const projectId = globalOpts.project;
   const instanceId = globalOpts.instance;
@@ -296,7 +296,7 @@ async function runBenchmarkAction(
   const {meter, shutdown: shutdownMetrics} = setupMetrics(
     projectId,
     isEmulator,
-    benchmarkName
+    benchmarkName,
   );
 
   // Create the shared metric instruments (us units match Go/Java)
@@ -362,7 +362,7 @@ async function runBenchmarkAction(
       peakFactor,
       burstFactor,
       burstDuration,
-      burstFraction
+      burstFraction,
     );
   } else if (type === 'select-update') {
     benchmark = new SelectAndUpdateBenchmark(
@@ -386,7 +386,7 @@ async function runBenchmarkAction(
       peakFactor,
       burstFactor,
       burstDuration,
-      burstFraction
+      burstFraction,
     );
   } else if (type === 'read-large-result-set') {
     benchmark = new ReadLargeResultSetBenchmark(
@@ -411,7 +411,7 @@ async function runBenchmarkAction(
       peakFactor,
       burstFactor,
       burstDuration,
-      burstFraction
+      burstFraction,
     );
   } else if (type === 'tpcc') {
     const warehouses = parseInt(subOpts.warehouses, 10);
@@ -432,11 +432,11 @@ async function runBenchmarkAction(
       parsedDurationMs,
       forAlerting,
       benchmarkName,
-      extended
+      extended,
     );
   } else {
     console.error(
-      `Error: Unsupported benchmark type: '${type}'. Valid options are: 'point-select', 'select-update', 'read-large-result-set', 'tpcc'.`
+      `Error: Unsupported benchmark type: '${type}'. Valid options are: 'point-select', 'select-update', 'read-large-result-set', 'tpcc'.`,
     );
     process.exit(1);
   }
@@ -447,7 +447,7 @@ async function runBenchmarkAction(
     if (isTerminating) return;
     isTerminating = true;
     console.log(
-      `\n[Lifecycle] Received signal ${signal}. Initiating graceful shutdown...`
+      `\n[Lifecycle] Received signal ${signal}. Initiating graceful shutdown...`,
     );
 
     benchmark.stop();

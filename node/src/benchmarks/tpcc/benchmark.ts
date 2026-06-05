@@ -53,7 +53,7 @@ export class TpccBenchmarkRunner {
     durationMs: number | null,
     forAlerting: boolean,
     benchmarkName: string,
-    extended = false
+    extended = false,
   ) {
     this.database = database;
     this.latencyHistogram = latencyHistogram;
@@ -108,7 +108,7 @@ export class TpccBenchmarkRunner {
 
   public async run(): Promise<void> {
     console.log(
-      `Starting TPC-C Benchmark with Scale Factor (Warehouses): ${this.scaleFactor}, Parallel Clients: ${this.clients}, Items: ${this.items}${this.extended ? ' [EXTENDED MODE]' : ''}`
+      `Starting TPC-C Benchmark with Scale Factor (Warehouses): ${this.scaleFactor}, Parallel Clients: ${this.clients}, Items: ${this.items}${this.extended ? ' [EXTENDED MODE]' : ''}`,
     );
 
     this.startResourceMonitoring();
@@ -121,7 +121,7 @@ export class TpccBenchmarkRunner {
       const warehouseCount = Number(rowData.cnt);
       if (warehouseCount < this.scaleFactor) {
         console.error(
-          `Error: Database capacity check failed: Required scale factor ${this.scaleFactor} warehouses, but database only has ${warehouseCount}`
+          `Error: Database capacity check failed: Required scale factor ${this.scaleFactor} warehouses, but database only has ${warehouseCount}`,
         );
         process.exit(1);
       }
@@ -170,7 +170,7 @@ export class TpccBenchmarkRunner {
               this.database,
               this.scaleFactor,
               this.items,
-              true
+              true,
             );
           } else if (prob < 45) {
             txType = 'new_order_mutations';
@@ -179,7 +179,7 @@ export class TpccBenchmarkRunner {
               this.database,
               this.scaleFactor,
               this.items,
-              true
+              true,
             );
           } else if (prob < 78) {
             txType = 'payment';
@@ -191,7 +191,7 @@ export class TpccBenchmarkRunner {
             await executePaymentMutationsDirect(
               this.database,
               this.scaleFactor,
-              true
+              true,
             );
           } else if (prob < 90) {
             txType = 'order_status';
@@ -203,7 +203,7 @@ export class TpccBenchmarkRunner {
             await executeOrderStatusReads(
               this.database,
               this.scaleFactor,
-              true
+              true,
             );
           } else if (prob < 96) {
             txType = 'delivery';
@@ -219,7 +219,7 @@ export class TpccBenchmarkRunner {
             await executeStockLevelPartitioned(
               this.database,
               this.scaleFactor,
-              true
+              true,
             );
           }
         } else {
@@ -248,7 +248,7 @@ export class TpccBenchmarkRunner {
         success = true;
       } catch (err: any) {
         console.error(
-          `TPC-C transaction ${txType} failed: ${err?.message || err}`
+          `TPC-C transaction ${txType} failed: ${err?.message || err}`,
         );
         this.errorCounter.add(1, attr);
       } finally {
@@ -267,7 +267,7 @@ export class TpccBenchmarkRunner {
       this.memoryUsageHistogram,
       this.cpuUtilizationHistogram,
       this.baseAttributes,
-      () => this.isStopped
+      () => this.isStopped,
     );
     this.resourceMonitor.start();
   }

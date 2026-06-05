@@ -43,7 +43,7 @@ try {
   function calculateCurrentRate(
     nowNs: bigint,
     startTimeNs: bigint,
-    inBurst: boolean
+    inBurst: boolean,
   ): number {
     if (loadType === LoadType.Spiky) {
       return inBurst ? rBurst : rNormal;

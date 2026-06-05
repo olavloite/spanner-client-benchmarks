@@ -42,7 +42,7 @@ export class ReadLargeResultSetBenchmark extends AbstractBenchmark {
     peakFactor = 2.0,
     burstFactor = 1.0,
     burstDuration = 1.0,
-    burstFraction = 0.1
+    burstFraction = 0.1,
   ) {
     super(
       database,
@@ -65,7 +65,7 @@ export class ReadLargeResultSetBenchmark extends AbstractBenchmark {
       peakFactor,
       burstFactor,
       burstDuration,
-      burstFraction
+      burstFraction,
     );
     this.numRows = numRows;
   }
@@ -97,7 +97,7 @@ export class ReadLargeResultSetBenchmark extends AbstractBenchmark {
     database: Database,
     tableName: string,
     minId: number,
-    maxId: number
+    maxId: number,
   ): Promise<void> {
     const query = {
       sql: SQL,
