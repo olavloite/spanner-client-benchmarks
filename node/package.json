@@ -17,12 +17,12 @@
     "@opentelemetry/resources": "^2.7.1",
     "@opentelemetry/sdk-metrics": "^2.7.1",
     "@opentelemetry/semantic-conventions": "^1.28.0",
-    "commander": "^11.1.0"
+    "commander": "^15.0.0"
   },
   "devDependencies": {
-    "@types/node": "^20.11.0",
-    "gts": "^5.3.1",
+    "@types/node": "^25.9.1",
+    "gts": "^7.0.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
+    "typescript": "^6.0.3"
   }
 }
