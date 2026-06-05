@@ -51,7 +51,7 @@ async fn execute_new_order(
             quantities.push(rand::random_range(1..=10));
         }
 
-        let statement = Statement::builder("SELECT next_order_id FROM district WHERE warehouse_id = @w AND district_id = @d")
+        let statement = Statement::builder("SELECT next_order_id FROM district WHERE warehouse_id = @w AND district_id = @d FOR UPDATE")
             .add_param("w", &warehouse_id)
             .add_param("d", &district_id)
             .set_request_tag("new_order")
@@ -285,7 +285,7 @@ async fn execute_delivery(
 
         let mut batch_statements = Vec::new();
         for district_id in 1..=10 {
-            let new_orders_query = Statement::builder("SELECT order_id FROM new_orders WHERE warehouse_id = @w AND district_id = @d ORDER BY created_timestamp ASC LIMIT 1")
+            let new_orders_query = Statement::builder("SELECT order_id FROM new_orders WHERE warehouse_id = @w AND district_id = @d ORDER BY created_timestamp ASC LIMIT 1 FOR UPDATE")
                 .add_param("w", &warehouse_id)
                 .add_param("d", &district_id)
                 .set_request_tag("delivery")

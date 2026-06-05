@@ -23,7 +23,7 @@ export async function executeNewOrder(
 
   await database.runTransactionAsync(transactionOptions, async transaction => {
     const getDistrict = {
-      sql: 'SELECT next_order_id FROM district WHERE warehouse_id = @w AND district_id = @d',
+      sql: 'SELECT next_order_id FROM district WHERE warehouse_id = @w AND district_id = @d FOR UPDATE',
       params: {w: warehouseId, d: districtId},
       types: {w: 'int64', d: 'int64'},
       requestOptions: {requestTag: 'new_order_get_district'},
@@ -259,7 +259,7 @@ export async function executeDelivery(
     const batchStatements: any[] = [];
     for (let districtId = 1; districtId <= 10; districtId++) {
       const query = {
-        sql: 'SELECT order_id FROM new_orders WHERE warehouse_id = @w AND district_id = @d ORDER BY created_timestamp ASC LIMIT 1',
+        sql: 'SELECT order_id FROM new_orders WHERE warehouse_id = @w AND district_id = @d ORDER BY created_timestamp ASC LIMIT 1 FOR UPDATE',
         params: {w: warehouseId, d: districtId},
         types: {w: 'int64', d: 'int64'},
         requestOptions: {requestTag: 'delivery_oldest_new_order'},

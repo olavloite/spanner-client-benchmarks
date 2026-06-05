@@ -31,7 +31,7 @@ func executeNewOrder(ctx context.Context, client *spanner.Client, scaleFactor in
 
 		// Read District Next Order ID
 		stmt := spanner.Statement{
-			SQL:    "SELECT next_order_id FROM district WHERE warehouse_id = @w AND district_id = @d",
+			SQL:    "SELECT next_order_id FROM district WHERE warehouse_id = @w AND district_id = @d FOR UPDATE",
 			Params: map[string]interface{}{"w": warehouseID, "d": districtID},
 		}
 		iter := tx.QueryWithOptions(ctx, stmt, qopts)
@@ -268,7 +268,7 @@ func executeDelivery(ctx context.Context, client *spanner.Client, scaleFactor in
 		var batchStmts []spanner.Statement
 		for districtID := int64(1); districtID <= 10; districtID++ {
 			iter := tx.QueryWithOptions(ctx, spanner.Statement{
-				SQL:    "SELECT order_id FROM new_orders WHERE warehouse_id = @w AND district_id = @d ORDER BY created_timestamp ASC LIMIT 1",
+				SQL:    "SELECT order_id FROM new_orders WHERE warehouse_id = @w AND district_id = @d ORDER BY created_timestamp ASC LIMIT 1 FOR UPDATE",
 				Params: map[string]interface{}{"w": warehouseID, "d": districtID},
 			}, qopts)
 			row, err := iter.Next()

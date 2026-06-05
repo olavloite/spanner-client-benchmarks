@@ -57,7 +57,7 @@ public class TpccTransactions {
             // Read District Next Order ID
             Statement getDistrict =
                 Statement.newBuilder(
-                        "SELECT next_order_id, tax FROM district WHERE warehouse_id = @w AND district_id = @d")
+                        "SELECT next_order_id, tax FROM district WHERE warehouse_id = @w AND district_id = @d FOR UPDATE")
                     .bind("w")
                     .to(warehouseId)
                     .bind("d")
@@ -346,7 +346,7 @@ public class TpccTransactions {
                       Statement.newBuilder(
                               "SELECT order_id FROM new_orders "
                                   + "WHERE warehouse_id = @w AND district_id = @d "
-                                  + "ORDER BY created_timestamp ASC LIMIT 1")
+                                  + "ORDER BY created_timestamp ASC LIMIT 1 FOR UPDATE")
                           .bind("w")
                           .to(warehouseId)
                           .bind("d")
