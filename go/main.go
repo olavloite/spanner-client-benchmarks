@@ -216,7 +216,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 
 	attributeList := []attribute.KeyValue{
 		attribute.String("benchmark_type", b.Type()),
-		attribute.Float64("tps", tps),
+		attribute.String("tps", fmt.Sprintf("%.1f", tps)),
 		attribute.Bool("for_alerting", cfg.ForAlerting),
 		attribute.String("benchmark_name", cfg.BenchmarkName),
 		attribute.String("client", "go-client"),

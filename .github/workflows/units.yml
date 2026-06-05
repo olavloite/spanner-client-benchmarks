@@ -165,8 +165,8 @@ jobs:
         working-directory: rust
         run: cargo test --quiet
 
-  analyzer-checks:
-    name: Analyzer Style Check
+  analyzer-tests:
+    name: Analyzer Style Check and Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -182,3 +182,7 @@ jobs:
       - name: Verify formatting
         working-directory: analyzer
         run: mvn fmt:check
+
+      - name: Run tests
+        working-directory: analyzer
+        run: mvn -B -ntp test
