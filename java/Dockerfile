@@ -1,4 +1,4 @@
-FROM maven:3.9.6-eclipse-temurin-17 AS build
+FROM maven:3.9.9-eclipse-temurin-25 AS build
 WORKDIR /app
 
 # Install git and python3
@@ -18,7 +18,7 @@ ENV CLIENT_BRANCH=$CLIENT_BRANCH
 # Run the build script
 RUN chmod +x build_app.sh && ./build_app.sh
 
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:25-jre
 WORKDIR /app
 COPY --from=build /app/target/spanner-java-benchmark-1.0-SNAPSHOT.jar app.jar
 COPY --from=build /app/target/lib ./lib

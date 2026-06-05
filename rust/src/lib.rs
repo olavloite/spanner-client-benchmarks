@@ -449,7 +449,7 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
 
     let attributes = vec![
         KeyValue::new("benchmark_type", benchmark_type_str),
-        KeyValue::new("tps", tps),
+        KeyValue::new("tps", format!("{:.1}", tps)),
         KeyValue::new("for_alerting", args.for_alerting),
         KeyValue::new(
             "benchmark_name",
