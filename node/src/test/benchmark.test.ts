@@ -198,7 +198,7 @@ describe('Node.js Benchmark Integration Tests', () => {
           },
         },
         rows: [makeRow(['1000'])],
-      }
+      },
     );
     srv.addResult(
       'SELECT discount, last_name FROM customer WHERE warehouse_id = @w AND district_id = @d AND customer_id = @c',
@@ -212,7 +212,7 @@ describe('Node.js Benchmark Integration Tests', () => {
           },
         },
         rows: [makeRow([0.1, 'last'])],
-      }
+      },
     );
     srv.addResult(
       'SELECT balance, first_name, last_name FROM customer WHERE warehouse_id = @w AND district_id = @d AND customer_id = @c',
@@ -227,7 +227,7 @@ describe('Node.js Benchmark Integration Tests', () => {
           },
         },
         rows: [makeRow([100.0, 'first', 'last'])],
-      }
+      },
     );
     srv.addResult(
       'SELECT order_id FROM orders WHERE warehouse_id = @w AND district_id = @d AND customer_id = @c ORDER BY order_id DESC LIMIT 1',
@@ -238,7 +238,7 @@ describe('Node.js Benchmark Integration Tests', () => {
           },
         },
         rows: [makeRow(['1000'])],
-      }
+      },
     );
     srv.addResult(
       'SELECT order_line_id, item_id, quantity, amount FROM order_line WHERE warehouse_id = @w AND district_id = @d AND order_id = @o',
@@ -254,7 +254,7 @@ describe('Node.js Benchmark Integration Tests', () => {
           },
         },
         rows: [makeRow(['1', '100', '5', 25.0])],
-      }
+      },
     );
     srv.addResult(
       'SELECT order_id FROM new_orders WHERE warehouse_id = @w AND district_id = @d ORDER BY created_timestamp ASC LIMIT 1',
@@ -265,55 +265,55 @@ describe('Node.js Benchmark Integration Tests', () => {
           },
         },
         rows: [makeRow(['1000'])],
-      }
+      },
     );
     srv.addResult(
       'UPDATE district SET next_order_id = @next WHERE warehouse_id = @w AND district_id = @d',
-      {stats: {row_count_exact: '1'}}
+      {stats: {row_count_exact: '1'}},
     );
     srv.addResult(
       'INSERT INTO orders (warehouse_id, district_id, order_id, customer_id, entry_date, item_count, all_local) VALUES (@w, @d, @o, @c, @dt, @cnt, 1)',
-      {stats: {row_count_exact: '1'}}
+      {stats: {row_count_exact: '1'}},
     );
     srv.addResult(
       'INSERT INTO new_orders (warehouse_id, district_id, order_id, created_timestamp) VALUES (@w, @d, @o, @dt)',
-      {stats: {row_count_exact: '1'}}
+      {stats: {row_count_exact: '1'}},
     );
     srv.addResult(
       "INSERT INTO order_line (warehouse_id, district_id, order_id, order_line_id, item_id, quantity, amount, dist_info) VALUES (@w, @d, @o, @ol, @i, @qty, @amt, 'distinfo')",
-      {stats: {row_count_exact: '1'}}
+      {stats: {row_count_exact: '1'}},
     );
     srv.addResult(
       'UPDATE stock SET quantity = quantity - @qty, order_count = order_count + 1 WHERE warehouse_id = @w AND item_id = @i',
-      {stats: {row_count_exact: '1'}}
+      {stats: {row_count_exact: '1'}},
     );
     srv.addResult(
       'UPDATE warehouse SET ytd = ytd + @amt WHERE warehouse_id = @w',
-      {stats: {row_count_exact: '1'}}
+      {stats: {row_count_exact: '1'}},
     );
     srv.addResult(
       'UPDATE district SET ytd = ytd + @amt WHERE warehouse_id = @w AND district_id = @d',
-      {stats: {row_count_exact: '1'}}
+      {stats: {row_count_exact: '1'}},
     );
     srv.addResult(
       'UPDATE customer SET balance = balance - @amt, ytd_payment = ytd_payment + @amt, payment_count = payment_count + 1 WHERE warehouse_id = @w AND district_id = @d AND customer_id = @c',
-      {stats: {row_count_exact: '1'}}
+      {stats: {row_count_exact: '1'}},
     );
     srv.addResult(
       "INSERT INTO history (warehouse_id, district_id, history_id, customer_id, date, amount, data) VALUES (@w, @d, @h, @c, @dt, @amt, 'history')",
-      {stats: {row_count_exact: '1'}}
+      {stats: {row_count_exact: '1'}},
     );
     srv.addResult(
       'DELETE FROM new_orders WHERE warehouse_id = @w AND district_id = @d AND order_id = @o',
-      {stats: {row_count_exact: '1'}}
+      {stats: {row_count_exact: '1'}},
     );
     srv.addResult(
       'UPDATE orders SET carrier_id = @c WHERE warehouse_id = @w AND district_id = @d AND order_id = @o',
-      {stats: {row_count_exact: '1'}}
+      {stats: {row_count_exact: '1'}},
     );
     srv.addResult(
       'UPDATE order_line SET delivery_date = @dt WHERE warehouse_id = @w AND district_id = @d AND order_id = @o',
-      {stats: {row_count_exact: '1'}}
+      {stats: {row_count_exact: '1'}},
     );
     srv.addResult(
       'SELECT COUNT(DISTINCT s.item_id) FROM order_line ol JOIN stock s ON s.warehouse_id = ol.warehouse_id AND s.item_id = ol.item_id WHERE ol.warehouse_id = @w AND ol.district_id = @d AND ol.order_id >= @minOrderId AND ol.order_id < @nextOrderId AND s.quantity < @threshold',
@@ -324,13 +324,13 @@ describe('Node.js Benchmark Integration Tests', () => {
           },
         },
         rows: [makeRow(['0'])],
-      }
+      },
     );
   }
 
   async function waitForRequests(
     minCount: number,
-    timeoutMs = 5000
+    timeoutMs = 5000,
   ): Promise<any[]> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
@@ -341,7 +341,7 @@ describe('Node.js Benchmark Integration Tests', () => {
       await new Promise(resolve => setTimeout(resolve, 20));
     }
     throw new Error(
-      `Timeout waiting for mock server to receive at least ${minCount} requests. Current: ${mockServer.getRequests().length}`
+      `Timeout waiting for mock server to receive at least ${minCount} requests. Current: ${mockServer.getRequests().length}`,
     );
   }
 
@@ -355,7 +355,7 @@ describe('Node.js Benchmark Integration Tests', () => {
     }
     assert.ok(
       hasServiceName,
-      "Metrics resource should contain service.name = 'spanner-benchmark'"
+      "Metrics resource should contain service.name = 'spanner-benchmark'",
     );
   }
 
@@ -374,7 +374,7 @@ describe('Node.js Benchmark Integration Tests', () => {
 
   function assertMetricAttributes(
     metric: any,
-    expectedAttrs: Record<string, any>
+    expectedAttrs: Record<string, any>,
   ) {
     assert.ok(metric, 'Metric should exist');
     assert.ok(metric.dataPoints.length > 0, 'Metric should have data points');
@@ -384,7 +384,7 @@ describe('Node.js Benchmark Integration Tests', () => {
         assert.strictEqual(
           actualAttrs[key],
           value,
-          `Expected attribute ${key} to be ${value}, got ${actualAttrs[key]}`
+          `Expected attribute ${key} to be ${value}, got ${actualAttrs[key]}`,
         );
       }
     }
@@ -394,16 +394,16 @@ describe('Node.js Benchmark Integration Tests', () => {
     const meter = provider.getMeter('spanner-benchmark');
     const latHist = meter.createHistogram('spanner_client_benchmarks/latency');
     const opCount = meter.createCounter(
-      'spanner_client_benchmarks/operation_count'
+      'spanner_client_benchmarks/operation_count',
     );
     const errCount = meter.createCounter(
-      'spanner_client_benchmarks/error_count'
+      'spanner_client_benchmarks/error_count',
     );
     const memHist = meter.createHistogram(
-      'spanner_client_benchmarks/memory_usage'
+      'spanner_client_benchmarks/memory_usage',
     );
     const cpuHist = meter.createHistogram(
-      'spanner_client_benchmarks/cpu_utilization'
+      'spanner_client_benchmarks/cpu_utilization',
     );
 
     const benchmark = new PointSelectBenchmark(
@@ -420,7 +420,7 @@ describe('Node.js Benchmark Integration Tests', () => {
       10,
       5,
       1000, // 1 second duration
-      false
+      false,
     );
 
     await benchmark.run();
@@ -428,7 +428,7 @@ describe('Node.js Benchmark Integration Tests', () => {
     const reqs = await waitForRequests(1);
     assert.ok(reqs.length > 0, 'Should have received at least one request');
     const sqlReq = reqs.find(
-      r => r.sql === 'SELECT * FROM test WHERE id = @id'
+      r => r.sql === 'SELECT * FROM test WHERE id = @id',
     );
     assert.ok(sqlReq, 'Should have executed the Point Select query');
 
@@ -439,7 +439,7 @@ describe('Node.js Benchmark Integration Tests', () => {
 
     const countMetric = findMetric(
       metricsData,
-      'spanner_client_benchmarks/operation_count'
+      'spanner_client_benchmarks/operation_count',
     );
     assertMetricAttributes(countMetric, {
       client: 'node-client',
@@ -448,7 +448,7 @@ describe('Node.js Benchmark Integration Tests', () => {
 
     const memMetric = findMetric(
       metricsData,
-      'spanner_client_benchmarks/memory_usage'
+      'spanner_client_benchmarks/memory_usage',
     );
     assertMetricAttributes(memMetric, {
       client: 'node-client',
@@ -457,7 +457,7 @@ describe('Node.js Benchmark Integration Tests', () => {
 
     const cpuMetric = findMetric(
       metricsData,
-      'spanner_client_benchmarks/cpu_utilization'
+      'spanner_client_benchmarks/cpu_utilization',
     );
     assertMetricAttributes(cpuMetric, {
       client: 'node-client',
@@ -469,16 +469,16 @@ describe('Node.js Benchmark Integration Tests', () => {
     const meter = provider.getMeter('spanner-benchmark');
     const latHist = meter.createHistogram('spanner_client_benchmarks/latency');
     const opCount = meter.createCounter(
-      'spanner_client_benchmarks/operation_count'
+      'spanner_client_benchmarks/operation_count',
     );
     const errCount = meter.createCounter(
-      'spanner_client_benchmarks/error_count'
+      'spanner_client_benchmarks/error_count',
     );
     const memHist = meter.createHistogram(
-      'spanner_client_benchmarks/memory_usage'
+      'spanner_client_benchmarks/memory_usage',
     );
     const cpuHist = meter.createHistogram(
-      'spanner_client_benchmarks/cpu_utilization'
+      'spanner_client_benchmarks/cpu_utilization',
     );
 
     const benchmark = new SelectAndUpdateBenchmark(
@@ -495,7 +495,7 @@ describe('Node.js Benchmark Integration Tests', () => {
       10,
       5,
       1000,
-      false
+      false,
     );
 
     await benchmark.run();
@@ -505,7 +505,7 @@ describe('Node.js Benchmark Integration Tests', () => {
     const hasCommit = reqs.some(
       r =>
         r.transaction_id !== undefined ||
-        mockServer.getRequests().some((x: any) => x.mutations !== undefined)
+        mockServer.getRequests().some((x: any) => x.mutations !== undefined),
     );
     assert.ok(reqs.length >= 2);
 
@@ -516,7 +516,7 @@ describe('Node.js Benchmark Integration Tests', () => {
 
     const countMetric = findMetric(
       metricsData,
-      'spanner_client_benchmarks/operation_count'
+      'spanner_client_benchmarks/operation_count',
     );
     assertMetricAttributes(countMetric, {
       client: 'node-client',
@@ -525,7 +525,7 @@ describe('Node.js Benchmark Integration Tests', () => {
 
     const memMetric = findMetric(
       metricsData,
-      'spanner_client_benchmarks/memory_usage'
+      'spanner_client_benchmarks/memory_usage',
     );
     assertMetricAttributes(memMetric, {
       client: 'node-client',
@@ -534,7 +534,7 @@ describe('Node.js Benchmark Integration Tests', () => {
 
     const cpuMetric = findMetric(
       metricsData,
-      'spanner_client_benchmarks/cpu_utilization'
+      'spanner_client_benchmarks/cpu_utilization',
     );
     assertMetricAttributes(cpuMetric, {
       client: 'node-client',
@@ -545,19 +545,19 @@ describe('Node.js Benchmark Integration Tests', () => {
   it('should execute Read Large Result Set workload and measure iteration latency', async () => {
     const meter = provider.getMeter('spanner-benchmark');
     const latHist = meter.createHistogram(
-      'spanner_client_benchmarks/read_latency'
+      'spanner_client_benchmarks/read_latency',
     );
     const opCount = meter.createCounter(
-      'spanner_client_benchmarks/operation_count'
+      'spanner_client_benchmarks/operation_count',
     );
     const errCount = meter.createCounter(
-      'spanner_client_benchmarks/error_count'
+      'spanner_client_benchmarks/error_count',
     );
     const memHist = meter.createHistogram(
-      'spanner_client_benchmarks/memory_usage'
+      'spanner_client_benchmarks/memory_usage',
     );
     const cpuHist = meter.createHistogram(
-      'spanner_client_benchmarks/cpu_utilization'
+      'spanner_client_benchmarks/cpu_utilization',
     );
 
     const benchmark = new ReadLargeResultSetBenchmark(
@@ -576,7 +576,7 @@ describe('Node.js Benchmark Integration Tests', () => {
       1000,
       false,
       'test-run',
-      10
+      10,
     );
 
     await benchmark.run();
@@ -584,7 +584,7 @@ describe('Node.js Benchmark Integration Tests', () => {
     const reqs = await waitForRequests(1);
     assert.ok(reqs.length >= 1);
     const sqlReq = reqs.find(
-      r => r.sql && r.sql.includes('FROM UNNEST(GENERATE_ARRAY(1, @num_rows))')
+      r => r.sql && r.sql.includes('FROM UNNEST(GENERATE_ARRAY(1, @num_rows))'),
     );
     assert.ok(sqlReq, 'Should have executed the large result set query');
 
@@ -595,7 +595,7 @@ describe('Node.js Benchmark Integration Tests', () => {
 
     const countMetric = findMetric(
       metricsData,
-      'spanner_client_benchmarks/operation_count'
+      'spanner_client_benchmarks/operation_count',
     );
     assertMetricAttributes(countMetric, {
       client: 'node-client',
@@ -604,7 +604,7 @@ describe('Node.js Benchmark Integration Tests', () => {
 
     const memMetric = findMetric(
       metricsData,
-      'spanner_client_benchmarks/memory_usage'
+      'spanner_client_benchmarks/memory_usage',
     );
     assertMetricAttributes(memMetric, {
       client: 'node-client',
@@ -613,7 +613,7 @@ describe('Node.js Benchmark Integration Tests', () => {
 
     const cpuMetric = findMetric(
       metricsData,
-      'spanner_client_benchmarks/cpu_utilization'
+      'spanner_client_benchmarks/cpu_utilization',
     );
     assertMetricAttributes(cpuMetric, {
       client: 'node-client',
@@ -625,17 +625,17 @@ describe('Node.js Benchmark Integration Tests', () => {
     const meter = provider.getMeter('spanner-benchmark');
     const latHist = meter.createHistogram('spanner_client_benchmarks/latency');
     const opCount = meter.createCounter(
-      'spanner_client_benchmarks/operation_count'
+      'spanner_client_benchmarks/operation_count',
     );
     const errCount = meter.createCounter(
-      'spanner_client_benchmarks/error_count'
+      'spanner_client_benchmarks/error_count',
     );
 
     const memHist = meter.createHistogram(
-      'spanner_client_benchmarks/memory_usage'
+      'spanner_client_benchmarks/memory_usage',
     );
     const cpuHist = meter.createHistogram(
-      'spanner_client_benchmarks/cpu_utilization'
+      'spanner_client_benchmarks/cpu_utilization',
     );
 
     const benchmark = new TpccBenchmarkRunner(
@@ -651,7 +651,7 @@ describe('Node.js Benchmark Integration Tests', () => {
       10, // 10 items
       1000,
       false,
-      'tpcc-run'
+      'tpcc-run',
     );
 
     await benchmark.run();
@@ -666,7 +666,7 @@ describe('Node.js Benchmark Integration Tests', () => {
 
     const countMetric = findMetric(
       metricsData,
-      'spanner_client_benchmarks/operation_count'
+      'spanner_client_benchmarks/operation_count',
     );
     assertMetricAttributes(countMetric, {
       client: 'node-client',
@@ -675,7 +675,7 @@ describe('Node.js Benchmark Integration Tests', () => {
 
     const memMetric = findMetric(
       metricsData,
-      'spanner_client_benchmarks/memory_usage'
+      'spanner_client_benchmarks/memory_usage',
     );
     assertMetricAttributes(memMetric, {
       client: 'node-client',
@@ -684,7 +684,7 @@ describe('Node.js Benchmark Integration Tests', () => {
 
     const cpuMetric = findMetric(
       metricsData,
-      'spanner_client_benchmarks/cpu_utilization'
+      'spanner_client_benchmarks/cpu_utilization',
     );
     assertMetricAttributes(cpuMetric, {
       client: 'node-client',

@@ -31,7 +31,7 @@ export class ResourceMonitor {
     memoryUsageHistogram: Histogram | null,
     cpuUtilizationHistogram: Histogram | null,
     attributes: Record<string, any>,
-    isStoppedCheck: () => boolean
+    isStoppedCheck: () => boolean,
   ) {
     this.resourceProbeIntervalStr = resourceProbeIntervalStr;
     this.memoryUsageHistogram = memoryUsageHistogram;
@@ -52,7 +52,7 @@ export class ResourceMonitor {
         this.lastWallTime = process.hrtime.bigint();
         this.resourceIntervalId = setInterval(
           () => this.probeResourceUsage(),
-          intervalMs
+          intervalMs,
         );
       }
     }
@@ -83,7 +83,7 @@ export class ResourceMonitor {
           const cpuUtil = totalCpuSec / elapsedWallSec;
           this.cpuUtilizationHistogram.record(
             cpuUtil / CPU_LIMIT,
-            this.attributes
+            this.attributes,
           );
         }
 

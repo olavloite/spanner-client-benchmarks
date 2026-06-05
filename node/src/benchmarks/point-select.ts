@@ -21,7 +21,7 @@ export class PointSelectBenchmark extends AbstractBenchmark {
     database: Database,
     tableName: string,
     minId: number,
-    maxId: number
+    maxId: number,
   ): Promise<void> {
     // Pick random ID in range [minId, maxId] (inclusive)
     const randomId = Math.floor(Math.random() * (maxId - minId + 1)) + minId;

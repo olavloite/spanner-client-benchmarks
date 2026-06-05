@@ -36,7 +36,7 @@ export interface MetricSetupResult {
 export function setupMetrics(
   projectId: string,
   isEmulator: boolean,
-  benchmarkName?: string
+  benchmarkName?: string,
 ): MetricSetupResult {
   if (testingMeterProvider) {
     metrics.setGlobalMeterProvider(testingMeterProvider);
@@ -49,7 +49,7 @@ export function setupMetrics(
 
   if (isEmulator) {
     console.log(
-      'Spanner Emulator or localhost detected. Initializing No-op metric provider.'
+      'Spanner Emulator or localhost detected. Initializing No-op metric provider.',
     );
     const noopMeter = metrics.getMeter(METER_NAME);
     return {
@@ -92,7 +92,7 @@ export function setupMetrics(
       75000.0,
       100000.0,
       150000.0,
-      200000.0
+      200000.0,
     );
     return buckets;
   };

@@ -5,7 +5,7 @@ export async function executeNewOrder(
   database: Database,
   scaleFactor: number,
   totalItems: number,
-  extended = false
+  extended = false,
 ): Promise<void> {
   const warehouseId = Math.floor(Math.random() * scaleFactor) + 1;
   const districtId = Math.floor(Math.random() * 10) + 1;
@@ -126,7 +126,7 @@ export async function executeNewOrder(
 export async function executePayment(
   database: Database,
   scaleFactor: number,
-  extended = false
+  extended = false,
 ): Promise<void> {
   const warehouseId = Math.floor(Math.random() * scaleFactor) + 1;
   const districtId = Math.floor(Math.random() * 10) + 1;
@@ -190,7 +190,7 @@ export async function executePayment(
 export async function executeOrderStatus(
   database: Database,
   scaleFactor: number,
-  extended = false
+  extended = false,
 ): Promise<void> {
   const warehouseId = Math.floor(Math.random() * scaleFactor) + 1;
   const districtId = Math.floor(Math.random() * 10) + 1;
@@ -248,7 +248,7 @@ export async function executeOrderStatus(
 export async function executeDelivery(
   database: Database,
   scaleFactor: number,
-  extended = false
+  extended = false,
 ): Promise<void> {
   const warehouseId = Math.floor(Math.random() * scaleFactor) + 1;
   const carrierId = Math.floor(Math.random() * 10) + 1;
@@ -301,7 +301,7 @@ export async function executeDelivery(
 export async function executeStockLevel(
   database: Database,
   scaleFactor: number,
-  extended = false
+  extended = false,
 ): Promise<void> {
   const warehouseId = Math.floor(Math.random() * scaleFactor) + 1;
   const districtId = Math.floor(Math.random() * 10) + 1;
@@ -351,7 +351,7 @@ export async function executeNewOrderMutations(
   database: Database,
   scaleFactor: number,
   totalItems: number,
-  extended = false
+  extended = false,
 ): Promise<void> {
   const warehouseId = Math.floor(Math.random() * scaleFactor) + 1;
   const districtId = Math.floor(Math.random() * 10) + 1;
@@ -471,7 +471,7 @@ export async function executeNewOrderMutations(
 export async function executePaymentMutationsDirect(
   database: Database,
   scaleFactor: number,
-  extended = false
+  extended = false,
 ): Promise<void> {
   const warehouseId = Math.floor(Math.random() * scaleFactor) + 1;
   const districtId = Math.floor(Math.random() * 10) + 1;
@@ -535,7 +535,7 @@ export async function executePaymentMutationsDirect(
 export async function executeOrderStatusReads(
   database: Database,
   scaleFactor: number,
-  extended = false
+  extended = false,
 ): Promise<void> {
   const warehouseId = Math.floor(Math.random() * scaleFactor) + 1;
   const districtId = Math.floor(Math.random() * 10) + 1;
@@ -589,7 +589,7 @@ export async function executeOrderStatusReads(
 export async function executeStockLevelPartitioned(
   database: Database,
   scaleFactor: number,
-  extended = false
+  extended = false,
 ): Promise<void> {
   const warehouseId = Math.floor(Math.random() * scaleFactor) + 1;
   const districtId = Math.floor(Math.random() * 10) + 1;
@@ -639,7 +639,7 @@ export async function executeStockLevelPartitioned(
         partitions.map(async partition => {
           const [rows] = await batchTransaction.execute(partition);
           return rows;
-        })
+        }),
       );
 
       const itemIdsSet = new Set<number>();
