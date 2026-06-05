@@ -118,5 +118,3 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             cat analyzer/regression_summary.md >> $GITHUB_STEP_SUMMARY
           fi
-
-
