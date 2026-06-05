@@ -1,5 +1,5 @@
 # Stage 1: Build dependencies in virtual environment
-FROM python:3.12-slim AS build
+FROM python:3.14-slim AS build
 WORKDIR /app
 
 # Install git for cloning Spanner client
@@ -24,7 +24,7 @@ ENV CLIENT_BRANCH=$CLIENT_BRANCH
 RUN chmod +x build_app.sh && ./build_app.sh
 
 # Stage 2: Final runtime container
-FROM python:3.12-slim
+FROM python:3.14-slim
 WORKDIR /app
 
 # Copy virtual environment from build stage
