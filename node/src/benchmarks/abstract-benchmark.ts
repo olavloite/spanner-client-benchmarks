@@ -106,7 +106,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
     // Pre-create attributes to avoid object creation overhead on the hot path (parity with Go and Java)
     this.attributes = {
       benchmark_type: this.getType(),
-      tps: this.tps,
+      tps: this.tps.toFixed(1),
       for_alerting: this.forAlerting,
       benchmark_name: benchmarkName,
       client: 'node-client',

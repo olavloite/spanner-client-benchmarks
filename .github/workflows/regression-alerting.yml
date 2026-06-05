@@ -1,0 +1,107 @@
+name: Performance Regression Alerting
+
+on:
+  schedule:
+    - cron: '0 9 * * *'  # Run daily at 09:00 UTC, after the daily 05:42 benchmarks finish
+  workflow_dispatch:
+    inputs:
+      project_id:
+        description: 'Google Cloud Project ID'
+        required: true
+        default: 'appdev-soda-spanner-staging'
+        type: string
+      target_date:
+        description: 'Target date to analyze (YYYY-MM-DD)'
+        required: false
+        type: string
+      baseline_date:
+        description: 'Custom baseline date to compare against (YYYY-MM-DD)'
+        required: false
+        type: string
+
+jobs:
+  analyze:
+    name: Analyze ${{ matrix.client }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    strategy:
+      fail-fast: false
+      matrix:
+        client: [java-client, go-client, node-client, python-client, rust-client]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Compile Analyzer App
+        run: |
+          mvn clean package -DskipTests
+        working-directory: analyzer
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Run Analyzer
+        env:
+          PROJECT_ID: ${{ inputs.project_id || 'appdev-soda-spanner-staging' }}
+          TARGET_DATE: ${{ inputs.target_date }}
+          BASELINE_DATE: ${{ inputs.baseline_date }}
+        run: |
+          ARGS="-p $PROJECT_ID -b point-select -l steady -c ${{ matrix.client }} --summary-file regression_summary.md"
+          
+          # Add custom date arguments if manual trigger
+          if [ -n "$TARGET_DATE" ]; then ARGS="$ARGS --date $TARGET_DATE"; fi
+          if [ -n "$BASELINE_DATE" ]; then ARGS="$ARGS --baseline-date $BASELINE_DATE"; fi
+          
+          java -jar target/spanner-performance-analyzer.jar $ARGS
+          exit_code=$?
+          set -e
+          
+          if [ $exit_code -eq 0 ]; then
+            echo "REGRESSION_FOUND=false" >> $GITHUB_ENV
+          elif [ $exit_code -eq 2 ]; then
+            echo "REGRESSION_FOUND=true" >> $GITHUB_ENV
+          else
+            echo "Analyzer execution failed with error exit code: $exit_code"
+            exit $exit_code
+          fi
+        working-directory: analyzer
+
+      - name: Open GitHub Issue on Regression
+        if: env.REGRESSION_FOUND == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Performance Regression Alert [${{ matrix.client }}] - $(date +%F)" \
+            --body-file analyzer/regression_summary.md \
+            --label "performance-regression" \
+            --label "${{ matrix.client }}"
+
+      - name: Publish Step Summary
+        if: always()
+        run: |
+          echo "## Performance Analysis Summary [${{ matrix.client }}]" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ env.REGRESSION_FOUND }}" = "true" ]; then
+            echo "### ❌ Performance regression detected" >> $GITHUB_STEP_SUMMARY
+            echo "Please check the opened issue or the details below for regression results." >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ env.REGRESSION_FOUND }}" = "false" ]; then
+            echo "### ✅ Performance check clean" >> $GITHUB_STEP_SUMMARY
+            echo "All checked percentiles (P50, P90, P99) are within tolerance thresholds compared to baseline runs." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ -f analyzer/regression_summary.md ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            cat analyzer/regression_summary.md >> $GITHUB_STEP_SUMMARY
+          fi
+
+
