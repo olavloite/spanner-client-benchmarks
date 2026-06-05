@@ -20,7 +20,7 @@ def execute_new_order(
 
     def _cb(transaction: Transaction):
         results = transaction.execute_sql(
-            "SELECT next_order_id FROM district WHERE warehouse_id = @w AND district_id = @d",
+            "SELECT next_order_id FROM district WHERE warehouse_id = @w AND district_id = @d FOR UPDATE",
             params={"w": warehouse_id, "d": district_id},
             param_types={
                 "w": spanner.param_types.INT64,
@@ -268,7 +268,7 @@ def execute_delivery(
         batch_statements = []
         for district_id in range(1, 11):
             new_orders_res = transaction.execute_sql(
-                "SELECT order_id FROM new_orders WHERE warehouse_id = @w AND district_id = @d ORDER BY created_timestamp ASC LIMIT 1",
+                "SELECT order_id FROM new_orders WHERE warehouse_id = @w AND district_id = @d ORDER BY created_timestamp ASC LIMIT 1 FOR UPDATE",
                 params={"w": warehouse_id, "d": district_id},
                 param_types={
                     "w": spanner.param_types.INT64,
