@@ -179,12 +179,28 @@ def main():
         sys.exit(1)
 
     instruction = sys.argv[1]
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        print("Error: GEMINI_API_KEY environment variable is not set.", file=sys.stderr)
-        sys.exit(1)
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    access_token = os.environ.get("GCP_ACCESS_TOKEN")
+    project_id = os.environ.get("PROJECT_ID", "appdev-soda-spanner-staging")
+
+    if access_token:
+        # Vertex AI endpoint format
+        region = "us-central1"
+        url = f"https://{region}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{region}/publishers/google/models/gemini-2.5-flash:generateContent"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {access_token}"
+        }
+    else:
+        # Fallback to standard Google AI Studio (developer API key)
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            print("Error: Either GCP_ACCESS_TOKEN or GEMINI_API_KEY must be set.", file=sys.stderr)
+            sys.exit(1)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        headers = {
+            "Content-Type": "application/json"
+        }
 
     # Read README.md context if it exists
     readme_content = ""
@@ -204,6 +220,7 @@ def main():
     payload = {
         "contents": [
             {
+                "role": "user",
                 "parts": [
                     {
                         "text": prompt
@@ -220,7 +237,7 @@ def main():
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST"
     )
 

@@ -19,11 +19,16 @@ jobs:
   parse-instruction:
     name: Parse Request with Gemini
     runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          token_format: 'access_token'
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -31,29 +36,34 @@ jobs:
           python-version: '3.x'
 
       - name: Parse and Sanitize Prompt
-        id: set-matrix
+        id: parse
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GCP_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          PROJECT_ID: ${{ env.PROJECT_ID }}
         run: |
-          parsed_output=$(python3 .github/scripts/parse_instruction.py "${{ github.event.inputs.instruction }}")
+          python3 .github/scripts/parse_instruction.py "${{ github.event.inputs.instruction }}" > runs.json
           echo "Parsed benchmark plan:"
-          echo "$parsed_output"
-          
-          # Compact JSON to a single line and set as step output
-          compact_output=$(echo "$parsed_output" | jq -c .)
-          echo "matrix=$compact_output" >> "$GITHUB_OUTPUT"
+          cat runs.json
+
+      - name: Upload runs.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-runs
+          path: runs.json
+          retention-days: 1
 
   deploy-benchmarks:
-    name: Deploy Benchmark
+    name: Deploy Benchmarks
     needs: parse-instruction
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        run: ${{ fromJSON(needs.parse-instruction.outputs.matrix).runs }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+
+      - name: Download runs.json
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-runs
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
@@ -63,24 +73,72 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v3
 
-      - name: Deploy and Execute Benchmark
-        env:
-          CLIENT_BRANCH: ${{ matrix.run.client_branch }}
-          BENCHMARK_TYPE: ${{ matrix.run.benchmark_type }}
-          DURATION: ${{ matrix.run.duration }}
-          CPU: ${{ matrix.run.cpu }}
-          MEMORY: ${{ matrix.run.memory }}
-          BENCHMARK_NAME: ${{ matrix.run.benchmark_name }}
-          LOAD_TYPE: ${{ matrix.run.load_type }}
-          TPS: ${{ matrix.run.tps }}
-          THREADS: ${{ matrix.run.threads }}
-          NUM_ROWS: ${{ matrix.run.num_rows }}
-          BURST_FACTOR: ${{ matrix.run.burst_factor }}
-          BURST_DURATION: ${{ matrix.run.burst_duration }}
-          BURST_FRACTION: ${{ matrix.run.burst_fraction }}
-          WAREHOUSES: ${{ matrix.run.warehouses }}
-          ITEMS: ${{ matrix.run.items }}
-          CLIENTS: ${{ matrix.run.clients }}
-          FOR_ALERTING: ${{ matrix.run.for_alerting }}
-          SKIP_CLEANUP: 'true'
-        run: ./run_benchmark.sh ${{ matrix.run.client_type }}
+      - name: Deploy and Execute Benchmarks in Parallel
+        run: |
+          pids=()
+          names=()
+
+          # Loop through each run configuration in runs.json and execute in background
+          while read -r run; do
+            client_type=$(echo "$run" | jq -r '.client_type')
+            client_branch=$(echo "$run" | jq -r '.client_branch')
+            benchmark_type=$(echo "$run" | jq -r '.benchmark_type')
+            duration=$(echo "$run" | jq -r '.duration')
+            cpu=$(echo "$run" | jq -r '.cpu')
+            memory=$(echo "$run" | jq -r '.memory')
+            benchmark_name=$(echo "$run" | jq -r '.benchmark_name')
+            load_type=$(echo "$run" | jq -r '.load_type')
+            tps=$(echo "$run" | jq -r '.tps')
+            threads=$(echo "$run" | jq -r '.threads')
+            num_rows=$(echo "$run" | jq -r '.num_rows')
+            burst_factor=$(echo "$run" | jq -r '.burst_factor')
+            burst_duration=$(echo "$run" | jq -r '.burst_duration')
+            burst_fraction=$(echo "$run" | jq -r '.burst_fraction')
+            warehouses=$(echo "$run" | jq -r '.warehouses')
+            items=$(echo "$run" | jq -r '.items')
+            clients=$(echo "$run" | jq -r '.clients')
+
+            label="$client_type-$client_branch"
+            echo "Starting deployment for $client_type benchmark (branch: $client_branch)..."
+            
+            # Execute in background and tag every line of output with its label
+            CLIENT_BRANCH="$client_branch" \
+            BENCHMARK_TYPE="$benchmark_type" \
+            DURATION="$duration" \
+            CPU="$cpu" \
+            MEMORY="$memory" \
+            BENCHMARK_NAME="$benchmark_name" \
+            LOAD_TYPE="$load_type" \
+            TPS="$tps" \
+            THREADS="$threads" \
+            NUM_ROWS="$num_rows" \
+            BURST_FACTOR="$burst_factor" \
+            BURST_DURATION="$burst_duration" \
+            BURST_FRACTION="$burst_fraction" \
+            WAREHOUSES="$warehouses" \
+            ITEMS="$items" \
+            CLIENTS="$clients" \
+            FOR_ALERTING="false" \
+            SKIP_CLEANUP="true" \
+            ./run_benchmark.sh "$client_type" 2>&1 | sed "s/^/[$label] /" &
+            
+            pids+=($!)
+            names+=("$label")
+          done < <(jq -c '.runs[]' runs.json)
+
+          # Wait for all background tasks to finish and collect their exit status
+          failed=0
+          for i in "${!pids[@]}"; do
+            pid="${pids[i]}"
+            name="${names[i]}"
+            if ! wait "$pid"; then
+              echo "Error: Benchmark deployment '$name' (PID: $pid) failed!"
+              failed=1
+            fi
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            echo "Error: One or more benchmark deployments failed."
+            exit 1
+          fi
+          echo "All deployments completed successfully."
