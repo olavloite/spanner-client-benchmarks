@@ -107,6 +107,17 @@ These options generate a sine-wave shaped load pattern where traffic varies peri
     - *How it works*: If target `--tps` is `100` and `--peak-factor` is `2.0`, the load will smoothly oscillate between a minimum of `0` TPS and a peak of `200` TPS.
     - *Default*: `2.0`
 
+### Environment-only Configuration Variables
+
+These variables can be set as environment variables before executing `./run_benchmark.sh` to customize deployment-specific resources or configurations:
+
+- `REGION`: Target Google Cloud region for deploying the Cloud Run job. Defaults to `europe-north1`.
+- `CPU`: Number of vCPUs allocated to the Cloud Run task. Defaults to `8` (GitHub Actions workflows override this to `2` to optimize cost).
+- `MEMORY`: Memory size allocated to the Cloud Run task. Defaults to `32Gi` (GitHub Actions workflows override this to `1Gi` to optimize cost).
+- `SPANNER_DISABLE_BUILTIN_METRICS`: Set to `true` to disable client-side OpenTelemetry metrics emission inside the benchmark runner. Defaults to `false`.
+- `POLLING_INTERVAL`: Cloud Build polling interval in seconds. Defaults to `30`.
+- `SKIP_CLEANUP`: Set to `true` to skip running the automatic cleanup script (`cleanup_benchmarks.sh`) before deployment. Defaults to `false`.
+
 ---
 
 ## Project Structure
