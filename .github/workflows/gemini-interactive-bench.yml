@@ -1,0 +1,86 @@
+name: Interactive Gemini Benchmark Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      instruction:
+        description: 'Benchmark request (e.g., "deploy a Node read-large-result-set benchmark with 8 vCPUs on branch my-feat and compare it with main")'
+        required: true
+        type: string
+        default: ''
+
+env:
+  PROJECT_ID: appdev-soda-spanner-staging
+  INSTANCE_ID: knut-test-ycsb
+  DATABASE_ID: spring-data-jpa
+  REGION: europe-north1
+
+jobs:
+  parse-instruction:
+    name: Parse Request with Gemini
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Parse and Sanitize Prompt
+        id: set-matrix
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          parsed_output=$(python3 .github/scripts/parse_instruction.py "${{ github.event.inputs.instruction }}")
+          echo "Parsed benchmark plan:"
+          echo "$parsed_output"
+          
+          # Compact JSON to a single line and set as step output
+          compact_output=$(echo "$parsed_output" | jq -c .)
+          echo "matrix=$compact_output" >> "$GITHUB_OUTPUT"
+
+  deploy-benchmarks:
+    name: Deploy Benchmark
+    needs: parse-instruction
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        run: ${{ fromJSON(needs.parse-instruction.outputs.matrix).runs }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Deploy and Execute Benchmark
+        env:
+          CLIENT_BRANCH: ${{ matrix.run.client_branch }}
+          BENCHMARK_TYPE: ${{ matrix.run.benchmark_type }}
+          DURATION: ${{ matrix.run.duration }}
+          CPU: ${{ matrix.run.cpu }}
+          MEMORY: ${{ matrix.run.memory }}
+          BENCHMARK_NAME: ${{ matrix.run.benchmark_name }}
+          LOAD_TYPE: ${{ matrix.run.load_type }}
+          TPS: ${{ matrix.run.tps }}
+          THREADS: ${{ matrix.run.threads }}
+          NUM_ROWS: ${{ matrix.run.num_rows }}
+          BURST_FACTOR: ${{ matrix.run.burst_factor }}
+          BURST_DURATION: ${{ matrix.run.burst_duration }}
+          BURST_FRACTION: ${{ matrix.run.burst_fraction }}
+          WAREHOUSES: ${{ matrix.run.warehouses }}
+          ITEMS: ${{ matrix.run.items }}
+          CLIENTS: ${{ matrix.run.clients }}
+          FOR_ALERTING: ${{ matrix.run.for_alerting }}
+          SKIP_CLEANUP: 'true'
+        run: ./run_benchmark.sh ${{ matrix.run.client_type }}
