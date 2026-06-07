@@ -255,4 +255,32 @@ mvn package
 java -jar target/spanner-performance-analyzer-1.0-SNAPSHOT-jar-with-dependencies.jar -p <PROJECT_ID> --client java-client
 ```
 
+---
+
+## Extending the ChatOps Bot
+
+The conversational runner uses Gemini 2.5 Flash to orchestrate deployments directly from issue comments. If you are extending this repository, follow these guidelines to update the bot:
+
+### 1. Adding a New Client Library or Benchmark Type
+Do not modify the prompt instructions (`.github/scripts/bot_instructions.md`) directly. The bot's lists of valid values are dynamically injected. 
+To add support:
+1. Open [parse_chatops.py](file:///.github/scripts/parse_chatops.py).
+2. Update the whitelists at the top of the file:
+   - `SUPPORTED_CLIENTS` (e.g. add `"csharp"`)
+   - `SUPPORTED_BENCHMARKS` (e.g. add `"tpch"`)
+3. The next time the bot runs, it will automatically register the new values as valid choices.
+
+### 2. Adding a New Benchmark Configuration Option
+If you are adding a new parameter or flag (e.g., `--new-option`):
+1. In [parse_chatops.py](file:///.github/scripts/parse_chatops.py):
+   - Add the key to `RESPONSE_SCHEMA` (in the Python dict).
+   - Add the appropriate sanitization regex check in `sanitize_run()`.
+   - Add the key to the final returned dictionary of `sanitize_run()`.
+2. In [.github/workflows/gemini-chatops.yml](file:///.github/workflows/gemini-chatops.yml):
+   - Extract the value from the run dictionary in the parallel deployment step: `new_option=$(echo "$run" | jq -r '.new_option')`.
+   - Export it as an environment variable in the execution block (e.g., `NEW_OPTION="$new_option"`).
+3. In [run_benchmark.sh](file:///run_benchmark.sh):
+   - Read the environment variable and append the option flag to the command execution line.
+
+
 
