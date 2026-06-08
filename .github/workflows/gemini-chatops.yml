@@ -114,6 +114,7 @@ jobs:
           while read -r run; do
             client_type=$(echo "$run" | jq -r '.client_type')
             client_branch=$(echo "$run" | jq -r '.client_branch')
+            client_repo=$(echo "$run" | jq -r '.client_repo // ""')
             benchmark_type=$(echo "$run" | jq -r '.benchmark_type')
             duration=$(echo "$run" | jq -r '.duration')
             cpu=$(echo "$run" | jq -r '.cpu')
@@ -134,6 +135,7 @@ jobs:
             echo "Starting deployment for $client_type benchmark (branch: $client_branch)..."
             
             CLIENT_BRANCH="$client_branch" \
+            CLIENT_REPO="$client_repo" \
             BENCHMARK_TYPE="$benchmark_type" \
             DURATION="$duration" \
             CPU="$cpu" \

@@ -60,7 +60,7 @@ JOB_NAME="${JOB_NAME:-spanner-benchmark-$BENCHMARK_TYPE-$CLIENT_TYPE-$SUFFIX}"
 
 # Build the image using Cloud Build
 echo "Building image with Cloud Build for $CLIENT_TYPE..."
-gcloud builds submit --project "$PROJECT_ID" --config ../cloudbuild.yaml --substitutions="_IMAGE_NAME=$IMAGE_NAME,_USE_RELEASED_VERSION=${USE_RELEASED_VERSION:-false},_CLIENT_BRANCH=${CLIENT_BRANCH:-main}" --polling-interval="$POLLING_INTERVAL" .
+gcloud builds submit --project "$PROJECT_ID" --config ../cloudbuild.yaml --substitutions="_IMAGE_NAME=$IMAGE_NAME,_USE_RELEASED_VERSION=${USE_RELEASED_VERSION:-false},_CLIENT_BRANCH=${CLIENT_BRANCH:-main},_CLIENT_REPO=${CLIENT_REPO:-}" --polling-interval="$POLLING_INTERVAL" .
 
 BENCHMARK_NAME_FLAG=""
 if [ -n "$BENCHMARK_NAME" ]; then

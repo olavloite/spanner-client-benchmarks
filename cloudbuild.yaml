@@ -6,6 +6,8 @@ steps:
   - 'USE_RELEASED_VERSION=${_USE_RELEASED_VERSION}'
   - '--build-arg'
   - 'CLIENT_BRANCH=${_CLIENT_BRANCH}'
+  - '--build-arg'
+  - 'CLIENT_REPO=${_CLIENT_REPO}'
   - '-t'
   - '${_IMAGE_NAME}'
   - '.'

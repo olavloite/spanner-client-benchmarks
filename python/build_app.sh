@@ -5,14 +5,15 @@ set -e
 
 USE_RELEASED_VERSION="${USE_RELEASED_VERSION:-false}"
 CLIENT_BRANCH="${CLIENT_BRANCH:-main}"
+CLIENT_REPO="${CLIENT_REPO:-https://github.com/googleapis/google-cloud-python.git}"
 
 # Store initial directory
 INIT_DIR="$(pwd)"
 
 if [ "$USE_RELEASED_VERSION" = "false" ]; then
   WORK_DIR="$(mktemp -d)"
-  echo "Cloning Spanner Python client source into: $WORK_DIR"
-  git clone --sparse --filter=blob:none https://github.com/googleapis/google-cloud-python.git "$WORK_DIR/python-repo"
+  echo "Cloning Spanner Python client source from $CLIENT_REPO into: $WORK_DIR"
+  git clone --sparse --filter=blob:none "$CLIENT_REPO" "$WORK_DIR/python-repo"
   cd "$WORK_DIR/python-repo"
   echo "Checking out Spanner Python client branch/commit $CLIENT_BRANCH..."
   git checkout "$CLIENT_BRANCH"

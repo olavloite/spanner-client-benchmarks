@@ -8,12 +8,13 @@ INIT_DIR="$(pwd)"
 
 USE_RELEASED_VERSION="${USE_RELEASED_VERSION:-false}"
 CLIENT_BRANCH="${CLIENT_BRANCH:-main}"
+CLIENT_REPO="${CLIENT_REPO:-https://github.com/googleapis/google-cloud-java.git}"
 
 if [ "$USE_RELEASED_VERSION" = "false" ]; then
   WORK_DIR="$(mktemp -d)"
   echo "Using temporary work directory: $WORK_DIR"
-  echo "Cloning Spanner Java client repository..."
-  git clone --filter=blob:none https://github.com/googleapis/google-cloud-java.git "$WORK_DIR/spanner-repo"
+  echo "Cloning Spanner Java client repository from $CLIENT_REPO..."
+  git clone --filter=blob:none "$CLIENT_REPO" "$WORK_DIR/spanner-repo"
   cd "$WORK_DIR/spanner-repo"
   echo "Checking out Spanner Java client branch/commit $CLIENT_BRANCH..."
   git checkout "$CLIENT_BRANCH"
