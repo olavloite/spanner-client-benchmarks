@@ -1,6 +1,8 @@
 name: Gemini ChatOps Benchmark Bot
 
 on:
+  issues:
+    types: [opened]
   issue_comment:
     types: [created]
 
@@ -14,15 +16,40 @@ jobs:
   check-and-run:
     name: Parse and Deploy Benchmarks
     if: |
-      contains(github.event.comment.body, '@gemini-bench') &&
       github.event.issue.pull_request == null &&
-      contains(fromJson('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.comment.author_association)
+      (
+        (github.event_name == 'issue_comment' && contains(fromJson('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.comment.author_association) && contains(github.event.comment.body, '@gemini-bench')) ||
+        (github.event_name == 'issues' && contains(fromJson('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.issue.author_association) && contains(github.event.issue.body, '@gemini-bench'))
+      )
     runs-on: ubuntu-latest
     steps:
+      - name: Check if benchmark is already running
+        id: check_running
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          labels=$(gh issue view "${{ github.event.issue.number }}" --json labels --jq '.labels[].name')
+          if echo "$labels" | grep -q "benchmark-running"; then
+            echo "A benchmark is already running for this issue. Skipping this run."
+            gh issue comment "${{ github.event.issue.number }}" --body "⚠️ **Gemini Bot**: A benchmark is already running for this issue. Please wait for it to complete before requesting another."
+            echo "already_running=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "already_running=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Add running label to issue
+        if: steps.check_running.outputs.already_running == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue edit "${{ github.event.issue.number }}" --add-label "benchmark-running"
+
       - name: Checkout code
+        if: steps.check_running.outputs.already_running == 'false'
         uses: actions/checkout@v6
 
       - name: Authenticate to Google Cloud
+        if: steps.check_running.outputs.already_running == 'false'
         id: auth
         uses: google-github-actions/auth@v3
         with:
@@ -30,17 +57,20 @@ jobs:
           token_format: 'access_token'
 
       - name: Set up Python
+        if: steps.check_running.outputs.already_running == 'false'
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
       - name: Fetch Issue Comments History
+        if: steps.check_running.outputs.already_running == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh issue view "${{ github.event.issue.number }}" --json body,comments > thread.json
 
       - name: Parse Chat History with Gemini
+        if: steps.check_running.outputs.already_running == 'false'
         id: parse
         env:
           GCP_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
@@ -51,6 +81,7 @@ jobs:
           cat runs.json
 
       - name: Evaluate Parser Output
+        if: steps.check_running.outputs.already_running == 'false'
         id: eval
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -58,17 +89,21 @@ jobs:
           if jq -e '.clarification_needed == true' runs.json > /dev/null; then
             question=$(jq -r '.question' runs.json)
             gh issue comment "${{ github.event.issue.number }}" --body "🤖 **Gemini Bot**: $question"
+            gh issue edit "${{ github.event.issue.number }}" --remove-label "benchmark-running"
             echo "clarification_needed=true" >> "$GITHUB_OUTPUT"
           else
             echo "clarification_needed=false" >> "$GITHUB_OUTPUT"
+            comment_url=$(gh issue comment "${{ github.event.issue.number }}" --body "🤖 **Gemini Bot**: Benchmark has been queued and is starting. [Monitor Action Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})")
+            comment_id=$(echo "$comment_url" | grep -oE "[0-9]+$")
+            echo "comment_id=$comment_id" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up Cloud SDK
-        if: steps.eval.outputs.clarification_needed == 'false'
+        if: steps.check_running.outputs.already_running == 'false' && steps.eval.outputs.clarification_needed == 'false'
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Deploy and Execute Benchmarks in Parallel
-        if: steps.eval.outputs.clarification_needed == 'false'
+        if: steps.check_running.outputs.already_running == 'false' && steps.eval.outputs.clarification_needed == 'false'
         run: |
           pids=()
           names=()
@@ -136,3 +171,19 @@ jobs:
             exit 1
           fi
           echo "All deployments completed successfully."
+
+      - name: Remove running label on completion/failure
+        if: always() && steps.check_running.outputs.already_running == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue edit "${{ github.event.issue.number }}" --remove-label "benchmark-running" || true
+          
+          comment_id="${{ steps.eval.outputs.comment_id }}"
+          if [ -n "$comment_id" ]; then
+            if [ "${{ job.status }}" = "success" ]; then
+              gh api -X PATCH repos/${{ github.repository }}/issues/comments/$comment_id -f body="🤖 **Gemini Bot**: Benchmark run completed successfully! [View Action Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            else
+              gh api -X PATCH repos/${{ github.repository }}/issues/comments/$comment_id -f body="❌ **Gemini Bot**: Benchmark run failed. [View Error Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            fi
+          fi
