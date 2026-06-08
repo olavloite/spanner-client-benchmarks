@@ -13,9 +13,10 @@ on:
         default: false
 
 jobs:
-  run-point-select:
+  run-point-select-multi-core:
     uses: ./.github/workflows/benchmark-template.yml
     with:
+      clients: '["java", "go", "rust"]'
       benchmark_types: '["point-select"]'
       duration: '1h'
       load_type: 'spiky'
@@ -31,9 +32,29 @@ jobs:
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
 
-  run-select-update:
+  run-point-select-single-core:
     uses: ./.github/workflows/benchmark-template.yml
     with:
+      clients: '["node", "python"]'
+      benchmark_types: '["point-select"]'
+      duration: '1h'
+      load_type: 'spiky'
+      tps: '1300'
+      threads: '120'
+      burst_factor: '3.0'
+      burst_duration: '5.0'
+      burst_fraction: '0.25'
+      cpu: '2'
+      memory: '1Gi'
+      benchmark_name: 'channel-scaling-bursty-point-select'
+      for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+
+  run-select-update-multi-core:
+    uses: ./.github/workflows/benchmark-template.yml
+    with:
+      clients: '["java", "go", "rust"]'
       benchmark_types: '["select-update"]'
       duration: '1h'
       load_type: 'spiky'
@@ -44,6 +65,25 @@ jobs:
       burst_fraction: '0.25'
       cpu: '8'
       memory: '4Gi'
+      benchmark_name: 'channel-scaling-bursty-select-update'
+      for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+
+  run-select-update-single-core:
+    uses: ./.github/workflows/benchmark-template.yml
+    with:
+      clients: '["node", "python"]'
+      benchmark_types: '["select-update"]'
+      duration: '1h'
+      load_type: 'spiky'
+      tps: '1300'
+      threads: '120'
+      burst_factor: '3.0'
+      burst_duration: '5.0'
+      burst_fraction: '0.25'
+      cpu: '2'
+      memory: '1Gi'
       benchmark_name: 'channel-scaling-bursty-select-update'
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
