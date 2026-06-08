@@ -12,7 +12,7 @@
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <otel.version>1.62.0</otel.version>
+        <otel.version>1.63.0</otel.version>
         <otel.gcp.version>0.36.0</otel.gcp.version>
         <spanner.version>6.118.0</spanner.version>
         <grpc-gcp.version>1.11.0</grpc-gcp.version>
