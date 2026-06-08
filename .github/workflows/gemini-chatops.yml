@@ -1,0 +1,138 @@
+name: Gemini ChatOps Benchmark Bot
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  actions: write
+  id-token: write
+  contents: read
+
+jobs:
+  check-and-run:
+    name: Parse and Deploy Benchmarks
+    if: |
+      contains(github.event.comment.body, '@gemini-bench') &&
+      github.event.issue.pull_request == null &&
+      contains(fromJson('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          token_format: 'access_token'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Fetch Issue Comments History
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue view "${{ github.event.issue.number }}" --json body,comments > thread.json
+
+      - name: Parse Chat History with Gemini
+        id: parse
+        env:
+          GCP_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          PROJECT_ID: 'appdev-soda-spanner-staging'
+        run: |
+          python3 .github/scripts/parse_chatops.py thread.json > runs.json
+          echo "Parsed benchmark plan:"
+          cat runs.json
+
+      - name: Evaluate Parser Output
+        id: eval
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if jq -e '.clarification_needed == true' runs.json > /dev/null; then
+            question=$(jq -r '.question' runs.json)
+            gh issue comment "${{ github.event.issue.number }}" --body "🤖 **Gemini Bot**: $question"
+            echo "clarification_needed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "clarification_needed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Cloud SDK
+        if: steps.eval.outputs.clarification_needed == 'false'
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Deploy and Execute Benchmarks in Parallel
+        if: steps.eval.outputs.clarification_needed == 'false'
+        run: |
+          pids=()
+          names=()
+
+          # Loop through each run configuration in runs.json and execute in background
+          while read -r run; do
+            client_type=$(echo "$run" | jq -r '.client_type')
+            client_branch=$(echo "$run" | jq -r '.client_branch')
+            benchmark_type=$(echo "$run" | jq -r '.benchmark_type')
+            duration=$(echo "$run" | jq -r '.duration')
+            cpu=$(echo "$run" | jq -r '.cpu')
+            memory=$(echo "$run" | jq -r '.memory')
+            benchmark_name=$(echo "$run" | jq -r '.benchmark_name')
+            load_type=$(echo "$run" | jq -r '.load_type')
+            tps=$(echo "$run" | jq -r '.tps')
+            threads=$(echo "$run" | jq -r '.threads')
+            num_rows=$(echo "$run" | jq -r '.num_rows')
+            burst_factor=$(echo "$run" | jq -r '.burst_factor')
+            burst_duration=$(echo "$run" | jq -r '.burst_duration')
+            burst_fraction=$(echo "$run" | jq -r '.burst_fraction')
+            warehouses=$(echo "$run" | jq -r '.warehouses')
+            items=$(echo "$run" | jq -r '.items')
+            clients=$(echo "$run" | jq -r '.clients')
+
+            label="$client_type-$client_branch"
+            echo "Starting deployment for $client_type benchmark (branch: $client_branch)..."
+            
+            CLIENT_BRANCH="$client_branch" \
+            BENCHMARK_TYPE="$benchmark_type" \
+            DURATION="$duration" \
+            CPU="$cpu" \
+            MEMORY="$memory" \
+            BENCHMARK_NAME="$benchmark_name" \
+            LOAD_TYPE="$load_type" \
+            TPS="$tps" \
+            THREADS="$threads" \
+            NUM_ROWS="$num_rows" \
+            BURST_FACTOR="$burst_factor" \
+            BURST_DURATION="$burst_duration" \
+            BURST_FRACTION="$burst_fraction" \
+            WAREHOUSES="$warehouses" \
+            ITEMS="$items" \
+            CLIENTS="$clients" \
+            FOR_ALERTING="false" \
+            SKIP_CLEANUP="true" \
+            ./run_benchmark.sh "$client_type" 2>&1 | sed "s/^/[$label] /" &
+            
+            pids+=($!)
+            names+=("$label")
+          done < <(jq -c '.runs[]' runs.json)
+
+          # Wait for all background tasks and collect exit status
+          failed=0
+          for i in "${!pids[@]}"; do
+            pid="${pids[i]}"
+            name="${names[i]}"
+            if ! wait "$pid"; then
+              echo "Error: Benchmark deployment '$name' (PID: $pid) failed!"
+              failed=1
+            fi
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            echo "Error: One or more benchmark deployments failed."
+            exit 1
+          fi
+          echo "All deployments completed successfully."

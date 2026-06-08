@@ -1,0 +1,24 @@
+name: Clean Benchmark logs
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Runs daily at midnight
+
+permissions:
+  actions: write # Required to delete runs
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete Skipped and Cancelled Runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Query last 100 runs of the ChatOps workflow and delete skipped/cancelled runs
+          gh run list --workflow=gemini-chatops.yml --limit 100 --json databaseId,conclusion | \
+          jq -r '.[] | select(.conclusion == "skipped" or .conclusion == "cancelled") | .databaseId' | \
+          while read -r run_id; do
+            echo "Deleting run ID: $run_id"
+            gh run delete "$run_id"
+          done

@@ -61,3 +61,13 @@ Before you state that a task is complete, you **MUST** run the code formatters a
 * **Avoid `unwrap()` in Tests**: Try to avoid `unwrap()` in test files. Prefer using `.expect("clear error message description")` or returning a `Result` from the test function.
 * **Explicit Assertions**: Add explicit, descriptive error messages for assertions in Rust code (e.g. use `.expect(...)` or custom assertion messages). Do not use `.wrap()`.
 
+
+### 3. Extending the ChatOps Bot
+The conversational benchmark runner parses issue comments into Cloud Run benchmark deployment configurations.
+* **Adding a New Client Library or Benchmark Type**: Do **NOT** modify the prompt instructions (`.github/scripts/bot_instructions.md`) directly. The bot's lists of valid values are dynamically injected. To add support, open [.github/scripts/parse_chatops.py](file:///.github/scripts/parse_chatops.py) and update the whitelist sets `SUPPORTED_CLIENTS` and `SUPPORTED_BENCHMARKS` at the top of the file.
+* **Adding a New Benchmark Option/Flag**: 
+  1. In [.github/scripts/parse_chatops.py](file:///.github/scripts/parse_chatops.py), add the option key to the `RESPONSE_SCHEMA`, add the regex validation in `sanitize_run()`, and add the sanitized key to the returned dictionary.
+  2. In [.github/workflows/gemini-chatops.yml](file:///.github/workflows/gemini-chatops.yml), extract the parameter from the runs JSON (e.g., `new_option=$(echo "$run" | jq -r '.new_option')`) and export it as an environment variable in the execution block (e.g., `NEW_OPTION="$new_option"`).
+  3. In [run_benchmark.sh](file:///run_benchmark.sh), read the env variable and pass it to the benchmark container execution command.
+
+
