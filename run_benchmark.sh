@@ -32,6 +32,8 @@ if [ "$FOR_ALERTING" = "true" ]; then
   FOR_ALERTING_FLAG="--for-alerting=true,"
 fi
 POLLING_INTERVAL="${POLLING_INTERVAL:-30}"
+BENCHMARK_TARGET="${BENCHMARK_TARGET:-cloud-run}"
+MACHINE_TYPE="${MACHINE_TYPE:-n2-standard-2}"
 
 if [[ $DURATION == *h ]]; then
   DURATION_SECONDS=$((${DURATION%h} * 3600))
@@ -56,7 +58,7 @@ cd "$CLIENT_TYPE"
 
 SUFFIX="$(date +%s)-$(head -c 100 /dev/urandom | LC_ALL=C tr -dc 'a-z0-9' | head -c 4)"
 IMAGE_NAME="${IMAGE_NAME:-$REGION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/spanner-$CLIENT_TYPE-benchmark:$SUFFIX}"
-JOB_NAME="${JOB_NAME:-spanner-benchmark-$BENCHMARK_TYPE-$CLIENT_TYPE-$SUFFIX}"
+JOB_NAME="${JOB_NAME:-sb-$BENCHMARK_TYPE-$CLIENT_TYPE-$SUFFIX}"
 
 # Build the image using Cloud Build
 echo "Building image with Cloud Build for $CLIENT_TYPE..."
@@ -88,23 +90,70 @@ if [ "$SPANNER_DISABLE_BUILTIN_METRICS" = "true" ]; then
   ENV_FLAGS="--set-env-vars=SPANNER_DISABLE_BUILTIN_METRICS=true,BENCHMARK_CPU_LIMIT=$CPU,SPANNER_NUM_CHANNELS=${SPANNER_NUM_CHANNELS:-16}"
 fi
 
-# Create or update the Cloud Run Job
-echo "Deploying Cloud Run Job..."
-gcloud run jobs deploy "$JOB_NAME" \
-  --image "$IMAGE_NAME" \
-  --project "$PROJECT_ID" \
-  --region "$REGION" \
-  --cpu "$CPU" \
-  --memory "$MEMORY" \
-  --task-timeout "$TASK_TIMEOUT" \
-  --max-retries 0 \
-  $ENV_FLAGS \
-  --args="$ARGS"
+if [ "$BENCHMARK_TARGET" = "gce" ]; then
+  # Translate environment variables from --set-env-vars=K=V,K2=V2 to --container-env=K=V,K2=V2
+  ENV_VARS="${ENV_FLAGS#*=}"
+  GCE_ENV_FLAGS="--container-env=$ENV_VARS"
 
-echo "Executing Cloud Run Job..."
-gcloud run jobs execute "$JOB_NAME" \
-  --project "$PROJECT_ID" \
-  --region "$REGION"
+  # Translate comma-separated ARGS to multiple --container-arg flags
+  GCE_CONTAINER_ARGS=""
+  for arg in ${ARGS//,/ }; do
+    GCE_CONTAINER_ARGS="$GCE_CONTAINER_ARGS --container-arg=$arg"
+  done
+
+  # Construct the self-deleting startup script (runs on host VM OS)
+  # It waits for the container to start, pins it to Core 1, waits for it to exit, then deletes the VM
+  STARTUP_SCRIPT="(
+while [ -z \"\$(docker ps -q --filter name=$JOB_NAME)\" ]; do sleep 1; done
+CID=\$(docker ps -q --filter name=$JOB_NAME)
+docker update --cpuset-cpus=1 \$CID
+docker wait \$CID
+NAME=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/name)
+ZONE=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/zone | awk -F/ '{print \$NF}')
+PROJECT=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/project/project-id)
+TOKEN=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | sed -e 's/.*\"access_token\":\"\([^\"]*\)\".*/\1/')
+curl -s -X DELETE \
+  -H \"Authorization: Bearer \$TOKEN\" \
+  \"https://compute.googleapis.com/compute/v1/projects/\$PROJECT/zones/\$ZONE/instances/\$NAME\"
+) >/tmp/startup_script.log 2>&1 &"
+
+  echo "Deploying dedicated GCE Spot instance VM..."
+  VM_ZONE="${ZONE:-$REGION-a}"
+  gcloud compute instances create-with-container "$JOB_NAME" \
+    --container-image="$IMAGE_NAME" \
+    --project="$PROJECT_ID" \
+    --zone="$VM_ZONE" \
+    --machine-type="$MACHINE_TYPE" \
+    --scopes="cloud-platform" \
+    --service-account="spanner-client-benchmarks@$PROJECT_ID.iam.gserviceaccount.com" \
+    --provisioning-model=SPOT \
+    --instance-termination-action=DELETE \
+    --labels=owner=spanner-client-benchmarks \
+    $GCE_ENV_FLAGS \
+    $GCE_CONTAINER_ARGS \
+    --metadata="startup-script=$STARTUP_SCRIPT"
+
+  echo "GCE VM instance $JOB_NAME deployed successfully and is running in the background."
+else
+  # Create or update the Cloud Run Job
+  echo "Deploying Cloud Run Job..."
+  gcloud run jobs deploy "$JOB_NAME" \
+    --image "$IMAGE_NAME" \
+    --project "$PROJECT_ID" \
+    --region "$REGION" \
+    --cpu "$CPU" \
+    --memory "$MEMORY" \
+    --task-timeout "$TASK_TIMEOUT" \
+    --max-retries 0 \
+    --labels=owner=spanner-client-benchmarks \
+    $ENV_FLAGS \
+    --args="$ARGS"
+
+  echo "Executing Cloud Run Job..."
+  gcloud run jobs execute "$JOB_NAME" \
+    --project "$PROJECT_ID" \
+    --region "$REGION"
+fi
 
 cd "$INIT_DIR"
 
