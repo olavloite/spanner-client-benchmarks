@@ -95,6 +95,7 @@ class AbstractBenchmark(abc.ABC):
 
         self.is_stopped = False
         self._outstanding_tasks = 0
+        self._last_queue_log_time = 0.0
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=threads)
         self._generator_thread: Optional[threading.Thread] = None
@@ -230,6 +231,16 @@ class AbstractBenchmark(abc.ABC):
     def _submit_task(self) -> None:
         """Checks concurrency thresholds and dispatches task to thread executor pool."""
         with self._lock:
+            queue_size = self._outstanding_tasks - self.threads
+            if queue_size > 0:
+                now = time.time()
+                if now - self._last_queue_log_time > 1.0:
+                    print(
+                        f"Queue size: {queue_size} (concurrency limit reached, tasks are queueing)",
+                        file=sys.stderr,
+                    )
+                    self._last_queue_log_time = now
+
             if self._outstanding_tasks < 1000000 + self.threads:
                 self._outstanding_tasks += 1
                 self._executor.submit(self._run_task)

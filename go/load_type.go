@@ -6,6 +6,7 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -62,8 +63,9 @@ var generators = map[LoadType]LoadGenerator{
 type SteadyGenerator struct{}
 
 func (g *SteadyGenerator) Run(ctx context.Context, b Benchmark, client *spanner.Client, latencyHistogram metric.Float64Histogram, operationCounter metric.Int64Counter, errorCounter metric.Int64Counter, tableName string, targetTPS float64, concurrentThreads int, minId, maxId int64, attributes metric.MeasurementOption, cycleDurationStr string, peakFactor, burstFactor, burstDuration, burstFraction float64, tasks chan struct{}, wg *sync.WaitGroup) {
-	generatorTicker := time.NewTicker(1 * time.Microsecond)
-	defer generatorTicker.Stop()
+	nextTickTime := time.Now()
+	tickDuration := 1 * time.Millisecond
+	poissonTimeline := time.Now()
 
 	for {
 		select {
@@ -71,13 +73,39 @@ func (g *SteadyGenerator) Run(ctx context.Context, b Benchmark, client *spanner.
 			close(tasks)
 			wg.Wait()
 			return
-		case <-generatorTicker.C:
-			select {
-			case tasks <- struct{}{}:
-			default:
-				log.Printf("Task dropped: workload queue is full (1M tasks)")
+		default:
+			now := time.Now()
+			if nextTickTime.Before(now) {
+				nextTickTime = now
 			}
-			time.Sleep(CalculatePoissonDelay(targetTPS))
+			targetTickEnd := nextTickTime.Add(tickDuration)
+
+			if poissonTimeline.Before(nextTickTime) {
+				poissonTimeline = nextTickTime
+			}
+
+			// Calculate number of tasks for this 1ms tick
+			count := 0
+			for poissonTimeline.Before(targetTickEnd) {
+				count++
+				delay := CalculatePoissonDelay(targetTPS)
+				poissonTimeline = poissonTimeline.Add(delay)
+			}
+
+			if queueSize := len(tasks); queueSize > 0 {
+				logQueueSize(queueSize)
+			}
+
+			for i := 0; i < count; i++ {
+				select {
+				case tasks <- struct{}{}:
+				default:
+					log.Printf("Task dropped: workload queue is full (1M tasks)")
+				}
+			}
+
+			nextTickTime = nextTickTime.Add(tickDuration)
+			SleepHybrid(nextTickTime)
 		}
 	}
 }
@@ -93,6 +121,9 @@ func (g *SpikyGenerator) Run(ctx context.Context, b Benchmark, client *spanner.C
 
 	inBurst := false
 	nextStateChangeTime := time.Now().Add(CalculatePoissonDelay(mu1))
+	nextTickTime := time.Now()
+	tickDuration := 1 * time.Millisecond
+	poissonTimeline := time.Now()
 
 	for {
 		select {
@@ -102,6 +133,15 @@ func (g *SpikyGenerator) Run(ctx context.Context, b Benchmark, client *spanner.C
 			return
 		default:
 			now := time.Now()
+			if nextTickTime.Before(now) {
+				nextTickTime = now
+			}
+			targetTickEnd := nextTickTime.Add(tickDuration)
+
+			if poissonTimeline.Before(nextTickTime) {
+				poissonTimeline = nextTickTime
+			}
+
 			if now.After(nextStateChangeTime) {
 				inBurst = !inBurst
 				var nextDelay time.Duration
@@ -118,26 +158,32 @@ func (g *SpikyGenerator) Run(ctx context.Context, b Benchmark, client *spanner.C
 				currentRate = rBurst
 			}
 
-			var delay time.Duration
-			if currentRate <= 0.0 {
-				delay = 1 * time.Hour
+			// Calculate number of tasks for this 1ms tick
+			count := 0
+			if currentRate > 0.0 {
+				for poissonTimeline.Before(targetTickEnd) {
+					count++
+					delay := CalculatePoissonDelay(currentRate)
+					poissonTimeline = poissonTimeline.Add(delay)
+				}
 			} else {
-				delay = CalculatePoissonDelay(currentRate)
+				poissonTimeline = targetTickEnd
 			}
 
-			timeToStateChange := nextStateChangeTime.Sub(now)
-			if delay > timeToStateChange {
-				time.Sleep(timeToStateChange)
-				continue
+			if queueSize := len(tasks); queueSize > 0 {
+				logQueueSize(queueSize)
 			}
 
-			select {
-			case tasks <- struct{}{}:
-			default:
-				log.Printf("Task dropped: workload queue is full (1M tasks)")
+			for i := 0; i < count; i++ {
+				select {
+				case tasks <- struct{}{}:
+				default:
+					log.Printf("Task dropped: workload queue is full (1M tasks)")
+				}
 			}
 
-			time.Sleep(delay)
+			nextTickTime = nextTickTime.Add(tickDuration)
+			SleepHybrid(nextTickTime)
 		}
 	}
 }
@@ -149,6 +195,9 @@ func (g *GradualGenerator) Run(ctx context.Context, b Benchmark, client *spanner
 	cycleDurationNs := float64(cycleDuration.Nanoseconds())
 	amplitude := targetTPS * (peakFactor - 1.0)
 	startTime := time.Now()
+	nextTickTime := time.Now()
+	tickDuration := 1 * time.Millisecond
+	poissonTimeline := time.Now()
 
 	for {
 		select {
@@ -158,19 +207,45 @@ func (g *GradualGenerator) Run(ctx context.Context, b Benchmark, client *spanner
 			return
 		default:
 			now := time.Now()
-			elapsedNs := float64(now.Sub(startTime).Nanoseconds())
+			if nextTickTime.Before(now) {
+				nextTickTime = now
+			}
+			targetTickEnd := nextTickTime.Add(tickDuration)
 
-			// Calculate rate based on sine wave
+			if poissonTimeline.Before(nextTickTime) {
+				poissonTimeline = nextTickTime
+			}
+
+			elapsedNs := float64(now.Sub(startTime).Nanoseconds())
 			angle := (2.0 * math.Pi * math.Mod(elapsedNs, cycleDurationNs)) / cycleDurationNs
 			currentRate := targetTPS + amplitude*math.Cos(angle-math.Pi)
 
-			select {
-			case tasks <- struct{}{}:
-			default:
-				log.Printf("Task dropped: workload queue is full (1M tasks)")
+			// Calculate number of tasks for this 1ms tick
+			count := 0
+			if currentRate > 0.0 {
+				for poissonTimeline.Before(targetTickEnd) {
+					count++
+					delay := CalculatePoissonDelay(currentRate)
+					poissonTimeline = poissonTimeline.Add(delay)
+				}
+			} else {
+				poissonTimeline = targetTickEnd
 			}
 
-			time.Sleep(CalculatePoissonDelay(currentRate))
+			if queueSize := len(tasks); queueSize > 0 {
+				logQueueSize(queueSize)
+			}
+
+			for i := 0; i < count; i++ {
+				select {
+				case tasks <- struct{}{}:
+				default:
+					log.Printf("Task dropped: workload queue is full (1M tasks)")
+				}
+			}
+
+			nextTickTime = nextTickTime.Add(tickDuration)
+			SleepHybrid(nextTickTime)
 		}
 	}
 }
@@ -190,6 +265,19 @@ func CalculatePoissonDelay(rate float64) time.Duration {
 	u := rand.Float64()
 	delaySeconds := -math.Log(1.0-u) / rate
 	return time.Duration(delaySeconds * float64(time.Second))
+}
+
+func SleepHybrid(targetTime time.Time) {
+	now := time.Now()
+	if targetTime.After(now) {
+		diff := targetTime.Sub(now)
+		if diff > 1*time.Millisecond {
+			time.Sleep(diff - 100*time.Microsecond)
+		}
+		for time.Now().Before(targetTime) {
+			runtime.Gosched()
+		}
+	}
 }
 
 func ValidateAndApplyDefaults(cmd *cli.Command, loadType LoadType, cycleDurationStr *string, peakFactor, burstFactor, burstDuration, burstFraction *float64) error {
@@ -222,4 +310,16 @@ func ValidateAndApplyDefaults(cmd *cli.Command, loadType LoadType, cycleDuration
 		}
 	}
 	return nil
+}
+
+var lastQueueLogTime time.Time
+var queueLogMu sync.Mutex
+
+func logQueueSize(size int) {
+	queueLogMu.Lock()
+	defer queueLogMu.Unlock()
+	if time.Since(lastQueueLogTime) > 1*time.Second {
+		log.Printf("Queue size: %d (concurrency limit reached, tasks are queueing)", size)
+		lastQueueLogTime = time.Now()
+	}
 }

@@ -22,12 +22,11 @@ func (b *SelectAndUpdateBenchmark) Execute(ctx context.Context, client *spanner.
 			SQL:    sql,
 			Params: map[string]interface{}{"id": randomId},
 		})
-		defer iter.Stop()
-
 		exists := false
 		if _, err := iter.Next(); err == nil {
 			exists = true
 		}
+		iter.Stop()
 
 		randomValue := generateRandomString(rand.Intn(76) + 75) // 75 to 150 chars
 

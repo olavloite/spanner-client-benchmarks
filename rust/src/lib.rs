@@ -289,11 +289,12 @@ pub fn run_task(
     db_client: google_cloud_spanner::client::DatabaseClient,
     table: String,
     command: Commands,
-    _permit: OwnedSemaphorePermit,
+    permit: OwnedSemaphorePermit,
     metrics: BenchmarkMetrics,
     attributes: Vec<KeyValue>,
 ) -> futures::future::BoxFuture<'static, ()> {
     async move {
+        let _permit = permit;
         let start = Instant::now();
         let is_read_large = matches!(command, Commands::ReadLargeResultSet { .. });
         let res = match command {

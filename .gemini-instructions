@@ -3,7 +3,7 @@
 This repository contains multi-language benchmarks for Cloud Spanner. To maintain code quality, consistency, and build integrity, all Gemini model assistants, Jetski/Antigravity agents, and developer bots MUST adhere to the following rules and checklist before declaring a task as "done".
 
 ## 📋 Pre-completion Checklist
-Before you state that a task is complete, you **MUST** run the code formatters and linters for all languages and directories that you have touched.
+Before you state that a task is complete, you **MUST** run the code formatters, linters, and **unit tests** for all languages and directories that you have touched.
 
 ### Formatting Commands by Language/Directory
 
@@ -42,6 +42,38 @@ Before you state that a task is complete, you **MUST** run the code formatters a
   ```bash
   cargo fmt
   npx @taplo/cli fmt
+  ```
+
+### 🧪 Unit Testing Commands by Language/Directory
+
+#### ☕ Java (Directory: `java`)
+- **Command**:
+  ```bash
+  mvn test
+  ```
+
+#### 🐹 Go (Directory: `go`)
+- **Command**:
+  ```bash
+  go test -v ./...
+  ```
+
+#### 🐍 Python (Directory: `python`)
+- **Command**:
+  ```bash
+  python3 -m unittest discover -s tests
+  ```
+
+#### 📦 Node.js (Directory: `node`)
+- **Command**:
+  ```bash
+  npm run build && node --test dist/src/test/**/*.test.js
+  ```
+
+#### 🦀 Rust (Directory: `rust`)
+- **Command**:
+  ```bash
+  cargo test
   ```
 
 ---

@@ -44,6 +44,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
   private attributes: Record<string, any>;
   private activeTasks = 0;
   private taskQueue: number[] = [];
+  private lastQueueLogTime = 0;
   private isStopped = false;
   private worker: Worker | null = null;
   private rBurst: number;
@@ -228,6 +229,16 @@ export abstract class AbstractBenchmark implements IBenchmark {
     if (this.activeTasks < this.threads) {
       this.runTask();
     } else {
+      const queueSize = this.taskQueue.length;
+      if (queueSize > 0) {
+        const now = Date.now();
+        if (now - this.lastQueueLogTime > 1000) {
+          console.log(
+            `Queue size: ${queueSize} (concurrency limit reached, tasks are queueing)`,
+          );
+          this.lastQueueLogTime = now;
+        }
+      }
       if (this.taskQueue.length < 1000000) {
         this.taskQueue.push(1);
       } else {

@@ -144,7 +144,25 @@ public abstract class AbstractBenchmark {
     }
   }
 
+  private final java.util.concurrent.atomic.AtomicLong lastQueueLogTime =
+      new java.util.concurrent.atomic.AtomicLong(0);
+
   void submitTask(ExecutorService executor) {
+    if (executor instanceof java.util.concurrent.ThreadPoolExecutor) {
+      java.util.concurrent.ThreadPoolExecutor tp =
+          (java.util.concurrent.ThreadPoolExecutor) executor;
+      int queueSize = tp.getQueue().size();
+      if (queueSize > 0) {
+        long now = System.currentTimeMillis();
+        long lastLog = lastQueueLogTime.get();
+        if (now - lastLog > 1000) { // log at most once per second
+          if (lastQueueLogTime.compareAndSet(lastLog, now)) {
+            System.out.println(
+                "Queue size: " + queueSize + " (concurrency limit reached, tasks are queueing)");
+          }
+        }
+      }
+    }
     executor.submit(
         () -> {
           long startTime = System.nanoTime();
@@ -226,5 +244,18 @@ public abstract class AbstractBenchmark {
   static long calculatePoissonDelay(double rate) {
     double u = ThreadLocalRandom.current().nextDouble();
     return (long) (-Math.log(1.0 - u) * 1_000_000_000L / rate);
+  }
+
+  public static void sleepHybrid(long targetNanoTime) {
+    long now = System.nanoTime();
+    if (targetNanoTime > now) {
+      long diff = targetNanoTime - now;
+      if (diff > 1_000_000L) { // > 1ms
+        java.util.concurrent.locks.LockSupport.parkNanos(diff - 100_000L); // 100us buffer
+      }
+      while (System.nanoTime() < targetNanoTime) {
+        Thread.onSpinWait();
+      }
+    }
   }
 }
