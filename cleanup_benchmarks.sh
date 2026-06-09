@@ -17,7 +17,7 @@ for CLIENT_TYPE in "${SUPPORTED_CLIENTS[@]}"; do
   echo "Scanning artifacts for client: $CLIENT_TYPE"
   
   # Delete old Cloud Run jobs
-  JOBS_TO_DELETE=$(gcloud run jobs list --project="$PROJECT_ID" --region="$REGION" --format="value(name,metadata.creationTimestamp)" | python3 -c "
+  JOBS_TO_DELETE=$(gcloud run jobs list --project="$PROJECT_ID" --region="$REGION" --filter="labels.owner=spanner-client-benchmarks OR name:spanner-benchmark- OR name:spanner-$CLIENT_TYPE-benchmark-job-" --format="value(name,metadata.creationTimestamp)" | python3 -c "
 import sys
 from datetime import datetime, timezone
 threshold = datetime.fromisoformat('$EXPIRATION_DATE'.replace('Z', '+00:00'))
@@ -31,8 +31,23 @@ for line in sys.stdin:
 ")
 
   RUNNING_DIGESTS=""
+
+  # Track and protect images used by active GCE VM instances
+  GCE_IMAGES=\$(gcloud compute instances list \
+    --filter="labels.owner=spanner-client-benchmarks" \
+    --project="$PROJECT_ID" \
+    --format="value(metadata.items.gce-container-declaration)" 2>/dev/null | \
+    grep -oE "$REGION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/spanner-$CLIENT_TYPE-benchmark:[a-zA-Z0-9.-]+")
+
+  for image in \$GCE_IMAGES; do
+    DIGEST=\$(gcloud artifacts docker images describe "\$image" --project="$PROJECT_ID" --format="value(image_summary.digest)" 2>/dev/null || true)
+    if [ -n "\$DIGEST" ]; then
+      RUNNING_DIGESTS="\$RUNNING_DIGESTS \$DIGEST"
+    fi
+  done
+
   for job in $JOBS_TO_DELETE; do
-    if [[ $job == spanner-$CLIENT_TYPE-benchmark-job-* ]] || [[ $job =~ ^spanner-benchmark-.*-$CLIENT_TYPE-[0-9]+-[a-z0-9]+$ ]]; then
+    if [[ $job == spanner-$CLIENT_TYPE-benchmark-job-* ]] || [[ $job =~ ^(spanner-benchmark|sb)-.*-$CLIENT_TYPE-[0-9]+-[a-z0-9]+$ ]]; then
       # Check if job has active executions
       ACTIVE_EXECS=$(gcloud run jobs executions list --project="$PROJECT_ID" --region="$REGION" --job="$job" --format="value(metadata.name,status.completionTime)" | python3 -c "
 import sys
@@ -81,6 +96,31 @@ for line in sys.stdin:
       gcloud artifacts docker images delete "$REPO@$digest" --delete-tags --quiet || true
     done
   fi
+done
+
+# Clean up leaked/orphaned GCE VM instances older than 12 hours
+echo "Checking for leaked GCE VM instances older than $EXPIRATION_DATE..."
+LEAKED_VMS=$(gcloud compute instances list \
+  --project="$PROJECT_ID" \
+  --filter="labels.owner=spanner-client-benchmarks" \
+  --format="value(name,zone,creationTimestamp)" | python3 -c "
+import sys
+from datetime import datetime, timezone
+threshold = datetime.fromisoformat('$EXPIRATION_DATE'.replace('Z', '+00:00'))
+for line in sys.stdin:
+    parts = line.strip().split()
+    if len(parts) == 3:
+        name, zone_path, create_time_str = parts
+        zone = zone_path.split('/')[-1]
+        create_time = datetime.fromisoformat(create_time_str.replace('Z', '+00:00'))
+        if create_time < threshold:
+            print(f'{name} {zone}')
+")
+
+for row in $LEAKED_VMS; do
+  read -r name zone <<< "$row"
+  echo "Deleting leaked GCE VM instance: $name in zone $zone"
+  gcloud compute instances delete "$name" --project="$PROJECT_ID" --zone="$zone" --quiet --async
 done
 
 echo "Cleanup complete."
