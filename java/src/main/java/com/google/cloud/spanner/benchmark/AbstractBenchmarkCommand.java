@@ -132,6 +132,16 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
         spannerOptionsBuilder.setChannelConfigurator(builder -> builder.usePlaintext());
         spannerOptionsBuilder.setCredentials(NoCredentials.getInstance());
       }
+      String numChannelsStr = System.getenv("SPANNER_NUM_CHANNELS");
+      if (numChannelsStr != null && !numChannelsStr.isEmpty()) {
+        try {
+          int numChannels = Integer.parseInt(numChannelsStr);
+          spannerOptionsBuilder.setNumChannels(numChannels);
+          System.out.println("Configured Spanner Java client with " + numChannels + " channels.");
+        } catch (NumberFormatException e) {
+          System.err.println("Invalid SPANNER_NUM_CHANNELS value: " + numChannelsStr);
+        }
+      }
       SpannerOptions spannerOptions = spannerOptionsBuilder.build();
       try (Spanner spanner = spannerOptions.getService()) {
         DatabaseClient client =

@@ -1,9 +1,10 @@
 use crate::{BenchmarkMetrics, Commands, run_task};
 use google_cloud_spanner::client::DatabaseClient;
 use opentelemetry::KeyValue;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
@@ -40,51 +41,106 @@ impl LoadType {
     }
 
     async fn run_steady(&self, config: RunConfig) {
-        loop {
-            if let Some(dur) = config.duration {
-                if config.start_time.elapsed() >= dur {
-                    break;
-                }
-            }
+        let tps = config.tps;
+        let duration = config.duration;
+        let start_time = config.start_time;
+        let mut next_tick_time = Instant::now();
+        let mut poisson_timeline = Instant::now();
 
-            let permit = match config.semaphore.clone().acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => break,
-            };
-
-            let db_client = config.db_client.clone();
-            let table = config.table.clone();
-            let command = config.command.clone();
-            let metrics = config.metrics.clone();
-            let attributes = config.attributes.clone();
-
-            tokio::spawn(run_task(
-                db_client, table, command, permit, metrics, attributes,
-            ));
-
-            tokio::time::sleep(calculate_poisson_delay(config.tps)).await;
-        }
-    }
-
-    async fn run_spiky(&self, config: RunConfig) {
-        let r_burst = config.tps * config.burst_factor;
-        let r_normal =
-            (config.tps - config.burst_fraction * r_burst) / (1.0 - config.burst_fraction);
-
-        let mu2 = 1.0 / config.burst_duration;
-        let mu1 = mu2 * config.burst_fraction / (1.0 - config.burst_fraction);
-
-        let mut in_burst = false;
-        let mut next_state_change_time = Instant::now() + calculate_poisson_delay(mu1);
+        let waiters = Arc::new(AtomicUsize::new(0));
+        let last_log = Arc::new(Mutex::new(Instant::now()));
 
         loop {
-            if let Some(dur) = config.duration {
-                if config.start_time.elapsed() >= dur {
+            if let Some(dur) = duration {
+                if start_time.elapsed() >= dur {
                     break;
                 }
             }
 
             let now = Instant::now();
+            if next_tick_time < now {
+                next_tick_time = now;
+            }
+            let tick_duration = Duration::from_millis(1);
+            let target_tick_end = next_tick_time + tick_duration;
+
+            if poisson_timeline < next_tick_time {
+                poisson_timeline = next_tick_time;
+            }
+
+            // Calculate number of tasks for this 1ms tick
+            let mut count = 0;
+            while poisson_timeline < target_tick_end {
+                count += 1;
+                let delay = calculate_poisson_delay(tps);
+                poisson_timeline += delay;
+            }
+
+            for _ in 0..count {
+                let db_client = config.db_client.clone();
+                let table = config.table.clone();
+                let command = config.command.clone();
+                let metrics = config.metrics.clone();
+                let attributes = config.attributes.clone();
+                let semaphore = config.semaphore.clone();
+                let waiters = waiters.clone();
+                let last_log = last_log.clone();
+
+                tokio::spawn(async move {
+                    let permit =
+                        match acquire_permit_with_logging(semaphore, &waiters, &last_log).await {
+                            Some(p) => p,
+                            None => return,
+                        };
+                    run_task(db_client, table, command, permit, metrics, attributes).await;
+                });
+            }
+
+            next_tick_time += tick_duration;
+            sleep_hybrid(next_tick_time).await;
+        }
+    }
+
+    async fn run_spiky(&self, config: RunConfig) {
+        let tps = config.tps;
+        let duration = config.duration;
+        let start_time = config.start_time;
+        let burst_factor = config.burst_factor;
+        let burst_duration = config.burst_duration;
+        let burst_fraction = config.burst_fraction;
+
+        let r_burst = tps * burst_factor;
+        let r_normal = (tps - burst_fraction * r_burst) / (1.0 - burst_fraction);
+
+        let mu2 = 1.0 / burst_duration;
+        let mu1 = mu2 * burst_fraction / (1.0 - burst_fraction);
+
+        let mut in_burst = false;
+        let mut next_state_change_time = Instant::now() + calculate_poisson_delay(mu1);
+        let mut next_tick_time = Instant::now();
+        let mut poisson_timeline = Instant::now();
+
+        let waiters = Arc::new(AtomicUsize::new(0));
+        let last_log = Arc::new(Mutex::new(Instant::now()));
+
+        loop {
+            if let Some(dur) = duration {
+                if start_time.elapsed() >= dur {
+                    break;
+                }
+            }
+
+            let now = Instant::now();
+            if next_tick_time < now {
+                next_tick_time = now;
+            }
+            let tick_duration = Duration::from_millis(1);
+            let target_tick_end = next_tick_time + tick_duration;
+
+            if poisson_timeline < next_tick_time {
+                poisson_timeline = next_tick_time;
+            }
+
             if now >= next_state_change_time {
                 in_burst = !in_burst;
                 let next_delay = if in_burst {
@@ -96,81 +152,118 @@ impl LoadType {
             }
 
             let current_rate = if in_burst { r_burst } else { r_normal };
-            let delay = if current_rate <= 0.0 {
-                Duration::from_secs(3600)
-            } else {
-                calculate_poisson_delay(current_rate)
-            };
 
-            let time_to_state_change = if next_state_change_time > now {
-                next_state_change_time.duration_since(now)
-            } else {
-                Duration::from_secs(0)
-            };
-
-            if delay > time_to_state_change {
-                if !time_to_state_change.is_zero() {
-                    tokio::time::sleep(time_to_state_change).await;
+            // Calculate number of tasks for this 1ms tick
+            let mut count = 0;
+            if current_rate > 0.0 {
+                while poisson_timeline < target_tick_end {
+                    count += 1;
+                    let delay = calculate_poisson_delay(current_rate);
+                    poisson_timeline += delay;
                 }
-                continue;
+            } else {
+                poisson_timeline = target_tick_end;
             }
 
-            let permit = match config.semaphore.clone().acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => break,
-            };
+            for _ in 0..count {
+                let db_client = config.db_client.clone();
+                let table = config.table.clone();
+                let command = config.command.clone();
+                let metrics = config.metrics.clone();
+                let attributes = config.attributes.clone();
+                let semaphore = config.semaphore.clone();
+                let waiters = waiters.clone();
+                let last_log = last_log.clone();
 
-            let db_client = config.db_client.clone();
-            let table = config.table.clone();
-            let command = config.command.clone();
-            let metrics = config.metrics.clone();
-            let attributes = config.attributes.clone();
+                tokio::spawn(async move {
+                    let permit =
+                        match acquire_permit_with_logging(semaphore, &waiters, &last_log).await {
+                            Some(p) => p,
+                            None => return,
+                        };
+                    run_task(db_client, table, command, permit, metrics, attributes).await;
+                });
+            }
 
-            tokio::spawn(run_task(
-                db_client, table, command, permit, metrics, attributes,
-            ));
-
-            tokio::time::sleep(delay).await;
+            next_tick_time += tick_duration;
+            sleep_hybrid(next_tick_time).await;
         }
     }
 
     async fn run_gradual(&self, config: RunConfig) {
-        let cycle_duration_ns = config.cycle_duration.as_nanos() as f64;
-        let amplitude = config.tps * (config.peak_factor - 1.0);
+        let tps = config.tps;
+        let duration = config.duration;
+        let start_time = config.start_time;
+        let cycle_duration = config.cycle_duration;
+        let peak_factor = config.peak_factor;
+
+        let cycle_duration_ns = cycle_duration.as_nanos() as f64;
+        let amplitude = tps * (peak_factor - 1.0);
         let start_instant = Instant::now();
+        let mut next_tick_time = Instant::now();
+        let mut poisson_timeline = Instant::now();
+
+        let waiters = Arc::new(AtomicUsize::new(0));
+        let last_log = Arc::new(Mutex::new(Instant::now()));
 
         loop {
-            if let Some(dur) = config.duration {
-                if config.start_time.elapsed() >= dur {
+            if let Some(dur) = duration {
+                if start_time.elapsed() >= dur {
                     break;
                 }
             }
 
             let now = Instant::now();
-            let elapsed_ns = now.duration_since(start_instant).as_nanos() as u64;
+            if next_tick_time < now {
+                next_tick_time = now;
+            }
+            let tick_duration = Duration::from_millis(1);
+            let target_tick_end = next_tick_time + tick_duration;
 
-            // Calculate rate based on sine wave
+            if poisson_timeline < next_tick_time {
+                poisson_timeline = next_tick_time;
+            }
+
+            let elapsed_ns = now.duration_since(start_instant).as_nanos() as u64;
             let angle =
                 (2.0 * std::f64::consts::PI * (elapsed_ns % cycle_duration_ns as u64) as f64)
                     / cycle_duration_ns;
-            let current_rate = config.tps + amplitude * (angle - std::f64::consts::PI).cos();
+            let current_rate = tps + amplitude * (angle - std::f64::consts::PI).cos();
 
-            let permit = match config.semaphore.clone().acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => break,
-            };
+            // Calculate number of tasks for this 1ms tick
+            let mut count = 0;
+            if current_rate > 0.0 {
+                while poisson_timeline < target_tick_end {
+                    count += 1;
+                    let delay = calculate_poisson_delay(current_rate);
+                    poisson_timeline += delay;
+                }
+            } else {
+                poisson_timeline = target_tick_end;
+            }
 
-            let db_client = config.db_client.clone();
-            let table = config.table.clone();
-            let command = config.command.clone();
-            let metrics = config.metrics.clone();
-            let attributes = config.attributes.clone();
+            for _ in 0..count {
+                let db_client = config.db_client.clone();
+                let table = config.table.clone();
+                let command = config.command.clone();
+                let metrics = config.metrics.clone();
+                let attributes = config.attributes.clone();
+                let semaphore = config.semaphore.clone();
+                let waiters = waiters.clone();
+                let last_log = last_log.clone();
 
-            tokio::spawn(run_task(
-                db_client, table, command, permit, metrics, attributes,
-            ));
+                tokio::spawn(async move {
+                    let permit =
+                        match acquire_permit_with_logging(semaphore, &waiters, &last_log).await {
+                            Some(p) => p,
+                            None => return,
+                        };
+                    run_task(db_client, table, command, permit, metrics, attributes).await;
+                });
+            }
 
-            tokio::time::sleep(calculate_poisson_delay(current_rate)).await;
+            next_tick_time += tick_duration;
+            sleep_hybrid(next_tick_time).await;
         }
     }
 }
@@ -201,4 +294,52 @@ fn calculate_poisson_delay(rate: f64) -> Duration {
     let u: f64 = rand::random();
     let delay_seconds = -u.ln() / rate;
     Duration::from_secs_f64(delay_seconds)
+}
+
+async fn acquire_permit_with_logging(
+    semaphore: Arc<Semaphore>,
+    waiters: &Arc<AtomicUsize>,
+    last_log: &Arc<Mutex<Instant>>,
+) -> Option<OwnedSemaphorePermit> {
+    // Increment the waiter count. fetch_add returns the previous value, so we add 1 to get the current count.
+    let queue_size = waiters.fetch_add(1, Ordering::SeqCst) + 1;
+
+    // Only lock the Mutex and log if queue_size > 1 (meaning tasks are actually queueing).
+    // This avoids mutex contention overhead on the hot path when we are under the concurrency limit.
+    if queue_size > 1 {
+        let mut last_log_guard = last_log.lock().unwrap();
+        if last_log_guard.elapsed() > Duration::from_secs(1) {
+            println!(
+                "Queue size: {} (concurrency limit reached, tasks are queueing)",
+                queue_size
+            );
+            *last_log_guard = Instant::now();
+        }
+    }
+
+    match semaphore.acquire_owned().await {
+        Ok(permit) => {
+            waiters.fetch_sub(1, Ordering::SeqCst);
+            Some(permit)
+        }
+        Err(_) => {
+            // Err(_) is returned only if the semaphore has been closed (dropped/decommissioned).
+            // This occurs during benchmark shutdown, so we clean up the waiter count and return None to exit.
+            waiters.fetch_sub(1, Ordering::SeqCst);
+            None
+        }
+    }
+}
+
+async fn sleep_hybrid(target_time: Instant) {
+    let now = Instant::now();
+    if target_time > now {
+        let diff = target_time - now;
+        if diff > Duration::from_millis(1) {
+            tokio::time::sleep(diff - Duration::from_micros(100)).await;
+        }
+        while Instant::now() < target_time {
+            tokio::task::yield_now().await;
+        }
+    }
 }
