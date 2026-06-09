@@ -23,7 +23,7 @@ def _safe_call(action):
 
 
 def validate_and_fill_load_params(args):
-    if args.load_type == "steady":
+    if args.load_type in ("steady", "closed-loop"):
         if (
             args.cycle_duration is not None
             or args.peak_factor is not None
@@ -32,7 +32,7 @@ def validate_and_fill_load_params(args):
             or args.burst_fraction is not None
         ):
             print(
-                "Error: Cannot specify burst or gradual load options when load-type is steady",
+                f"Error: Cannot specify burst or gradual load options when load-type is {args.load_type}",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -120,7 +120,7 @@ def main():
     parser.add_argument(
         "--load-type",
         default="steady",
-        choices=["steady", "spiky", "gradual"],
+        choices=["steady", "spiky", "gradual", "closed-loop"],
         help="Load type",
     )
     parser.add_argument(
@@ -142,6 +142,18 @@ def main():
         type=float,
         help="Fraction of total time spent in the burst state",
     )
+    parser.add_argument(
+        "--mock",
+        action="store_true",
+        default=False,
+        help="Connect to a local in-memory mock Spanner server (only supported with point-select workload).",
+    )
+    parser.add_argument(
+        "--use-uds",
+        action="store_true",
+        default=False,
+        help="Use a Unix Domain Socket instead of TCP loopback for the mock server connection.",
+    )
 
     # Common workload flags for all subparsers
     workload_parser = argparse.ArgumentParser(add_help=False)
@@ -157,7 +169,7 @@ def main():
     workload_parser.add_argument(
         "--load-type",
         default="steady",
-        choices=["steady", "spiky", "gradual"],
+        choices=["steady", "spiky", "gradual", "closed-loop"],
         help="Load type",
     )
     workload_parser.add_argument(
@@ -264,6 +276,15 @@ def main():
 
     args = parser.parse_args()
 
+    # Validation of --mock constraint
+    if args.mock:
+        if args.command != "point-select":
+            print(
+                "Error: The --mock option is currently only supported with the 'point-select' workload.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     # Validation and filling defaults
     burst_factor, burst_duration, burst_fraction, cycle_duration_str, peak_factor = (
         validate_and_fill_load_params(args)
@@ -281,9 +302,29 @@ def main():
         bool(host) and ("localhost:" in host or "127.0.0.1:" in host)
     )
 
+    mock_server = None
+    mock_executor = None
+    if args.mock:
+        from src.spanner.mock_server import start_mock_spanner
+        table_name = getattr(args, "table", "test")
+        print(f"Starting local mock Spanner server for table '{table_name}'...")
+        if args.use_uds:
+            socket_path = f"/tmp/spanner_mock_{os.getpid()}.sock"
+            if os.path.exists(socket_path):
+                try:
+                    os.remove(socket_path)
+                except OSError:
+                    pass
+            mock_server, mock_executor, _ = start_mock_spanner(table_name, socket_path=socket_path)
+            host = f"unix://{socket_path}"
+        else:
+            mock_server, mock_executor, mock_port = start_mock_spanner(table_name)
+            host = f"127.0.0.1:{mock_port}"
+        is_emulator = True
+
     # 1. Setup OpenTelemetry metrics provider and instruments
     meter, shutdown_metrics = setup_metrics(
-        args.project, is_emulator, args.benchmark_name
+        args.project, is_emulator and not args.mock, args.benchmark_name
     )
 
     # Create shared metrics instruments (us unit matching standard spec)
@@ -356,6 +397,7 @@ def main():
             burst_factor=burst_factor,
             burst_duration=burst_duration,
             burst_fraction=burst_fraction,
+            is_mock=args.mock,
         )
     elif args.command == "select-update":
         benchmark = SelectAndUpdateBenchmark(
@@ -473,6 +515,20 @@ def main():
         _safe_call(lambda: spanner_client.database_admin_api.transport.close())
         _safe_call(lambda: spanner_client.instance_admin_api.transport.close())
         _safe_call(lambda: spanner_client.close())
+
+        if mock_server:
+            print("[Lifecycle] Stopping local mock Spanner server...")
+            shutdown_event = mock_server.stop(0)
+            shutdown_event.wait()
+            if mock_executor:
+                mock_executor.shutdown(wait=True)
+            if args.use_uds:
+                socket_path = f"/tmp/spanner_mock_{os.getpid()}.sock"
+                if os.path.exists(socket_path):
+                    try:
+                        os.remove(socket_path)
+                    except OSError:
+                        pass
 
 
 if __name__ == "__main__":

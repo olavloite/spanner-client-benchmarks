@@ -124,6 +124,52 @@ class TestBenchmarkWorkloads(BaseBenchmarkTest):
         cpu_metric = self.find_metric(metrics_data, CPU_UTILIZATION_NAME)
         self.assert_metric_attributes(cpu_metric, expected_attrs)
 
+    def test_point_select_with_mock_flag(self):
+        args = [
+            "main.py",
+            "-p",
+            "fake-project",
+            "-i",
+            "fake-instance",
+            "-d",
+            "fake-database",
+            "--duration",
+            "1s",
+            "--resource-probe-interval",
+            "10ms",
+            "--mock",
+            "point-select",
+            "--table",
+            "test",
+            "--tps",
+            "10",
+        ]
+
+        with patch("sys.argv", args), patch("os._exit"):
+            main()
+
+        # Retrieve and verify metrics
+        metrics_data = self.reader.get_metrics_data()
+        self.assert_resource_attributes(metrics_data)
+
+        # Expected benchmark type for mock should be point-select-mock!
+        expected_attrs = {
+            "client": "python-client",
+            "benchmark_type": "point-select-mock",
+        }
+
+        op_count_metric = self.find_metric(metrics_data, OPERATION_COUNT_NAME)
+        self.assert_metric_attributes(op_count_metric, expected_attrs)
+
+        latency_metric = self.find_metric(metrics_data, LATENCY_NAME)
+        self.assert_metric_attributes(latency_metric, expected_attrs)
+
+        mem_metric = self.find_metric(metrics_data, MEMORY_USAGE_NAME)
+        self.assert_metric_attributes(mem_metric, expected_attrs)
+
+        cpu_metric = self.find_metric(metrics_data, CPU_UTILIZATION_NAME)
+        self.assert_metric_attributes(cpu_metric, expected_attrs)
+
     def test_select_update_workload(self):
         args = [
             "main.py",

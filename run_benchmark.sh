@@ -73,7 +73,11 @@ if [ "$BENCHMARK_TYPE" = "tpcc" ] || [ "$BENCHMARK_TYPE" = "tpcc-init" ]; then
     ARGS="${ARGS},--clients=${CLIENTS:-10}"
   fi
 else
-  ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}${BENCHMARK_NAME_FLAG}$BENCHMARK_TYPE,--table=$TABLE_NAME"
+  MOCK_FLAG=""
+  if [ "$MOCK" = "true" ]; then
+    MOCK_FLAG="--mock,"
+  fi
+  ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}${BENCHMARK_NAME_FLAG}${MOCK_FLAG}$BENCHMARK_TYPE,--table=$TABLE_NAME"
   if [ -n "$LOAD_TYPE" ]; then ARGS="${ARGS},--load-type=$LOAD_TYPE"; fi
   if [ -n "$TPS" ]; then ARGS="${ARGS},--tps=$TPS"; fi
   if [ -n "$THREADS" ]; then ARGS="${ARGS},--threads=$THREADS"; fi
