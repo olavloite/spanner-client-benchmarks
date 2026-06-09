@@ -14,8 +14,10 @@ COPY src/ ./src/
 
 ARG USE_RELEASED_VERSION=false
 ARG CLIENT_BRANCH=main
+ARG CLIENT_REPO=""
 ENV USE_RELEASED_VERSION=$USE_RELEASED_VERSION
 ENV CLIENT_BRANCH=$CLIENT_BRANCH
+ENV CLIENT_REPO=$CLIENT_REPO
 
 # Run the build script (clones google-cloud-node, compiles Spanner, installs it, and compiles TypeScript)
 RUN chmod +x build_app.sh && ./build_app.sh

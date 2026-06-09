@@ -8,11 +8,12 @@ INIT_DIR="$(pwd)"
 
 USE_RELEASED_VERSION="${USE_RELEASED_VERSION:-false}"
 CLIENT_BRANCH="${CLIENT_BRANCH:-main}"
+CLIENT_REPO="${CLIENT_REPO:-https://github.com/googleapis/google-cloud-go.git}"
 
 if [ "$USE_RELEASED_VERSION" = "false" ]; then
   WORK_DIR="$(mktemp -d)"
-  echo "Cloning Spanner Go client source into: $WORK_DIR"
-  git clone --sparse --filter=blob:none https://github.com/googleapis/google-cloud-go.git "$WORK_DIR/spanner-repo"
+  echo "Cloning Spanner Go client source from $CLIENT_REPO into: $WORK_DIR"
+  git clone --sparse --filter=blob:none "$CLIENT_REPO" "$WORK_DIR/spanner-repo"
   cd "$WORK_DIR/spanner-repo"
   echo "Checking out Spanner Go client branch/commit $CLIENT_BRANCH..."
   git checkout "$CLIENT_BRANCH"

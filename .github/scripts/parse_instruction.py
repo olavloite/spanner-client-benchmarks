@@ -17,6 +17,7 @@ MEMORY_PATTERN = re.compile(r"^[1-9][0-9]*(Gi|Mi)$")
 NAME_PATTERN = re.compile(r"^[a-zA-Z0-9/._-]+$")
 FLOAT_PATTERN = re.compile(r"^[0-9]+(\.[0-9]+)?$")
 INT_PATTERN = re.compile(r"^[0-9]+$")
+REPO_PATTERN = re.compile(r"^https://github\.com/[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+(\.git)?$")
 
 LOAD_TYPE_SUPPORTED = {"steady", "spiky", "gradual"}
 
@@ -26,6 +27,8 @@ SYSTEM_INSTRUCTION = (
     "The user wants to deploy one or more benchmarks. If they ask to compare two branches (e.g., 'branch-a vs main' "
     "or 'my-branch and main'), output two separate run objects: one for each branch, with all other properties "
     "kept identical.\n\n"
+    "If they specify a custom repository URL (e.g. 'https://github.com/myfork/google-cloud-java') for a client, "
+    "populate 'client_repo' with that URL.\n\n"
     "If the request is ambiguous, lacks critical information (such as which language client to run), is not related "
     "to deploying benchmarks, or is ridiculous/nonsense (e.g., 'run a benchmark that tells me how my feature performs'), "
     "do NOT output any items in the 'runs' list. Instead, set the 'error' field to a descriptive error message "
@@ -56,6 +59,10 @@ RESPONSE_SCHEMA = {
                     },
                     "client_branch": {
                         "type": "STRING"
+                    },
+                    "client_repo": {
+                        "type": "STRING",
+                        "description": "The GitHub repository URL of the fork to clone (optional)"
                     },
                     "benchmark_type": {
                         "type": "STRING",
@@ -130,6 +137,7 @@ def sanitize_run(run):
 
     # Apply strict regex checks to prevent command injection or bad inputs
     branch = sanitize_value(run.get("client_branch"), BRANCH_PATTERN)
+    repo = sanitize_value(run.get("client_repo"), REPO_PATTERN, "")
     duration = sanitize_value(run.get("duration"), DURATION_PATTERN, "60m")
     cpu = sanitize_value(run.get("cpu"), CPU_PATTERN, "2")
     memory = sanitize_value(run.get("memory"), MEMORY_PATTERN, "1Gi")
@@ -155,6 +163,7 @@ def sanitize_run(run):
     return {
         "client_type": client,
         "client_branch": branch,
+        "client_repo": repo,
         "benchmark_type": bench,
         "duration": duration,
         "cpu": cpu,

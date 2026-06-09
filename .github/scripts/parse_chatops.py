@@ -30,6 +30,7 @@ MEMORY_PATTERN = re.compile(r"^[1-9][0-9]*(Gi|Mi)$")
 NAME_PATTERN = re.compile(r"^[a-zA-Z0-9/._-]+$")
 FLOAT_PATTERN = re.compile(r"^[0-9]+(\.[0-9]+)?$")
 INT_PATTERN = re.compile(r"^[0-9]+$")
+REPO_PATTERN = re.compile(r"^https://github\.com/[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+(\.git)?$")
 
 LOAD_TYPE_SUPPORTED = {"steady", "spiky", "gradual"}
 
@@ -51,6 +52,10 @@ RESPONSE_SCHEMA = {
                 "properties": {
                     "client_type": {"type": "STRING", "enum": list(SUPPORTED_CLIENTS)},
                     "client_branch": {"type": "STRING"},
+                    "client_repo": {
+                        "type": "STRING",
+                        "description": "The GitHub repository URL of the fork to clone (optional)"
+                    },
                     "benchmark_type": {
                         "type": "STRING",
                         "enum": list(SUPPORTED_BENCHMARKS),
@@ -101,6 +106,7 @@ def sanitize_run(run):
         raise ValueError(f"Unsupported benchmark type: {bench}")
 
     branch = sanitize_value(run.get("client_branch"), BRANCH_PATTERN)
+    repo = sanitize_value(run.get("client_repo"), REPO_PATTERN, "")
     duration = sanitize_value(run.get("duration"), DURATION_PATTERN, "60m")
     cpu = sanitize_value(run.get("cpu"), CPU_PATTERN, "2")
     memory = sanitize_value(run.get("memory"), MEMORY_PATTERN, "1Gi")
@@ -124,6 +130,7 @@ def sanitize_run(run):
     return {
         "client_type": client,
         "client_branch": branch,
+        "client_repo": repo,
         "benchmark_type": bench,
         "duration": duration,
         "cpu": cpu,
