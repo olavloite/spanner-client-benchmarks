@@ -38,7 +38,9 @@ def setup_metrics(
         return meter, lambda: None
 
     if is_emulator or project_id == "fake-project":
-        print("Spanner Emulator, localhost, or fake-project detected. Initializing No-op metrics.")
+        print(
+            "Spanner Emulator, localhost, or fake-project detected. Initializing No-op metrics."
+        )
         # metrics.get_meter with a default empty provider is a pure no-op (parity with Go/Java/Node)
         noop_meter = metrics.get_meter(METER_NAME)
         return noop_meter, lambda: None

@@ -306,6 +306,7 @@ def main():
     mock_executor = None
     if args.mock:
         from src.spanner.mock_server import start_mock_spanner
+
         table_name = getattr(args, "table", "test")
         print(f"Starting local mock Spanner server for table '{table_name}'...")
         if args.use_uds:
@@ -315,7 +316,9 @@ def main():
                     os.remove(socket_path)
                 except OSError:
                     pass
-            mock_server, mock_executor, _ = start_mock_spanner(table_name, socket_path=socket_path)
+            mock_server, mock_executor, _ = start_mock_spanner(
+                table_name, socket_path=socket_path
+            )
             host = f"unix://{socket_path}"
         else:
             mock_server, mock_executor, mock_port = start_mock_spanner(table_name)

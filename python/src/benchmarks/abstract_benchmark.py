@@ -22,6 +22,7 @@ class LoadType(str, Enum):
 
 class ReservoirSampler:
     """Thread-safe Reservoir Sampler for tracking latency statistics."""
+
     def __init__(self, limit: int = 20000):
         self.limit = limit
         self.samples = []
@@ -46,7 +47,7 @@ class ReservoirSampler:
             n = len(sorted_samples)
             total = sum(sorted_samples)
             avg = total / n
-            
+
             def get_percentile(p: float) -> float:
                 idx = int(math.ceil((p / 100.0) * n)) - 1
                 idx = max(0, min(n - 1, idx))
@@ -187,7 +188,9 @@ class AbstractBenchmark(abc.ABC):
                 self._executor.submit(self._closed_loop_worker)
         else:
             self._generator_thread = threading.Thread(
-                target=self._workload_generator, name="TPS-WorkloadGenerator", daemon=True
+                target=self._workload_generator,
+                name="TPS-WorkloadGenerator",
+                daemon=True,
             )
             self._generator_thread.start()
             self._start_resource_monitoring()
@@ -229,14 +232,22 @@ class AbstractBenchmark(abc.ABC):
             actual_tps = total_ops / elapsed_sec if elapsed_sec > 0 else 0.0
 
         stats = self._latency_sampler.get_stats()
-        
+
         print("\n" + "=" * 60)
         print("                  BENCHMARK RUN SUMMARY")
         print("=" * 60)
         print(f"Benchmark:       {self.get_benchmark_name()}")
         print(f"Total Ops:       {total_ops}")
-        print(f"Success Ops:     {success_count} ({100.0 * success_count / total_ops:.1f}%)" if total_ops > 0 else f"Success Ops:     {success_count}")
-        print(f"Error Ops:       {error_count} ({100.0 * error_count / total_ops:.1f}%)" if total_ops > 0 else f"Error Ops:       {error_count}")
+        print(
+            f"Success Ops:     {success_count} ({100.0 * success_count / total_ops:.1f}%)"
+            if total_ops > 0
+            else f"Success Ops:     {success_count}"
+        )
+        print(
+            f"Error Ops:       {error_count} ({100.0 * error_count / total_ops:.1f}%)"
+            if total_ops > 0
+            else f"Error Ops:       {error_count}"
+        )
         print(f"Duration:        {elapsed_sec:.2f} s")
         print(f"Actual TPS:      {actual_tps:.2f} tps")
         print("-" * 60)
@@ -255,6 +266,7 @@ class AbstractBenchmark(abc.ABC):
 
         # For Cloud Run deployment, call os._exit(0) directly unless mocked in tests.
         import sys
+
         sys.stdout.flush()
         sys.stderr.flush()
         os._exit(0)

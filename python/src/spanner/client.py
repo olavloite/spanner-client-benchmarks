@@ -24,7 +24,11 @@ def create_spanner_client(
 
         # If talking to an emulator via localhost/127.0.0.1 but SPANNER_EMULATOR_HOST env wasn't set,
         # assign AnonymousCredentials to disable active IAM token exchange.
-        if "localhost:" in endpoint or "127.0.0.1:" in endpoint or endpoint.startswith("unix:"):
+        if (
+            "localhost:" in endpoint
+            or "127.0.0.1:" in endpoint
+            or endpoint.startswith("unix:")
+        ):
             client_kwargs["credentials"] = AnonymousCredentials()
-            
+
     return spanner.Client(project=project_id, **client_kwargs)
