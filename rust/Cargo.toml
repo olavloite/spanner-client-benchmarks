@@ -21,7 +21,7 @@ time = { version = "0.3", features = ["formatting", "parsing"] }
 futures = "0.3"
 rustls = { version = "0.23", features = ["aws_lc_rs"] }
 opentelemetry_gcloud_monitoring_exporter = "0.23.0"
-sysinfo = "0.33"
+sysinfo = "0.39"
 uuid = { version = "1.11", features = ["v4"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
