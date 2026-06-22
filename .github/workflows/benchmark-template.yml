@@ -87,6 +87,7 @@ env:
   CPU: ${{ inputs.cpu }}
   MEMORY: ${{ inputs.memory }}
   SKIP_CLEANUP: 'true'
+  BENCHMARK_TARGET: gce
 
 jobs:
   deploy-benchmarks:
