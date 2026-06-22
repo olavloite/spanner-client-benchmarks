@@ -48,7 +48,7 @@ jobs:
 
       - name: Checkout code
         if: steps.check_running.outputs.already_running == 'false'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Authenticate to Google Cloud
         if: steps.check_running.outputs.already_running == 'false'
