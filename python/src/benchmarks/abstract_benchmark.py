@@ -17,6 +17,52 @@ class LoadType(str, Enum):
     STEADY = "steady"
     SPIKY = "spiky"
     GRADUAL = "gradual"
+    CLOSED_LOOP = "closed-loop"
+
+
+class ReservoirSampler:
+    """Thread-safe Reservoir Sampler for tracking latency statistics."""
+
+    def __init__(self, limit: int = 20000):
+        self.limit = limit
+        self.samples = []
+        self.count = 0
+        self.lock = threading.Lock()
+
+    def add(self, val: float):
+        with self.lock:
+            self.count += 1
+            if len(self.samples) < self.limit:
+                self.samples.append(val)
+            else:
+                idx = random.randint(0, self.count - 1)
+                if idx < self.limit:
+                    self.samples[idx] = val
+
+    def get_stats(self) -> dict:
+        with self.lock:
+            if not self.samples:
+                return {}
+            sorted_samples = sorted(self.samples)
+            n = len(sorted_samples)
+            total = sum(sorted_samples)
+            avg = total / n
+
+            def get_percentile(p: float) -> float:
+                idx = int(math.ceil((p / 100.0) * n)) - 1
+                idx = max(0, min(n - 1, idx))
+                return sorted_samples[idx]
+
+            return {
+                "min": sorted_samples[0],
+                "max": sorted_samples[-1],
+                "avg": avg,
+                "p50": get_percentile(50.0),
+                "p90": get_percentile(90.0),
+                "p95": get_percentile(95.0),
+                "p99": get_percentile(99.0),
+                "count": self.count,
+            }
 
 
 class AbstractBenchmark(abc.ABC):
@@ -48,6 +94,7 @@ class AbstractBenchmark(abc.ABC):
         burst_factor: float = 1.0,
         burst_duration: float = 1.0,
         burst_fraction: float = 0.1,
+        is_mock: bool = False,
     ):
         self.database = database
         self.latency_histogram = latency_histogram
@@ -69,15 +116,20 @@ class AbstractBenchmark(abc.ABC):
         self.burst_factor = burst_factor
         self.burst_duration = burst_duration
         self.burst_fraction = burst_fraction
+        self.is_mock = is_mock
 
         self.r_burst = self.tps * self.burst_factor
         self.r_normal = (self.tps - self.burst_fraction * self.r_burst) / (
             1.0 - self.burst_fraction
         )
 
+        benchmark_type = self.get_benchmark_type()
+        if self.is_mock:
+            benchmark_type = f"{benchmark_type}-mock"
+
         # Pre-create metric attributes to optimize away overhead on the hot path
         self.attributes = {
-            "benchmark_type": self.get_benchmark_type(),
+            "benchmark_type": benchmark_type,
             "tps": self.tps,
             "for_alerting": str(self.for_alerting).lower(),
             "benchmark_name": benchmark_name,
@@ -96,6 +148,9 @@ class AbstractBenchmark(abc.ABC):
         self.is_stopped = False
         self._outstanding_tasks = 0
         self._last_queue_log_time = 0.0
+        self._success_count = 0
+        self._error_count = 0
+        self._latency_sampler = ReservoirSampler(limit=20000)
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=threads)
         self._generator_thread: Optional[threading.Thread] = None
@@ -127,11 +182,18 @@ class AbstractBenchmark(abc.ABC):
         )
 
         self.is_stopped = False
-        self._generator_thread = threading.Thread(
-            target=self._workload_generator, name="TPS-WorkloadGenerator", daemon=True
-        )
-        self._generator_thread.start()
-        self._start_resource_monitoring()
+        if self.load_type == LoadType.CLOSED_LOOP:
+            print(f"Running in closed-loop mode with {self.threads} client threads.")
+            for _ in range(self.threads):
+                self._executor.submit(self._closed_loop_worker)
+        else:
+            self._generator_thread = threading.Thread(
+                target=self._workload_generator,
+                name="TPS-WorkloadGenerator",
+                daemon=True,
+            )
+            self._generator_thread.start()
+            self._start_resource_monitoring()
 
         # Wait loop for duration expiration
         # TODO: Consider refactoring this busy-polling wait loop to use threading.Event().wait(duration_sec)
@@ -161,8 +223,52 @@ class AbstractBenchmark(abc.ABC):
             # Fallback for Python < 3.9
             self._executor.shutdown(wait=True)
 
-        # For Cloud Run deployment, call os._exit(0) directly unless mocked in tests.
+        # Print final benchmark summary statistics
+        with self._lock:
+            success_count = self._success_count
+            error_count = self._error_count
+            total_ops = success_count + error_count
+            elapsed_sec = time.perf_counter() - start_wait
+            actual_tps = total_ops / elapsed_sec if elapsed_sec > 0 else 0.0
 
+        stats = self._latency_sampler.get_stats()
+
+        print("\n" + "=" * 60)
+        print("                  BENCHMARK RUN SUMMARY")
+        print("=" * 60)
+        print(f"Benchmark:       {self.get_benchmark_name()}")
+        print(f"Total Ops:       {total_ops}")
+        print(
+            f"Success Ops:     {success_count} ({100.0 * success_count / total_ops:.1f}%)"
+            if total_ops > 0
+            else f"Success Ops:     {success_count}"
+        )
+        print(
+            f"Error Ops:       {error_count} ({100.0 * error_count / total_ops:.1f}%)"
+            if total_ops > 0
+            else f"Error Ops:       {error_count}"
+        )
+        print(f"Duration:        {elapsed_sec:.2f} s")
+        print(f"Actual TPS:      {actual_tps:.2f} tps")
+        print("-" * 60)
+        if stats:
+            print("Latency (microseconds):")
+            print(f"  Average:       {stats['avg']:.2f} us")
+            print(f"  Min:           {stats['min']:.2f} us")
+            print(f"  P50 (Median):  {stats['p50']:.2f} us")
+            print(f"  P90:           {stats['p90']:.2f} us")
+            print(f"  P95:           {stats['p95']:.2f} us")
+            print(f"  P99:           {stats['p99']:.2f} us")
+            print(f"  Max:           {stats['max']:.2f} us")
+        else:
+            print("No latency statistics collected.")
+        print("=" * 60 + "\n")
+
+        # For Cloud Run deployment, call os._exit(0) directly unless mocked in tests.
+        import sys
+
+        sys.stdout.flush()
+        sys.stderr.flush()
         os._exit(0)
 
     def stop(self) -> None:
@@ -260,21 +366,35 @@ class AbstractBenchmark(abc.ABC):
     def _run_task(self) -> None:
         """Executes the concrete Spanner scenario, measures latency in microseconds, records to metrics."""
         start_time = time.perf_counter()
+        success = False
         try:
             self.execute_operation(
                 self.database, self.table_name, self.min_id, self.max_id
             )
+            success = True
         except Exception as err:
             print(f"Operation failed: {err}", file=sys.stderr)
             self.error_counter.add(1, self.attributes)
+            with self._lock:
+                self._error_count += 1
         finally:
             end_time = time.perf_counter()
-            if self.should_measure_entire_method():
+            if self.should_measure_entire_method() and success:
                 latency_us = (end_time - start_time) * 1000000.0
                 self.latency_histogram.record(latency_us, self.attributes)
+                self._latency_sampler.add(latency_us)
+            if success:
+                with self._lock:
+                    self._success_count += 1
             self.operation_counter.add(1, self.attributes)
-            with self._lock:
-                self._outstanding_tasks -= 1
+            if self.load_type != LoadType.CLOSED_LOOP:
+                with self._lock:
+                    self._outstanding_tasks -= 1
+
+    def _closed_loop_worker(self) -> None:
+        """Continuously executes point-select operations in a loop."""
+        while not self.is_stopped:
+            self._run_task()
 
     def _calculate_poisson_delay(self, rate: float) -> float:
         """
