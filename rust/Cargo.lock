@@ -774,7 +774,7 @@ dependencies = [
  "hex",
  "hmac",
  "http",
- "reqwest 0.13.4",
+ "reqwest",
  "rustc_version",
  "rustls",
  "rustls-pki-types",
@@ -790,7 +790,7 @@ dependencies = [
 [[package]]
 name = "google-cloud-auth"
 version = "1.13.0"
-source = "git+https://github.com/googleapis/google-cloud-rust#8df1fce7faf51f6970b99b7e1ca84e03174b228d"
+source = "git+https://github.com/googleapis/google-cloud-rust#bbfc16322d84d7ede77b9ae227bd4806d0634185"
 dependencies = [
  "async-trait",
  "base64",
@@ -800,7 +800,7 @@ dependencies = [
  "hex",
  "hmac",
  "http",
- "reqwest 0.13.4",
+ "reqwest",
  "rustc_version",
  "rustls",
  "rustls-pki-types",
@@ -836,7 +836,7 @@ dependencies = [
 [[package]]
 name = "google-cloud-gax"
 version = "1.11.0"
-source = "git+https://github.com/googleapis/google-cloud-rust#8df1fce7faf51f6970b99b7e1ca84e03174b228d"
+source = "git+https://github.com/googleapis/google-cloud-rust#bbfc16322d84d7ede77b9ae227bd4806d0634185"
 dependencies = [
  "bytes",
  "futures",
@@ -871,7 +871,7 @@ dependencies = [
  "opentelemetry_sdk 0.31.0",
  "percent-encoding",
  "pin-project",
- "reqwest 0.13.4",
+ "reqwest",
  "rustc_version",
  "serde",
  "serde_json",
@@ -885,7 +885,7 @@ dependencies = [
 [[package]]
 name = "google-cloud-gax-internal"
 version = "0.7.14"
-source = "git+https://github.com/googleapis/google-cloud-rust#8df1fce7faf51f6970b99b7e1ca84e03174b228d"
+source = "git+https://github.com/googleapis/google-cloud-rust#bbfc16322d84d7ede77b9ae227bd4806d0634185"
 dependencies = [
  "bytes",
  "futures",
@@ -906,7 +906,7 @@ dependencies = [
  "pin-project",
  "prost",
  "prost-types",
- "reqwest 0.13.4",
+ "reqwest",
  "rustc_version",
  "serde",
  "serde_json",
@@ -923,7 +923,7 @@ dependencies = [
 [[package]]
 name = "google-cloud-iam-v1"
 version = "1.10.0"
-source = "git+https://github.com/googleapis/google-cloud-rust#8df1fce7faf51f6970b99b7e1ca84e03174b228d"
+source = "git+https://github.com/googleapis/google-cloud-rust#bbfc16322d84d7ede77b9ae227bd4806d0634185"
 dependencies = [
  "async-trait",
  "bytes",
@@ -940,7 +940,7 @@ dependencies = [
 [[package]]
 name = "google-cloud-longrunning"
 version = "1.11.0"
-source = "git+https://github.com/googleapis/google-cloud-rust#8df1fce7faf51f6970b99b7e1ca84e03174b228d"
+source = "git+https://github.com/googleapis/google-cloud-rust#bbfc16322d84d7ede77b9ae227bd4806d0634185"
 dependencies = [
  "async-trait",
  "bytes",
@@ -957,9 +957,10 @@ dependencies = [
 [[package]]
 name = "google-cloud-lro"
 version = "1.8.0"
-source = "git+https://github.com/googleapis/google-cloud-rust#8df1fce7faf51f6970b99b7e1ca84e03174b228d"
+source = "git+https://github.com/googleapis/google-cloud-rust#bbfc16322d84d7ede77b9ae227bd4806d0634185"
 dependencies = [
  "google-cloud-gax 1.11.0",
+ "google-cloud-gax-internal 0.7.14",
  "google-cloud-longrunning",
  "google-cloud-rpc 1.5.0 (git+https://github.com/googleapis/google-cloud-rust)",
  "google-cloud-wkt 1.5.0",
@@ -1004,7 +1005,7 @@ dependencies = [
 [[package]]
 name = "google-cloud-rpc"
 version = "1.5.0"
-source = "git+https://github.com/googleapis/google-cloud-rust#8df1fce7faf51f6970b99b7e1ca84e03174b228d"
+source = "git+https://github.com/googleapis/google-cloud-rust#bbfc16322d84d7ede77b9ae227bd4806d0634185"
 dependencies = [
  "bytes",
  "google-cloud-wkt 1.5.0",
@@ -1016,7 +1017,7 @@ dependencies = [
 [[package]]
 name = "google-cloud-spanner"
 version = "0.34.2-preview"
-source = "git+https://github.com/googleapis/google-cloud-rust#8df1fce7faf51f6970b99b7e1ca84e03174b228d"
+source = "git+https://github.com/googleapis/google-cloud-rust#bbfc16322d84d7ede77b9ae227bd4806d0634185"
 dependencies = [
  "async-trait",
  "base64",
@@ -1046,7 +1047,7 @@ dependencies = [
 [[package]]
 name = "google-cloud-spanner-admin-database-v1"
 version = "1.12.0"
-source = "git+https://github.com/googleapis/google-cloud-rust#8df1fce7faf51f6970b99b7e1ca84e03174b228d"
+source = "git+https://github.com/googleapis/google-cloud-rust#bbfc16322d84d7ede77b9ae227bd4806d0634185"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1066,7 +1067,7 @@ dependencies = [
 [[package]]
 name = "google-cloud-spanner-admin-instance-v1"
 version = "1.12.0"
-source = "git+https://github.com/googleapis/google-cloud-rust#8df1fce7faf51f6970b99b7e1ca84e03174b228d"
+source = "git+https://github.com/googleapis/google-cloud-rust#bbfc16322d84d7ede77b9ae227bd4806d0634185"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1098,7 +1099,7 @@ dependencies = [
 [[package]]
 name = "google-cloud-type"
 version = "1.5.0"
-source = "git+https://github.com/googleapis/google-cloud-rust#8df1fce7faf51f6970b99b7e1ca84e03174b228d"
+source = "git+https://github.com/googleapis/google-cloud-rust#bbfc16322d84d7ede77b9ae227bd4806d0634185"
 dependencies = [
  "bytes",
  "google-cloud-wkt 1.5.0",
@@ -1126,7 +1127,7 @@ dependencies = [
 [[package]]
 name = "google-cloud-wkt"
 version = "1.5.0"
-source = "git+https://github.com/googleapis/google-cloud-rust#8df1fce7faf51f6970b99b7e1ca84e03174b228d"
+source = "git+https://github.com/googleapis/google-cloud-rust#bbfc16322d84d7ede77b9ae227bd4806d0634185"
 dependencies = [
  "base64",
  "bytes",
@@ -1838,45 +1839,42 @@ dependencies = [
 
 [[package]]
 name = "opentelemetry-http"
-version = "0.31.0"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7a6d09a73194e6b66df7c8f1b680f156d916a1a942abf2de06823dd02b7855d"
+checksum = "5683015d09e2df236ef005b17f6f196f0d5f6313c4fa43a7b6a53b52776e4331"
 dependencies = [
  "async-trait",
  "bytes",
  "http",
- "opentelemetry 0.31.0",
- "reqwest 0.12.28",
+ "opentelemetry 0.32.0",
+ "reqwest",
 ]
 
 [[package]]
 name = "opentelemetry-otlp"
-version = "0.31.1"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f69cd6acbb9af919df949cd1ec9e5e7fdc2ef15d234b6b795aaa525cc02f71f"
+checksum = "9966929966d17620d7c316c643ba62631826e10021409357772d5eea84f62c35"
 dependencies = [
  "http",
- "opentelemetry 0.31.0",
+ "opentelemetry 0.32.0",
  "opentelemetry-http",
  "opentelemetry-proto",
- "opentelemetry_sdk 0.31.0",
+ "opentelemetry_sdk 0.32.1",
  "prost",
- "reqwest 0.12.28",
+ "reqwest",
  "thiserror",
- "tracing",
 ]
 
 [[package]]
 name = "opentelemetry-proto"
-version = "0.31.0"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7175df06de5eaee9909d4805a3d07e28bb752c34cab57fa9cff549da596b30f"
+checksum = "56d658ba1faf63f7b9c492cfbe6e0ec365440a16132d3270c1065f7b33f1b638"
 dependencies = [
- "opentelemetry 0.31.0",
- "opentelemetry_sdk 0.31.0",
+ "opentelemetry 0.32.0",
+ "opentelemetry_sdk 0.32.1",
  "prost",
- "tonic",
- "tonic-prost",
 ]
 
 [[package]]
@@ -1906,7 +1904,7 @@ dependencies = [
  "opentelemetry_resourcedetector_gcp_rust",
  "opentelemetry_sdk 0.31.0",
  "rand 0.10.1",
- "reqwest 0.13.4",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror",
@@ -1925,7 +1923,7 @@ dependencies = [
  "opentelemetry 0.31.0",
  "opentelemetry_sdk 0.31.0",
  "regex",
- "reqwest 0.13.4",
+ "reqwest",
  "serde",
  "serde_json",
  "tracing",
@@ -1962,6 +1960,8 @@ dependencies = [
  "portable-atomic",
  "rand 0.9.4",
  "thiserror",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]
@@ -2383,40 +2383,6 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.28"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
-dependencies = [
- "base64",
- "bytes",
- "futures-channel",
- "futures-core",
- "futures-util",
- "http",
- "http-body",
- "http-body-util",
- "hyper",
- "hyper-util",
- "js-sys",
- "log",
- "percent-encoding",
- "pin-project-lite",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "sync_wrapper",
- "tokio",
- "tower",
- "tower-http",
- "tower-service",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "reqwest"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "219c5811de6525e5416c7d5d53bb656d3afdbc6c5af816e0802bcfa42dbdc1c3"
@@ -2424,7 +2390,9 @@ dependencies = [
  "base64",
  "bytes",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
+ "futures-util",
  "h2",
  "http",
  "http-body",
@@ -2533,9 +2501,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.40"
+version = "0.23.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef86cd5876211988985292b91c96a8f2d298df24e75989a43a3c73f2d4d8168b"
+checksum = "6b92b125634d9b795e7beca796cc790df15a7fb38323bf3196fda83292d06b1f"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -2865,7 +2833,7 @@ dependencies = [
 [[package]]
 name = "spanner-grpc-mock"
 version = "0.0.0"
-source = "git+https://github.com/googleapis/google-cloud-rust#8df1fce7faf51f6970b99b7e1ca84e03174b228d"
+source = "git+https://github.com/googleapis/google-cloud-rust#bbfc16322d84d7ede77b9ae227bd4806d0634185"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2888,10 +2856,10 @@ dependencies = [
  "clap",
  "futures",
  "google-cloud-spanner",
- "opentelemetry 0.31.0",
+ "opentelemetry 0.32.0",
  "opentelemetry-otlp",
  "opentelemetry_gcloud_monitoring_exporter",
- "opentelemetry_sdk 0.31.0",
+ "opentelemetry_sdk 0.32.1",
  "prost-types",
  "rand 0.10.1",
  "rustls",
@@ -2968,9 +2936,9 @@ dependencies = [
 
 [[package]]
 name = "sysinfo"
-version = "0.39.3"
+version = "0.39.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21d0d938c10fcda3e897e28aaddf4ab462375d411f4378cd63b1c945f69aba96"
+checksum = "2c8bd2130a9b60bee2581bf82cfe89ee836424d1f37dcfa4ce21509611684673"
 dependencies = [
  "libc",
  "memchr",
@@ -3045,9 +3013,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.49"
+version = "0.3.51"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "711a53c2d47bbd818258c498c8dbfe186a2526c631495cfe7e078567f86b8469"
+checksum = "85c17d80feb7334b40c484e45ed1a5273dfd8bfda537c3be2e74a06a6686f327"
 dependencies = [
  "deranged",
  "num-conv",
@@ -3065,9 +3033,9 @@ checksum = "9e1c906769ad99c88eaa54e728060edef082f8e358ff32030cb7c7d315e81109"
 
 [[package]]
 name = "time-macros"
-version = "0.2.29"
+version = "0.2.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71c652a3727a9cbb9a02f707f530b618ce00d0ccd762009c8c23bd191df3c17d"
+checksum = "dcef1a61bdb119096e153208ec5cbec23944ce8bca13be5c7f60c634f7403935"
 dependencies = [
  "num-conv",
  "time-core",
