@@ -33,7 +33,7 @@ if [ "$FOR_ALERTING" = "true" ]; then
 fi
 POLLING_INTERVAL="${POLLING_INTERVAL:-30}"
 BENCHMARK_TARGET="${BENCHMARK_TARGET:-cloud-run}"
-MACHINE_TYPE="${MACHINE_TYPE:-n2-standard-2}"
+MACHINE_TYPE="${MACHINE_TYPE:-}"
 
 if [[ $DURATION == *h ]]; then
   DURATION_SECONDS=$((${DURATION%h} * 3600))
@@ -91,6 +91,21 @@ if [ "$SPANNER_DISABLE_BUILTIN_METRICS" = "true" ]; then
 fi
 
 if [ "$BENCHMARK_TARGET" = "gce" ]; then
+  # Determine machine type based on requested CPU if not explicitly provided
+  if [ -z "$MACHINE_TYPE" ]; then
+    if [ "$CPU" -le 2 ]; then
+      MACHINE_TYPE="n2-standard-2"
+    elif [ "$CPU" -le 4 ]; then
+      MACHINE_TYPE="n2-standard-4"
+    elif [ "$CPU" -le 8 ]; then
+      MACHINE_TYPE="n2-standard-8"
+    else
+      MACHINE_TYPE="n2-standard-16"
+    fi
+  fi
+
+  echo "Selected GCE machine type: $MACHINE_TYPE"
+
   # Translate environment variables from --set-env-vars=K=V,K2=V2 to --container-env=K=V,K2=V2
   ENV_VARS="${ENV_FLAGS#*=}"
   GCE_ENV_FLAGS="--container-env=$ENV_VARS"
@@ -102,11 +117,17 @@ if [ "$BENCHMARK_TARGET" = "gce" ]; then
   done
 
   # Construct the self-deleting startup script (runs on host VM OS)
-  # It waits for the container to start, pins it to Core 1, waits for it to exit, then deletes the VM
+  # It waits for the container to start, dynamically detects cores on the host,
+  # pins the container to all cores except Core 0 (if multi-core), and deletes the VM on exit.
   STARTUP_SCRIPT="(
 while [ -z \"\$(docker ps -q --filter name=$JOB_NAME)\" ]; do sleep 1; done
 CID=\$(docker ps -q --filter name=$JOB_NAME)
-docker update --cpuset-cpus=1 \$CID
+NUM_CORES=\$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo)
+if [ \$NUM_CORES -gt 1 ]; then
+  docker update --cpuset-cpus=1-\$((NUM_CORES - 1)) \$CID
+else
+  docker update --cpuset-cpus=0 \$CID
+fi
 docker wait \$CID
 NAME=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/name)
 ZONE=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/zone | awk -F/ '{print \$NF}')
