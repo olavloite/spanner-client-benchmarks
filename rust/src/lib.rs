@@ -21,7 +21,9 @@ use google_cloud_auth::credentials::anonymous;
 use prost_types::{Value, value::Kind};
 use spanner_grpc_mock::MockSpanner;
 use spanner_grpc_mock::google::spanner::v1::{
-    PartialResultSet, ResultSetMetadata, Session, StructType, Type, TypeCode, struct_type::Field,
+    CommitResponse, ExecuteBatchDmlResponse, PartialResultSet, ResultSet, ResultSetMetadata,
+    ResultSetStats, Session, StructType, Transaction, Type, TypeCode, result_set_stats::RowCount,
+    struct_type::Field, transaction_selector::Selector,
 };
 
 pub static TEST_METER_PROVIDER: std::sync::OnceLock<SdkMeterProvider> = std::sync::OnceLock::new();
@@ -66,6 +68,8 @@ pub struct Args {
     pub resource_probe_interval: String,
     #[arg(long, action = ArgAction::SetTrue)]
     pub mock: bool,
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub no_metrics: bool,
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -124,54 +128,62 @@ fn get_latency_buckets() -> Vec<f64> {
     buckets
 }
 
+fn create_benchmark_metrics(provider: &SdkMeterProvider) -> BenchmarkMetrics {
+    let meter = provider.meter("spanner-benchmark");
+    let latency = meter
+        .f64_histogram("spanner_client_benchmarks/latency")
+        .with_description("Query latency in microseconds")
+        .with_unit("us")
+        .build();
+    let read_latency = meter
+        .f64_histogram("spanner_client_benchmarks/read_latency")
+        .with_description("Query latency in microseconds")
+        .with_unit("us")
+        .build();
+    let operation_count = meter
+        .u64_counter("spanner_client_benchmarks/operation_count")
+        .with_description("Total number of benchmark operations executed")
+        .with_unit("1")
+        .build();
+    let error_count = meter
+        .u64_counter("spanner_client_benchmarks/error_count")
+        .with_description("Total number of benchmark operations that failed with an error")
+        .with_unit("1")
+        .build();
+    let memory_usage = meter
+        .f64_histogram("spanner_client_benchmarks/memory_usage")
+        .with_description("Active memory usage in bytes")
+        .with_unit("By")
+        .build();
+    let cpu_utilization = meter
+        .f64_histogram("spanner_client_benchmarks/cpu_utilization")
+        .with_description("Process CPU utilization")
+        .with_unit("1")
+        .build();
+    BenchmarkMetrics {
+        latency,
+        read_latency,
+        operation_count,
+        error_count,
+        memory_usage,
+        cpu_utilization,
+    }
+}
+
 async fn setup_metrics(
     project_id: &str,
     benchmark_name: Option<String>,
+    no_metrics: bool,
 ) -> anyhow::Result<(BenchmarkMetrics, SdkMeterProvider, bool)> {
     if let Some(provider) = TEST_METER_PROVIDER.get() {
-        let meter = provider.meter("spanner-benchmark");
-        let latency = meter
-            .f64_histogram("spanner_client_benchmarks/latency")
-            .with_description("Query latency in microseconds")
-            .with_unit("us")
-            .build();
-        let read_latency = meter
-            .f64_histogram("spanner_client_benchmarks/read_latency")
-            .with_description("Query latency in microseconds")
-            .with_unit("us")
-            .build();
-        let operation_count = meter
-            .u64_counter("spanner_client_benchmarks/operation_count")
-            .with_description("Total number of benchmark operations executed")
-            .with_unit("1")
-            .build();
-        let error_count = meter
-            .u64_counter("spanner_client_benchmarks/error_count")
-            .with_description("Total number of benchmark operations that failed with an error")
-            .with_unit("1")
-            .build();
-        let memory_usage = meter
-            .f64_histogram("spanner_client_benchmarks/memory_usage")
-            .with_description("Active memory usage in bytes")
-            .with_unit("By")
-            .build();
-        let cpu_utilization = meter
-            .f64_histogram("spanner_client_benchmarks/cpu_utilization")
-            .with_description("Process CPU utilization")
-            .with_unit("1")
-            .build();
-        return Ok((
-            BenchmarkMetrics {
-                latency,
-                read_latency,
-                operation_count,
-                error_count,
-                memory_usage,
-                cpu_utilization,
-            },
-            provider.clone(),
-            false,
-        ));
+        let metrics = create_benchmark_metrics(provider);
+        return Ok((metrics, provider.clone(), false));
+    }
+
+    if no_metrics {
+        let provider = SdkMeterProvider::builder().build();
+        let metrics = create_benchmark_metrics(&provider);
+        return Ok((metrics, provider, true));
     }
 
     let config = GCPMetricsExporterConfig {
@@ -386,9 +398,6 @@ pub fn run_task_closed_loop(
 
 pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
     // Validation
-    if args.mock && !matches!(args.command, Commands::PointSelect { .. }) {
-        anyhow::bail!("mock is only supported for point-select benchmark");
-    }
 
     match args.load_type {
         LoadType::Steady => {
@@ -477,7 +486,7 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
 
     let duration = load_type::parse_duration(&args.duration);
     let (metrics, _meter_provider, is_owned_provider) =
-        setup_metrics(&args.project, args.benchmark_name.clone()).await?;
+        setup_metrics(&args.project, args.benchmark_name.clone(), args.no_metrics).await?;
 
     if let Commands::Tpcc {
         warehouses,
@@ -607,13 +616,120 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn start_mock_spanner_server(
-    table_name: &str,
-) -> anyhow::Result<(String, tokio::task::JoinHandle<()>)> {
-    let mut mock = MockSpanner::new();
+fn mock_field(name: &str, code: TypeCode) -> Field {
+    Field {
+        name: name.to_string(),
+        r#type: Some(Type {
+            code: code as i32,
+            array_element_type: None,
+            struct_type: None,
+            type_annotation: 0,
+            proto_type_fqn: "".to_string(),
+        }),
+    }
+}
+
+fn string_value(val: &str) -> Value {
+    Value {
+        kind: Some(Kind::StringValue(val.to_string())),
+    }
+}
+
+fn bool_value(val: bool) -> Value {
+    Value {
+        kind: Some(Kind::BoolValue(val)),
+    }
+}
+
+fn number_value(val: f64) -> Value {
+    Value {
+        kind: Some(Kind::NumberValue(val)),
+    }
+}
+
+pub fn register_all_mock_results(mock: &mut MockSpanner, table_name: &str) {
     mock.expect_create_session().returning(|_| {
         Ok(tonic::Response::new(Session {
             name: "projects/p/instances/i/databases/d/sessions/123".to_string(),
+            ..Default::default()
+        }))
+    });
+
+    mock.expect_begin_transaction().returning(|_| {
+        Ok(tonic::Response::new(Transaction {
+            id: vec![1, 2, 3],
+            ..Default::default()
+        }))
+    });
+
+    mock.expect_commit().returning(|_| {
+        Ok(tonic::Response::new(CommitResponse {
+            commit_timestamp: Some(prost_types::Timestamp {
+                seconds: 12345,
+                nanos: 0,
+            }),
+            ..Default::default()
+        }))
+    });
+
+    mock.expect_execute_batch_dml().returning(|req| {
+        let req = req.into_inner();
+        let count = req.statements.len();
+        let transaction = req
+            .transaction
+            .and_then(|t| t.selector)
+            .and_then(|s| match s {
+                Selector::Begin(_) | Selector::Id(_) => Some(Transaction {
+                    id: vec![1, 2, 3],
+                    ..Default::default()
+                }),
+                _ => None,
+            });
+        let result_sets = (0..count)
+            .map(|_| ResultSet {
+                stats: Some(ResultSetStats {
+                    row_count: Some(RowCount::RowCountExact(1)),
+                    ..Default::default()
+                }),
+                metadata: Some(ResultSetMetadata {
+                    transaction: transaction.clone(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .collect();
+        Ok(tonic::Response::new(ExecuteBatchDmlResponse {
+            result_sets,
+            status: Some(spanner_grpc_mock::google::rpc::Status {
+                code: 0,
+                message: "OK".to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }))
+    });
+
+    mock.expect_execute_sql().returning(|req| {
+        let req = req.into_inner();
+        let transaction = req
+            .transaction
+            .and_then(|t| t.selector)
+            .and_then(|s| match s {
+                Selector::Begin(_) | Selector::Id(_) => Some(Transaction {
+                    id: vec![1, 2, 3],
+                    ..Default::default()
+                }),
+                _ => None,
+            });
+        Ok(tonic::Response::new(ResultSet {
+            stats: Some(ResultSetStats {
+                row_count: Some(RowCount::RowCountExact(1)),
+                ..Default::default()
+            }),
+            metadata: Some(ResultSetMetadata {
+                transaction,
+                ..Default::default()
+            }),
             ..Default::default()
         }))
     });
@@ -622,37 +738,302 @@ async fn start_mock_spanner_server(
     mock.expect_execute_streaming_sql().returning(move |req| {
         let req = req.into_inner();
         let sql = req.sql;
+        let transaction = req
+            .transaction
+            .and_then(|t| t.selector)
+            .and_then(|s| match s {
+                Selector::Begin(_) | Selector::Id(_) => Some(Transaction {
+                    id: vec![1, 2, 3],
+                    ..Default::default()
+                }),
+                _ => None,
+            });
         let (tx, rx) = tokio::sync::mpsc::channel(1);
-        let result_set = if sql.contains(&format!("FROM {}", target_table)) {
+
+        let result_set = if sql.contains("SELECT id, value FROM")
+            || sql.contains(&format!("FROM {}", target_table))
+        {
             PartialResultSet {
                 metadata: Some(ResultSetMetadata {
                     row_type: Some(StructType {
                         fields: vec![
-                            Field {
-                                name: "id".to_string(),
-                                r#type: Some(Type {
-                                    code: TypeCode::Int64 as i32,
-                                    ..Default::default()
-                                }),
-                            },
-                            Field {
-                                name: "value".to_string(),
-                                r#type: Some(Type {
-                                    code: TypeCode::String as i32,
-                                    ..Default::default()
-                                }),
-                            },
+                            mock_field("id", TypeCode::Int64),
+                            mock_field("value", TypeCode::String),
+                        ],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![string_value("1"), string_value("test-value")],
+                last: true,
+                ..Default::default()
+            }
+        } else if sql.contains("SELECT id FROM") {
+            PartialResultSet {
+                metadata: Some(ResultSetMetadata {
+                    row_type: Some(StructType {
+                        fields: vec![mock_field("id", TypeCode::Int64)],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![string_value("1")],
+                last: true,
+                ..Default::default()
+            }
+        } else if sql.contains("random_bool") {
+            PartialResultSet {
+                metadata: Some(ResultSetMetadata {
+                    row_type: Some(StructType {
+                        fields: vec![
+                            mock_field("random_bool", TypeCode::Bool),
+                            mock_field("random_bytes", TypeCode::Bytes),
+                            mock_field("random_date", TypeCode::Date),
+                            mock_field("random_float32", TypeCode::Float32),
+                            mock_field("random_float64", TypeCode::Float64),
+                            mock_field("random_json", TypeCode::Json),
+                            mock_field("random_int64", TypeCode::Int64),
+                            mock_field("random_string", TypeCode::String),
+                            mock_field("random_timestamp", TypeCode::Timestamp),
                         ],
                     }),
                     ..Default::default()
                 }),
                 values: vec![
-                    Value {
-                        kind: Some(Kind::StringValue("1".to_string())),
-                    },
-                    Value {
-                        kind: Some(Kind::StringValue("test-value".to_string())),
-                    },
+                    bool_value(true),
+                    string_value("YWJj"),
+                    string_value("2026-06-02"),
+                    number_value(1.23),
+                    number_value(4.56),
+                    string_value("{\"key\": \"val\"}"),
+                    string_value("100"),
+                    string_value("hello"),
+                    string_value("2026-06-02T13:43:09Z"),
+                ],
+                last: true,
+                ..Default::default()
+            }
+        } else if sql.contains("SELECT COUNT(*) FROM warehouse") {
+            PartialResultSet {
+                metadata: Some(ResultSetMetadata {
+                    row_type: Some(StructType {
+                        fields: vec![mock_field("count", TypeCode::Int64)],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![string_value("1")],
+                last: true,
+                ..Default::default()
+            }
+        } else if sql.contains("SELECT next_order_id") {
+            PartialResultSet {
+                metadata: Some(ResultSetMetadata {
+                    row_type: Some(StructType {
+                        fields: vec![mock_field("next_order_id", TypeCode::Int64)],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![string_value("1000")],
+                last: true,
+                ..Default::default()
+            }
+        } else if sql.contains("discount, last_name FROM customer") {
+            PartialResultSet {
+                metadata: Some(ResultSetMetadata {
+                    row_type: Some(StructType {
+                        fields: vec![
+                            mock_field("discount", TypeCode::Float64),
+                            mock_field("last_name", TypeCode::String),
+                        ],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![number_value(0.10), string_value("last_name")],
+                last: true,
+                ..Default::default()
+            }
+        } else if sql.contains("balance, first_name, last_name FROM customer") {
+            PartialResultSet {
+                metadata: Some(ResultSetMetadata {
+                    row_type: Some(StructType {
+                        fields: vec![
+                            mock_field("balance", TypeCode::Float64),
+                            mock_field("first_name", TypeCode::String),
+                            mock_field("last_name", TypeCode::String),
+                        ],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![
+                    number_value(100.0),
+                    string_value("first"),
+                    string_value("last"),
+                ],
+                last: true,
+                ..Default::default()
+            }
+        } else if sql.contains("order_id FROM orders") {
+            PartialResultSet {
+                metadata: Some(ResultSetMetadata {
+                    row_type: Some(StructType {
+                        fields: vec![mock_field("order_id", TypeCode::Int64)],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![string_value("5")],
+                last: true,
+                ..Default::default()
+            }
+        } else if sql.contains("order_line_id, item_id, quantity, amount") {
+            PartialResultSet {
+                metadata: Some(ResultSetMetadata {
+                    row_type: Some(StructType {
+                        fields: vec![
+                            mock_field("order_line_id", TypeCode::Int64),
+                            mock_field("item_id", TypeCode::Int64),
+                            mock_field("quantity", TypeCode::Int64),
+                            mock_field("amount", TypeCode::Float64),
+                        ],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![
+                    string_value("1"),
+                    string_value("123"),
+                    string_value("5"),
+                    number_value(25.0),
+                ],
+                last: true,
+                ..Default::default()
+            }
+        } else if sql.contains("order_id FROM new_orders") {
+            PartialResultSet {
+                metadata: Some(ResultSetMetadata {
+                    row_type: Some(StructType {
+                        fields: vec![mock_field("order_id", TypeCode::Int64)],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![string_value("5")],
+                last: true,
+                ..Default::default()
+            }
+        } else {
+            PartialResultSet {
+                last: true,
+                ..Default::default()
+            }
+        };
+
+        let mut result_set = result_set;
+        if let Some(meta) = &mut result_set.metadata {
+            meta.transaction = transaction;
+        } else {
+            result_set.metadata = Some(ResultSetMetadata {
+                transaction,
+                ..Default::default()
+            });
+        }
+        tx.try_send(Ok(result_set))
+            .expect("Failed to send mock result_set");
+
+        Ok(tonic::Response::from(rx))
+    });
+
+    mock.expect_streaming_read().returning(move |req| {
+        let req = req.into_inner();
+        let table = req.table;
+        let transaction = req
+            .transaction
+            .and_then(|t| t.selector)
+            .and_then(|s| match s {
+                Selector::Begin(_) | Selector::Id(_) => Some(Transaction {
+                    id: vec![1, 2, 3],
+                    ..Default::default()
+                }),
+                _ => None,
+            });
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        let mut result_set = if table == "district" {
+            PartialResultSet {
+                metadata: Some(ResultSetMetadata {
+                    row_type: Some(StructType {
+                        fields: vec![mock_field("next_order_id", TypeCode::Int64)],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![string_value("1000")],
+                last: true,
+                ..Default::default()
+            }
+        } else if table == "customer" {
+            if req.columns.len() == 2 {
+                PartialResultSet {
+                    metadata: Some(ResultSetMetadata {
+                        row_type: Some(StructType {
+                            fields: vec![
+                                mock_field("discount", TypeCode::Float64),
+                                mock_field("last_name", TypeCode::String),
+                            ],
+                        }),
+                        ..Default::default()
+                    }),
+                    values: vec![number_value(0.10), string_value("last_name")],
+                    last: true,
+                    ..Default::default()
+                }
+            } else {
+                PartialResultSet {
+                    metadata: Some(ResultSetMetadata {
+                        row_type: Some(StructType {
+                            fields: vec![
+                                mock_field("balance", TypeCode::Float64),
+                                mock_field("first_name", TypeCode::String),
+                                mock_field("last_name", TypeCode::String),
+                            ],
+                        }),
+                        ..Default::default()
+                    }),
+                    values: vec![
+                        number_value(100.0),
+                        string_value("first"),
+                        string_value("last"),
+                    ],
+                    last: true,
+                    ..Default::default()
+                }
+            }
+        } else if table == "stock" {
+            PartialResultSet {
+                metadata: Some(ResultSetMetadata {
+                    row_type: Some(StructType {
+                        fields: vec![
+                            mock_field("item_id", TypeCode::Int64),
+                            mock_field("quantity", TypeCode::Int64),
+                        ],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![string_value("123"), string_value("50")],
+                last: true,
+                ..Default::default()
+            }
+        } else if table == "order_line" {
+            PartialResultSet {
+                metadata: Some(ResultSetMetadata {
+                    row_type: Some(StructType {
+                        fields: vec![
+                            mock_field("order_line_id", TypeCode::Int64),
+                            mock_field("item_id", TypeCode::Int64),
+                            mock_field("quantity", TypeCode::Int64),
+                            mock_field("amount", TypeCode::Float64),
+                        ],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![
+                    string_value("1"),
+                    string_value("123"),
+                    string_value("5"),
+                    number_value(25.0),
                 ],
                 last: true,
                 ..Default::default()
@@ -663,10 +1044,27 @@ async fn start_mock_spanner_server(
                 ..Default::default()
             }
         };
+
+        if let Some(meta) = &mut result_set.metadata {
+            meta.transaction = transaction;
+        } else {
+            result_set.metadata = Some(ResultSetMetadata {
+                transaction,
+                ..Default::default()
+            });
+        }
         tx.try_send(Ok(result_set))
             .expect("Failed to send mock result_set");
+
         Ok(tonic::Response::from(rx))
     });
+}
+
+async fn start_mock_spanner_server(
+    table_name: &str,
+) -> anyhow::Result<(String, tokio::task::JoinHandle<()>)> {
+    let mut mock = MockSpanner::new();
+    register_all_mock_results(&mut mock, table_name);
 
     let (address, server) = spanner_grpc_mock::start("127.0.0.1:0", mock)
         .await

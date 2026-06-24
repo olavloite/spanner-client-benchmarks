@@ -154,6 +154,12 @@ def main():
         default=False,
         help="Use a Unix Domain Socket instead of TCP loopback for the mock server connection.",
     )
+    parser.add_argument(
+        "--no-metrics",
+        action="store_true",
+        default=False,
+        help="Disable metrics exporting (for testing purposes).",
+    )
 
     # Common workload flags for all subparsers
     workload_parser = argparse.ArgumentParser(add_help=False)
@@ -276,15 +282,6 @@ def main():
 
     args = parser.parse_args()
 
-    # Validation of --mock constraint
-    if args.mock:
-        if args.command != "point-select":
-            print(
-                "Error: The --mock option is currently only supported with the 'point-select' workload.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
     # Validation and filling defaults
     burst_factor, burst_duration, burst_fraction, cycle_duration_str, peak_factor = (
         validate_and_fill_load_params(args)
@@ -327,7 +324,9 @@ def main():
 
     # 1. Setup OpenTelemetry metrics provider and instruments
     meter, shutdown_metrics = setup_metrics(
-        args.project, is_emulator and not args.mock, args.benchmark_name
+        args.project,
+        is_emulator and not args.mock or args.no_metrics,
+        args.benchmark_name,
     )
 
     # Create shared metrics instruments (us unit matching standard spec)
