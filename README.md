@@ -111,12 +111,14 @@ These options generate a sine-wave shaped load pattern where traffic varies peri
 
 These variables can be set as environment variables before executing `./run_benchmark.sh` to customize deployment-specific resources or configurations:
 
-- `REGION`: Target Google Cloud region for deploying the Cloud Run job. Defaults to `europe-north1`.
-- `CPU`: Number of vCPUs allocated to the Cloud Run task. Defaults to `8` (GitHub Actions workflows override this to `2` to optimize cost).
-- `MEMORY`: Memory size allocated to the Cloud Run task. Defaults to `32Gi` (GitHub Actions workflows override this to `1Gi` to optimize cost).
+- `BENCHMARK_TARGET`: Target platform for benchmark execution. Defaults to `gce`. Supported values are `gce` (Google Compute Engine Spot VMs) and `cloud-run` (Google Cloud Run Jobs).
+- `REGION`: Target Google Cloud region for deploying the benchmark. Defaults to `europe-north1`.
+- `CPU`: Number of vCPUs allocated to the benchmark task. Defaults to `2`. For GCE, this determines the machine type (e.g., `2` maps to `n2-standard-2`, `4` to `n2-standard-4`, `8` to `n2-standard-8`). For Cloud Run, this sets the task vCPU allocation.
+- `MEMORY`: Memory size allocated to the task (only applicable for the `cloud-run` target). Defaults to `2Gi`.
 - `SPANNER_DISABLE_BUILTIN_METRICS`: Set to `true` to disable client-side OpenTelemetry metrics emission inside the benchmark runner. Defaults to `false`.
 - `POLLING_INTERVAL`: Cloud Build polling interval in seconds. Defaults to `30`.
 - `SKIP_CLEANUP`: Set to `true` to skip running the automatic cleanup script (`cleanup_benchmarks.sh`) before deployment. Defaults to `false`.
+
 
 ---
 
@@ -149,20 +151,20 @@ export USE_RELEASED_VERSION="false"
 ./run_benchmark_locally.sh go --project <PROJECT_ID> --instance <INSTANCE_ID> --database <DATABASE_ID> --table <TABLE_NAME> point-select --tps 100
 ```
 
-### 2. Cloud Run Jobs
-Benchmarks are designed to run natively as Cloud Run Jobs for sustained performance tracking. To package and deploy them to the cloud:
+### 2. Cloud Deployments (GCE by default, or Cloud Run)
+Benchmarks are designed to run on GCE VM Spot instances for sustained, predictable performance tracking. They can also be deployed as Cloud Run Jobs. To package and deploy them to the cloud:
 ```bash
 ./run_benchmark.sh <go|java|node|python|rust>
 ```
 This will:
 - Pull the latest client library code from the official upstream repository.
 - Build a lightweight Docker container via **Cloud Build**.
-- Deploy and execute a **Cloud Run Job** configured with the required environment variables.
+- Deploy and execute a **GCE Spot Instance VM** (or a **Cloud Run Job** if `BENCHMARK_TARGET=cloud-run` is set) configured with the required environment variables.
 
 > [!TIP]
-> You can customize execution parameters (e.g., `PROJECT_ID`, `TPS`, `THREADS`, `DURATION`, etc.) by declaring environment variables before running the scripts.
+> You can customize execution parameters (e.g., `BENCHMARK_TARGET`, `PROJECT_ID`, `TPS`, `THREADS`, `DURATION`, etc.) by declaring environment variables before running the scripts.
 
-### 3. Running Experimental Branch Builds in Cloud Run
+### 3. Running Experimental Branch Builds in the Cloud
 
 If you are testing experimental client library changes pushed to a specific GitHub branch, you can easily benchmark them by specifying `CLIENT_BRANCH` and `BENCHMARK_NAME`.
 
@@ -179,6 +181,7 @@ export BENCHMARK_TYPE="read-large-result-set"
 This will:
 - Clone the specific `feature/fast-decoder` branch from the upstream repository.
 - Include the attribute `benchmark_name="exp-fast-decoder"` in all emitted OpenTelemetry metrics, allowing you to easily filter and compare your experiment in Google Cloud Monitoring.
+
 
 ### 4. Running TPC-C Benchmark
 

@@ -36,8 +36,9 @@ The benchmark's [java/Dockerfile](java/Dockerfile) leverages a **multi-stage bui
 When executing `./run_benchmark.sh java`:
 1. The workspace context is uploaded to **Google Cloud Build** via `gcloud builds submit`.
 2. Cloud Build compiles the source code and builds the Docker image inside Artifact Registry.
-3. The runner deploys the image as a **Google Cloud Run Job**, overriding vCPU, Memory, and runtime environment parameters.
-4. The runner triggers a job execution, executing the Point-Select or Select-Update workload natively in Google Cloud staging.
+3. The runner deploys the image to the cloud. By default, it provisions a dedicated **GCE Spot Instance VM** running the benchmark container (optimized with Core 0 CPU affinity exclusion for performance predictability). Alternatively, it can deploy and execute as a **Google Cloud Run Job** if `BENCHMARK_TARGET=cloud-run` is specified.
+4. The benchmark runner executes the target benchmark workload (e.g., `point-select`, `select-update`, `tpcc`) within the configured Google Cloud project.
+
 
 ---
 
