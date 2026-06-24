@@ -23,7 +23,7 @@ DATABASE_ID="${DATABASE_ID:-spring-data-jpa}"
 TABLE_NAME="${TABLE_NAME:-test}"
 BENCHMARK_TYPE="${BENCHMARK_TYPE:-point-select}"
 CPU="${CPU:-2}"
-MEMORY="${MEMORY:-32Gi}"
+MEMORY="${MEMORY:-2Gi}"
 REGION="${REGION:-europe-north1}"
 DURATION="${DURATION:-60m}"
 FOR_ALERTING="${FOR_ALERTING:-false}"
@@ -32,7 +32,7 @@ if [ "$FOR_ALERTING" = "true" ]; then
   FOR_ALERTING_FLAG="--for-alerting=true,"
 fi
 POLLING_INTERVAL="${POLLING_INTERVAL:-30}"
-BENCHMARK_TARGET="${BENCHMARK_TARGET:-cloud-run}"
+BENCHMARK_TARGET="${BENCHMARK_TARGET:-gce}"
 MACHINE_TYPE="${MACHINE_TYPE:-}"
 
 if [[ $DURATION == *h ]]; then
