@@ -18,9 +18,13 @@ ENV CGO_ENABLED=0
 ENV GOOS=linux
 
 RUN chmod +x build_app.sh && ./build_app.sh
+RUN cd generator && go build -o /app/workload-generator .
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 COPY --from=build /app/benchmark-app ./benchmark
-ENTRYPOINT ["./benchmark"]
+COPY --from=build /app/workload-generator /usr/local/bin/workload-generator
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+ENTRYPOINT ["./entrypoint.sh", "./benchmark"]

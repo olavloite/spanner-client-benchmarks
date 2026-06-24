@@ -56,6 +56,19 @@ fi
 
 cd "$CLIENT_TYPE"
 
+# Setup cleanup trap to remove temp files on script exit
+cleanup_temp_files() {
+  echo "Cleaning up temporary sidecar files in $CLIENT_TYPE..."
+  rm -rf ./generator
+  rm -f ./entrypoint.sh
+}
+trap cleanup_temp_files EXIT
+
+# Copy generator and entrypoint into client directory
+echo "Copying generator and entrypoint for container build..."
+cp -r ../generator ./generator
+cp ../entrypoint.sh ./entrypoint.sh
+
 SUFFIX="$(date +%s)-$(head -c 100 /dev/urandom | LC_ALL=C tr -dc 'a-z0-9' | head -c 4)"
 IMAGE_NAME="${IMAGE_NAME:-$REGION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/spanner-$CLIENT_TYPE-benchmark:$SUFFIX}"
 JOB_NAME="${JOB_NAME:-sb-$BENCHMARK_TYPE-$CLIENT_TYPE-$SUFFIX}"
@@ -63,6 +76,9 @@ JOB_NAME="${JOB_NAME:-sb-$BENCHMARK_TYPE-$CLIENT_TYPE-$SUFFIX}"
 # Build the image using Cloud Build
 echo "Building image with Cloud Build for $CLIENT_TYPE..."
 gcloud builds submit --project "$PROJECT_ID" --config ../cloudbuild.yaml --substitutions="_IMAGE_NAME=$IMAGE_NAME,_USE_RELEASED_VERSION=${USE_RELEASED_VERSION:-false},_CLIENT_BRANCH=${CLIENT_BRANCH:-main},_CLIENT_REPO=${CLIENT_REPO:-}" --polling-interval="$POLLING_INTERVAL" .
+
+cleanup_temp_files
+trap - EXIT
 
 BENCHMARK_NAME_FLAG=""
 if [ -n "$BENCHMARK_NAME" ]; then
@@ -100,6 +116,17 @@ if [ "$SPANNER_DISABLE_BUILTIN_METRICS" = "true" ]; then
   ENV_FLAGS="${ENV_FLAGS},SPANNER_DISABLE_BUILTIN_METRICS=true"
 fi
 
+# Add sidecar configuration env vars
+ENV_FLAGS="${ENV_FLAGS},USE_SIDECAR=${USE_SIDECAR:-false}"
+if [ -n "$LOAD_TYPE" ]; then ENV_FLAGS="${ENV_FLAGS},LOAD_TYPE=$LOAD_TYPE"; fi
+if [ -n "$TPS" ]; then ENV_FLAGS="${ENV_FLAGS},TPS=$TPS"; fi
+if [ -n "$DURATION" ]; then ENV_FLAGS="${ENV_FLAGS},DURATION=$DURATION"; fi
+if [ -n "$CYCLE_DURATION" ]; then ENV_FLAGS="${ENV_FLAGS},CYCLE_DURATION=$CYCLE_DURATION"; fi
+if [ -n "$PEAK_FACTOR" ]; then ENV_FLAGS="${ENV_FLAGS},PEAK_FACTOR=$PEAK_FACTOR"; fi
+if [ -n "$BURST_FACTOR" ]; then ENV_FLAGS="${ENV_FLAGS},BURST_FACTOR=$BURST_FACTOR"; fi
+if [ -n "$BURST_DURATION" ]; then ENV_FLAGS="${ENV_FLAGS},BURST_DURATION=$BURST_DURATION"; fi
+if [ -n "$BURST_FRACTION" ]; then ENV_FLAGS="${ENV_FLAGS},BURST_FRACTION=$BURST_FRACTION"; fi
+
 if [ "$BENCHMARK_TARGET" = "gce" ]; then
   # Determine machine type based on requested CPU if not explicitly provided
   if [ -z "$MACHINE_TYPE" ]; then
@@ -129,6 +156,18 @@ if [ "$BENCHMARK_TARGET" = "gce" ]; then
   # Construct the self-deleting startup script (runs on host VM OS)
   # It waits for the container to start, dynamically detects cores on the host,
   # pins the container to all cores except Core 0 (if multi-core), and deletes the VM on exit.
+  SKIP_VM_CLEANUP="${SKIP_VM_CLEANUP:-false}"
+  DELETE_VM_CMD=""
+  if [ "$SKIP_VM_CLEANUP" = "false" ]; then
+    DELETE_VM_CMD="NAME=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/name)
+ZONE=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/zone | awk -F/ '{print \$NF}')
+PROJECT=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/project/project-id)
+TOKEN=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | sed -e 's/.*\"access_token\":\"\([^\"]*\)\".*/\1/')
+curl -s -X DELETE \
+  -H \"Authorization: Bearer \$TOKEN\" \
+  \"https://compute.googleapis.com/compute/v1/projects/\$PROJECT/zones/\$ZONE/instances/\$NAME\""
+  fi
+
   STARTUP_SCRIPT="(
 while [ -z \"\$(docker ps -q --filter name=$JOB_NAME)\" ]; do sleep 1; done
 CID=\$(docker ps -q --filter name=$JOB_NAME)
@@ -139,13 +178,7 @@ else
   docker update --cpuset-cpus=0 \$CID
 fi
 docker wait \$CID
-NAME=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/name)
-ZONE=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/zone | awk -F/ '{print \$NF}')
-PROJECT=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/project/project-id)
-TOKEN=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | sed -e 's/.*\"access_token\":\"\([^\"]*\)\".*/\1/')
-curl -s -X DELETE \
-  -H \"Authorization: Bearer \$TOKEN\" \
-  \"https://compute.googleapis.com/compute/v1/projects/\$PROJECT/zones/\$ZONE/instances/\$NAME\"
+$DELETE_VM_CMD
 ) >/tmp/startup_script.log 2>&1 &"
 
   echo "Deploying dedicated GCE Spot instance VM..."
@@ -155,6 +188,7 @@ curl -s -X DELETE \
     --project="$PROJECT_ID" \
     --zone="$VM_ZONE" \
     --machine-type="$MACHINE_TYPE" \
+    --no-address \
     --scopes="cloud-platform" \
     --service-account="spanner-client-benchmarks@$PROJECT_ID.iam.gserviceaccount.com" \
     --provisioning-model=SPOT \

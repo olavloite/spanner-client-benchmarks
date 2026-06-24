@@ -3,6 +3,7 @@ import {Histogram, Counter} from '@opentelemetry/api';
 import {Worker} from 'worker_threads';
 import * as path from 'path';
 import * as os from 'os';
+import * as net from 'net';
 import {LoadType} from './load-type';
 import {ResourceMonitor} from '../utils/resource-monitor';
 export {LoadType};
@@ -47,6 +48,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
   private lastQueueLogTime = 0;
   private isStopped = false;
   private worker: Worker | null = null;
+  private socketClient?: net.Socket;
   private rBurst: number;
   private rNormal: number;
 
@@ -169,42 +171,47 @@ export abstract class AbstractBenchmark implements IBenchmark {
       });
     }
 
-    const sab = new SharedArrayBuffer(4);
-    const int32Array = new Int32Array(sab);
+    const socketPath = process.env.SPANNER_BENCHMARK_SOCKET;
+    if (socketPath) {
+      this.runSocketTriggeredGenerator(socketPath);
+    } else {
+      const sab = new SharedArrayBuffer(4);
+      const int32Array = new Int32Array(sab);
 
-    const workerPath = path.join(__dirname, 'scheduler-worker.js');
-    this.worker = new Worker(workerPath, {
-      workerData: {
-        tps: this.tps,
-        loadType: this.loadType,
-        burstFactor: this.burstFactor,
-        burstDuration: this.burstDuration,
-        burstFraction: this.burstFraction,
-        cycleDurationMs: this.cycleDurationMs,
-        peakFactor: this.peakFactor,
-        rBurst: this.rBurst,
-        rNormal: this.rNormal,
-        sab: sab,
-      },
-    });
+      const workerPath = path.join(__dirname, 'scheduler-worker.js');
+      this.worker = new Worker(workerPath, {
+        workerData: {
+          tps: this.tps,
+          loadType: this.loadType,
+          burstFactor: this.burstFactor,
+          burstDuration: this.burstDuration,
+          burstFraction: this.burstFraction,
+          cycleDurationMs: this.cycleDurationMs,
+          peakFactor: this.peakFactor,
+          rBurst: this.rBurst,
+          rNormal: this.rNormal,
+          sab: sab,
+        },
+      });
 
-    this.worker.on('message', msg => {
-      if (msg.type === 'spawn') {
-        for (let i = 0; i < msg.count; i++) {
-          this.submitTask();
+      this.worker.on('message', msg => {
+        if (msg.type === 'spawn') {
+          for (let i = 0; i < msg.count; i++) {
+            this.submitTask();
+          }
         }
-      }
-    });
+      });
 
-    this.worker.on('error', err => {
-      console.error('Worker error:', err);
-    });
+      this.worker.on('error', err => {
+        console.error('Worker error:', err);
+      });
 
-    this.worker.on('exit', code => {
-      if (code !== 0) {
-        console.error(`Worker stopped with exit code ${code}`);
-      }
-    });
+      this.worker.on('exit', code => {
+        if (code !== 0) {
+          console.error(`Worker stopped with exit code ${code}`);
+        }
+      });
+    }
 
     // Block and wait until the benchmark is stopped and all tasks are finished or cancelled
     return new Promise<void>(resolve => {
@@ -234,9 +241,40 @@ export abstract class AbstractBenchmark implements IBenchmark {
     if (this.worker) {
       this.worker.terminate();
     }
+    if (this.socketClient) {
+      this.socketClient.destroy();
+    }
     if (this.resourceMonitor) {
       this.resourceMonitor.stop();
     }
+  }
+
+  private runSocketTriggeredGenerator(socketPath: string): void {
+    console.log(
+      `Connecting to workload generator sidecar socket: ${socketPath}`,
+    );
+    this.socketClient = net.createConnection(socketPath, () => {
+      console.log('Connected to workload generator sidecar. Sending READY...');
+      this.socketClient?.write('READY\n');
+    });
+
+    this.socketClient.on('data', data => {
+      // Each trigger event is 0x01 byte. If multiple bytes are received, run submitTask() multiple times.
+      for (let i = 0; i < data.length; i++) {
+        if (data[i] === 0x01) {
+          this.submitTask();
+        }
+      }
+    });
+
+    this.socketClient.on('error', err => {
+      console.error('Socket client error:', err);
+    });
+
+    this.socketClient.on('close', () => {
+      console.log('Workload generator socket connection closed.');
+      this.stop(); // Stops resource monitoring and triggers waiter cleanup
+    });
   }
 
   /**

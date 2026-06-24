@@ -2,6 +2,7 @@ import abc
 import math
 import os
 import random
+import socket
 import sys
 import threading
 import time
@@ -154,6 +155,7 @@ class AbstractBenchmark(abc.ABC):
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=threads)
         self._generator_thread: Optional[threading.Thread] = None
+        self._socket: Optional[socket.socket] = None
 
     @abc.abstractmethod
     def execute_operation(
@@ -187,11 +189,20 @@ class AbstractBenchmark(abc.ABC):
             for _ in range(self.threads):
                 self._executor.submit(self._closed_loop_worker)
         else:
-            self._generator_thread = threading.Thread(
-                target=self._workload_generator,
-                name="TPS-WorkloadGenerator",
-                daemon=True,
-            )
+            socket_path = os.environ.get("SPANNER_BENCHMARK_SOCKET")
+            if socket_path:
+                self._generator_thread = threading.Thread(
+                    target=self._socket_triggered_generator,
+                    args=(socket_path,),
+                    name="Socket-WorkloadGenerator",
+                    daemon=True,
+                )
+            else:
+                self._generator_thread = threading.Thread(
+                    target=self._workload_generator,
+                    name="TPS-WorkloadGenerator",
+                    daemon=True,
+                )
             self._generator_thread.start()
             self._start_resource_monitoring()
 
@@ -274,6 +285,40 @@ class AbstractBenchmark(abc.ABC):
     def stop(self) -> None:
         """Gracefully instructs the workload generator to cease spawning new operations."""
         self.is_stopped = True
+        if self._socket:
+            try:
+                self._socket.close()
+            except Exception:
+                pass
+
+    def _socket_triggered_generator(self, socket_path: str) -> None:
+        """
+        Unix Domain Socket client listener that reads triggers from sidecar.
+        """
+        print(f"Connecting to workload generator sidecar socket: {socket_path}")
+        try:
+            self._socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self._socket.connect(socket_path)
+            self._socket.sendall(b"READY\n")
+        except Exception as e:
+            print(f"Failed to connect to sidecar socket: {e}", file=sys.stderr)
+            self.stop()
+            return
+
+        try:
+            while not self.is_stopped:
+                data = self._socket.recv(1024)
+                if not data:
+                    print("Workload generator socket connection closed by server.")
+                    break
+                for byte in data:
+                    if byte == 0x01:
+                        self._submit_task()
+        except Exception as e:
+            if not self.is_stopped:
+                print(f"Socket reader loop error: {e}", file=sys.stderr)
+        finally:
+            self.stop()
 
     def _workload_generator(self) -> None:
         """
