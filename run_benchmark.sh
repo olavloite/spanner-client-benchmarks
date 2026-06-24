@@ -22,8 +22,8 @@ INSTANCE_ID="${INSTANCE_ID:-knut-test-ycsb}"
 DATABASE_ID="${DATABASE_ID:-spring-data-jpa}"
 TABLE_NAME="${TABLE_NAME:-test}"
 BENCHMARK_TYPE="${BENCHMARK_TYPE:-point-select}"
-CPU="${CPU:-2}"
-MEMORY="${MEMORY:-2Gi}"
+CPU="${CPU:-4}"
+MEMORY="${MEMORY:-4Gi}"
 REGION="${REGION:-europe-north1}"
 DURATION="${DURATION:-60m}"
 FOR_ALERTING="${FOR_ALERTING:-false}"
@@ -160,6 +160,7 @@ curl -s -X DELETE \
     --provisioning-model=SPOT \
     --instance-termination-action=DELETE \
     --labels=owner=spanner-client-benchmarks \
+    --no-address \
     $GCE_ENV_FLAGS \
     $GCE_CONTAINER_ARGS \
     --metadata="startup-script=$STARTUP_SCRIPT"
