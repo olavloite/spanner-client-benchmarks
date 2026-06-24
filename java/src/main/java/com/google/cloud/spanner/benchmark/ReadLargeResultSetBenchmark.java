@@ -75,7 +75,8 @@ public class ReadLargeResultSetBenchmark extends AbstractBenchmark {
         peakFactor,
         burstFactor,
         burstDuration,
-        burstFraction);
+        burstFraction,
+        false);
     this.customAttributes = super.getAttributes().toBuilder().put("num_rows", numRows).build();
     this.statement = Statement.newBuilder(SQL).bind("num_rows").to(numRows).build();
   }

@@ -22,6 +22,7 @@ const (
 	LoadTypeSteady LoadType = iota
 	LoadTypeSpiky
 	LoadTypeGradual
+	LoadTypeClosedLoop
 )
 
 func (l LoadType) String() string {
@@ -32,6 +33,8 @@ func (l LoadType) String() string {
 		return "spiky"
 	case LoadTypeGradual:
 		return "gradual"
+	case LoadTypeClosedLoop:
+		return "closed-loop"
 	default:
 		return "unknown"
 	}
@@ -45,6 +48,8 @@ func ParseLoadType(s string) (LoadType, error) {
 		return LoadTypeSpiky, nil
 	case "gradual":
 		return LoadTypeGradual, nil
+	case "closed-loop":
+		return LoadTypeClosedLoop, nil
 	default:
 		return LoadTypeSteady, fmt.Errorf("unknown load type: %s", s)
 	}

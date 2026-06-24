@@ -33,16 +33,16 @@ for line in sys.stdin:
   RUNNING_DIGESTS=""
 
   # Track and protect images used by active GCE VM instances
-  GCE_IMAGES=\$(gcloud compute instances list \
+  GCE_IMAGES=$(gcloud compute instances list \
     --filter="labels.owner=spanner-client-benchmarks" \
     --project="$PROJECT_ID" \
     --format="value(metadata.items.gce-container-declaration)" 2>/dev/null | \
-    grep -oE "$REGION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/spanner-$CLIENT_TYPE-benchmark:[a-zA-Z0-9.-]+")
+    grep -oE "$REGION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/spanner-$CLIENT_TYPE-benchmark:[a-zA-Z0-9.-]+" || true)
 
-  for image in \$GCE_IMAGES; do
-    DIGEST=\$(gcloud artifacts docker images describe "\$image" --project="$PROJECT_ID" --format="value(image_summary.digest)" 2>/dev/null || true)
-    if [ -n "\$DIGEST" ]; then
-      RUNNING_DIGESTS="\$RUNNING_DIGESTS \$DIGEST"
+  for image in $GCE_IMAGES; do
+    DIGEST=$(gcloud artifacts docker images describe "$image" --project="$PROJECT_ID" --format="value(image_summary.digest)" 2>/dev/null || true)
+    if [ -n "$DIGEST" ]; then
+      RUNNING_DIGESTS="$RUNNING_DIGESTS $DIGEST"
     fi
   done
 

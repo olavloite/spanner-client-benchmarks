@@ -1,9 +1,10 @@
 import {describe, it, before, after, beforeEach, afterEach} from 'node:test';
 import * as assert from 'node:assert';
-import {MockSpannerServer} from './mock-spanner';
+import {MockSpannerServer} from '../spanner/mock-spanner';
 import {PointSelectBenchmark} from '../benchmarks/point-select';
 import {SelectAndUpdateBenchmark} from '../benchmarks/select-update';
 import {ReadLargeResultSetBenchmark} from '../benchmarks/read-large-result-set';
+import {LoadType} from '../benchmarks/load-type';
 import {TpccBenchmarkRunner} from '../benchmarks/tpcc/benchmark';
 import {createSpannerClient} from '../spanner/client';
 import {setTestingMeterProvider} from '../metrics/otel';
@@ -463,6 +464,51 @@ describe('Node.js Benchmark Integration Tests', () => {
       client: 'node-client',
       benchmark_type: 'point-select',
     });
+  });
+
+  it('should execute Point Select workload cleanly in closed-loop mode', async () => {
+    const meter = provider.getMeter('spanner-benchmark');
+    const latHist = meter.createHistogram('spanner_client_benchmarks/latency');
+    const opCount = meter.createCounter(
+      'spanner_client_benchmarks/operation_count',
+    );
+    const errCount = meter.createCounter(
+      'spanner_client_benchmarks/error_count',
+    );
+    const memHist = meter.createHistogram(
+      'spanner_client_benchmarks/memory_usage',
+    );
+    const cpuHist = meter.createHistogram(
+      'spanner_client_benchmarks/cpu_utilization',
+    );
+
+    const benchmark = new PointSelectBenchmark(
+      database,
+      latHist,
+      opCount,
+      errCount,
+      memHist,
+      cpuHist,
+      '10ms',
+      'test',
+      1,
+      100,
+      10,
+      2,
+      1000,
+      false,
+      '',
+      LoadType.ClosedLoop,
+    );
+
+    await benchmark.run();
+
+    const reqs = await waitForRequests(1);
+    assert.ok(reqs.length > 0, 'Should have received at least one request');
+    const sqlReq = reqs.find(
+      r => r.sql === 'SELECT * FROM test WHERE id = @id',
+    );
+    assert.ok(sqlReq, 'Should have executed the Point Select query');
   });
 
   it('should execute Select and Update workload inside Read-Write transactions', async () => {

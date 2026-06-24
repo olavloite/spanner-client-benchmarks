@@ -22,7 +22,7 @@ INSTANCE_ID="${INSTANCE_ID:-knut-test-ycsb}"
 DATABASE_ID="${DATABASE_ID:-spring-data-jpa}"
 TABLE_NAME="${TABLE_NAME:-test}"
 BENCHMARK_TYPE="${BENCHMARK_TYPE:-point-select}"
-CPU="${CPU:-8}"
+CPU="${CPU:-2}"
 MEMORY="${MEMORY:-32Gi}"
 REGION="${REGION:-europe-north1}"
 DURATION="${DURATION:-60m}"
@@ -78,6 +78,12 @@ else
   MOCK_FLAG=""
   if [ "$MOCK" = "true" ]; then
     MOCK_FLAG="--mock,"
+    if [ -z "$LOAD_TYPE" ]; then
+      LOAD_TYPE="closed-loop"
+    fi
+    if [ "$LOAD_TYPE" = "closed-loop" ] && [ -z "$THREADS" ]; then
+      THREADS=1
+    fi
   fi
   ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}${BENCHMARK_NAME_FLAG}${MOCK_FLAG}$BENCHMARK_TYPE,--table=$TABLE_NAME"
   if [ -n "$LOAD_TYPE" ]; then ARGS="${ARGS},--load-type=$LOAD_TYPE"; fi
@@ -91,7 +97,7 @@ fi
 
 ENV_FLAGS="--set-env-vars=BENCHMARK_CPU_LIMIT=$CPU,SPANNER_NUM_CHANNELS=${SPANNER_NUM_CHANNELS:-16}"
 if [ "$SPANNER_DISABLE_BUILTIN_METRICS" = "true" ]; then
-  ENV_FLAGS="--set-env-vars=SPANNER_DISABLE_BUILTIN_METRICS=true,BENCHMARK_CPU_LIMIT=$CPU,SPANNER_NUM_CHANNELS=${SPANNER_NUM_CHANNELS:-16}"
+  ENV_FLAGS="${ENV_FLAGS},SPANNER_DISABLE_BUILTIN_METRICS=true"
 fi
 
 if [ "$BENCHMARK_TARGET" = "gce" ]; then

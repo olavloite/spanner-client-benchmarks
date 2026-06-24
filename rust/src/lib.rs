@@ -17,6 +17,13 @@ use std::sync::Arc;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
 
+use google_cloud_auth::credentials::anonymous;
+use prost_types::{Value, value::Kind};
+use spanner_grpc_mock::MockSpanner;
+use spanner_grpc_mock::google::spanner::v1::{
+    PartialResultSet, ResultSetMetadata, Session, StructType, Type, TypeCode, struct_type::Field,
+};
+
 pub static TEST_METER_PROVIDER: std::sync::OnceLock<SdkMeterProvider> = std::sync::OnceLock::new();
 
 #[derive(Parser, Debug, Clone)]
@@ -25,13 +32,13 @@ pub static TEST_METER_PROVIDER: std::sync::OnceLock<SdkMeterProvider> = std::syn
     about = "Spanner client library benchmark tool for Rust."
 )]
 pub struct Args {
-    #[arg(long)]
+    #[arg(short, long)]
     pub project: String,
-    #[arg(long)]
+    #[arg(short, long)]
     pub instance: String,
-    #[arg(long)]
+    #[arg(short, long)]
     pub database: String,
-    #[arg(long, global = true)]
+    #[arg(short, long, global = true)]
     pub table: Option<String>,
     #[arg(long, default_value = "inf")]
     pub duration: String,
@@ -41,7 +48,7 @@ pub struct Args {
     pub benchmark_name: Option<String>,
     #[arg(long)]
     pub host: Option<String>,
-    #[arg(long, global = true, default_value_t = 100)]
+    #[arg(long, global = true, default_value_t = 10)]
     pub threads: usize,
     #[arg(long, global = true, value_enum, default_value_t = LoadType::Steady)]
     pub load_type: LoadType,
@@ -57,6 +64,8 @@ pub struct Args {
     pub burst_fraction: Option<f64>,
     #[arg(long, global = true, default_value = "10s")]
     pub resource_probe_interval: String,
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub mock: bool,
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -331,8 +340,56 @@ pub fn run_task(
     .boxed()
 }
 
+pub fn run_task_closed_loop(
+    db_client: google_cloud_spanner::client::DatabaseClient,
+    table: String,
+    command: Commands,
+    metrics: BenchmarkMetrics,
+    attributes: Vec<KeyValue>,
+) -> futures::future::BoxFuture<'static, ()> {
+    async move {
+        let start = Instant::now();
+        let is_read_large = matches!(command, Commands::ReadLargeResultSet { .. });
+        let res = match command {
+            Commands::PointSelect { num_rows, .. } => {
+                point_select::execute_point_select(db_client, table, 1, num_rows).await
+            }
+            Commands::SelectUpdate { num_rows, .. } => {
+                select_update::execute_select_update(db_client, table, 1, num_rows).await
+            }
+            Commands::ReadLargeResultSet { num_rows, .. } => {
+                read_large_result_set::execute_read_large_result_set(
+                    db_client,
+                    num_rows,
+                    metrics.read_latency.clone(),
+                    attributes.clone(),
+                )
+                .await
+            }
+            Commands::Tpcc { .. } => unreachable!(),
+        };
+        let duration_us = start.elapsed().as_micros() as f64;
+
+        metrics.operation_count.add(1, &attributes);
+
+        if let Err(e) = &res {
+            metrics.error_count.add(1, &attributes);
+            eprintln!("Operation failed: {:?}", e);
+        }
+
+        if !is_read_large {
+            metrics.latency.record(duration_us, &attributes);
+        }
+    }
+    .boxed()
+}
+
 pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
     // Validation
+    if args.mock && !matches!(args.command, Commands::PointSelect { .. }) {
+        anyhow::bail!("mock is only supported for point-select benchmark");
+    }
+
     match args.load_type {
         LoadType::Steady => {
             if args.cycle_duration.is_some()
@@ -359,6 +416,18 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
                 anyhow::bail!("Cannot specify burst load options when load-type is gradual");
             }
         }
+        LoadType::ClosedLoop => {
+            if args.cycle_duration.is_some()
+                || args.peak_factor.is_some()
+                || args.burst_factor.is_some()
+                || args.burst_duration.is_some()
+                || args.burst_fraction.is_some()
+            {
+                anyhow::bail!(
+                    "Cannot specify burst or gradual load options when load-type is closed-loop"
+                );
+            }
+        }
     }
 
     // Set defaults for anything still None to avoid using optional values directly
@@ -373,9 +442,28 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
     let cycle_duration = load_type::parse_duration(&cycle_duration_str)
         .ok_or_else(|| anyhow::anyhow!("Failed to parse cycle duration: {}", cycle_duration_str))?;
 
+    let table_name = args.table.clone().unwrap_or_else(|| "test".to_string());
+    let mut _mock_server = None;
+    let mut mock_address = None;
+    if args.mock {
+        let (addr, srv) = start_mock_spanner_server(&table_name).await?;
+        mock_address = Some(addr);
+        _mock_server = Some(srv);
+    }
+
     // Build Spanner client
     let mut builder = Spanner::builder();
-    if let Some(ref host) = args.host {
+    if args.mock {
+        let addr = mock_address.as_ref().unwrap();
+        let endpoint = if addr.starts_with("http://") {
+            addr.clone()
+        } else {
+            format!("http://{}", addr)
+        };
+        builder = builder
+            .with_endpoint(endpoint)
+            .with_credentials(anonymous::Builder::new().build());
+    } else if let Some(ref host) = args.host {
         builder = builder.with_endpoint(host);
     }
     let spanner = builder.build().await?;
@@ -442,7 +530,13 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
     };
 
     let benchmark_type_str = match &args.command {
-        Commands::PointSelect { .. } => "point-select",
+        Commands::PointSelect { .. } => {
+            if args.mock {
+                "point-select-mock"
+            } else {
+                "point-select"
+            }
+        }
         Commands::SelectUpdate { .. } => "select-update",
         Commands::ReadLargeResultSet { .. } => "read-large-result-set",
         Commands::Tpcc { .. } => unreachable!(),
@@ -489,6 +583,7 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         table,
         command,
         semaphore: semaphore.clone(),
+        threads: args.threads,
         metrics,
         attributes,
         tps,
@@ -510,4 +605,72 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         let _ = _meter_provider.shutdown();
     }
     Ok(())
+}
+
+async fn start_mock_spanner_server(
+    table_name: &str,
+) -> anyhow::Result<(String, tokio::task::JoinHandle<()>)> {
+    let mut mock = MockSpanner::new();
+    mock.expect_create_session().returning(|_| {
+        Ok(tonic::Response::new(Session {
+            name: "projects/p/instances/i/databases/d/sessions/123".to_string(),
+            ..Default::default()
+        }))
+    });
+
+    let target_table = table_name.to_string();
+    mock.expect_execute_streaming_sql().returning(move |req| {
+        let req = req.into_inner();
+        let sql = req.sql;
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        let result_set = if sql.contains(&format!("FROM {}", target_table)) {
+            PartialResultSet {
+                metadata: Some(ResultSetMetadata {
+                    row_type: Some(StructType {
+                        fields: vec![
+                            Field {
+                                name: "id".to_string(),
+                                r#type: Some(Type {
+                                    code: TypeCode::Int64 as i32,
+                                    ..Default::default()
+                                }),
+                            },
+                            Field {
+                                name: "value".to_string(),
+                                r#type: Some(Type {
+                                    code: TypeCode::String as i32,
+                                    ..Default::default()
+                                }),
+                            },
+                        ],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![
+                    Value {
+                        kind: Some(Kind::StringValue("1".to_string())),
+                    },
+                    Value {
+                        kind: Some(Kind::StringValue("test-value".to_string())),
+                    },
+                ],
+                last: true,
+                ..Default::default()
+            }
+        } else {
+            PartialResultSet {
+                last: true,
+                ..Default::default()
+            }
+        };
+        tx.try_send(Ok(result_set))
+            .expect("Failed to send mock result_set");
+        Ok(tonic::Response::from(rx))
+    });
+
+    let (address, server) = spanner_grpc_mock::start("127.0.0.1:0", mock)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to start mock server: {:?}", e))?;
+
+    Ok((address, server))
 }

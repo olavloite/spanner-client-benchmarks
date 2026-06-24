@@ -56,16 +56,17 @@ func run(ctx context.Context, args []string) error {
 		Name:  "BenchmarkApp",
 		Usage: "Spanner client library benchmark tool for Go.",
 		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "project", Required: true, Usage: "Google Cloud Project ID"},
-			&cli.StringFlag{Name: "instance", Required: true, Usage: "Spanner Instance ID"},
-			&cli.StringFlag{Name: "database", Required: true, Usage: "Spanner Database ID"},
-			&cli.StringFlag{Name: "table", Usage: "Table name (required for non-tpcc benchmarks)"},
+			&cli.StringFlag{Name: "project", Aliases: []string{"p"}, Required: true, Usage: "Google Cloud Project ID"},
+			&cli.StringFlag{Name: "instance", Aliases: []string{"i"}, Required: true, Usage: "Spanner Instance ID"},
+			&cli.StringFlag{Name: "database", Aliases: []string{"d"}, Required: true, Usage: "Spanner Database ID"},
+			&cli.StringFlag{Name: "table", Aliases: []string{"t"}, Usage: "Table name (required for non-tpcc benchmarks)"},
 			&cli.StringFlag{Name: "duration", Value: "inf", Usage: "Duration of the benchmark (e.g. 60s, 5m, inf)"},
 			&cli.BoolFlag{Name: "for-alerting", Value: false, Usage: "Marks the benchmark for alerting purposes"},
 			&cli.StringFlag{Name: "benchmark-name", Usage: "Optional name to identify this benchmark run in metrics"},
 			&cli.StringFlag{Name: "host", Usage: "Custom Spanner host endpoint override"},
+			&cli.BoolFlag{Name: "mock", Value: false, Usage: "Use local mock Spanner server"},
 			&cli.StringFlag{Name: "resource-probe-interval", Value: "10s", Usage: "Interval for probing resource usage (e.g. 10s, 1m). Set to 0 to disable"},
-			&cli.IntFlag{Name: "threads", Value: 100, Usage: "Number of parallel workers allowed"},
+			&cli.IntFlag{Name: "threads", Value: 10, Usage: "Number of parallel workers allowed"},
 			&cli.StringFlag{Name: "load-type", Value: "steady", Usage: "Load type (steady, spiky, gradual)"},
 			&cli.StringFlag{Name: "cycle-duration", Usage: "Duration of a full cycle for gradual load"},
 			&cli.FloatFlag{Name: "peak-factor", Usage: "Ratio of peak rate to average rate for gradual load"},
@@ -137,6 +138,7 @@ type GlobalConfig struct {
 	ResourceProbeInterval string
 	Host                  string
 	Threads               int
+	Mock                  bool
 }
 
 func parseGlobalConfig(cmd *cli.Command) GlobalConfig {
@@ -151,6 +153,7 @@ func parseGlobalConfig(cmd *cli.Command) GlobalConfig {
 		ResourceProbeInterval: cmd.String("resource-probe-interval"),
 		Host:                  cmd.String("host"),
 		Threads:               int(cmd.Int("threads")),
+		Mock:                  cmd.Bool("mock"),
 	}
 }
 
@@ -177,6 +180,17 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	burstDuration := cmd.Float("burst-duration")
 	burstFraction := cmd.Float("burst-fraction")
 
+	if cfg.Mock && benchmarkType != "point-select" {
+		return fmt.Errorf("mock is only supported for point-select benchmark")
+	}
+
+	if cfg.Mock {
+		mockSrv, host, mockCleanup := startMockServer()
+		defer mockCleanup()
+		registerMockResults(mockSrv)
+		cfg.Host = host
+	}
+
 	loadType, err := ParseLoadType(loadTypeStr)
 	if err != nil {
 		return err
@@ -189,7 +203,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	}
 
 	// Setup Metrics
-	latencyHistogram, readLatencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cleanupMetrics, err := setupMetrics(runCtx, cfg.Project, cfg.Host, cfg.BenchmarkName)
+	latencyHistogram, readLatencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cleanupMetrics, err := setupMetrics(runCtx, cfg.Project, cfg.Host, cfg.BenchmarkName, cfg.Mock)
 	if err != nil {
 		return fmt.Errorf("failed to initialize metrics: %w", err)
 	}
@@ -214,8 +228,13 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	}
 	defer client.Close()
 
+	benchmarkTypeAttr := b.Type()
+	if cfg.Mock {
+		benchmarkTypeAttr = benchmarkTypeAttr + "-mock"
+	}
+
 	attributeList := []attribute.KeyValue{
-		attribute.String("benchmark_type", b.Type()),
+		attribute.String("benchmark_type", benchmarkTypeAttr),
 		attribute.String("tps", fmt.Sprintf("%.1f", tps)),
 		attribute.Bool("for_alerting", cfg.ForAlerting),
 		attribute.String("benchmark_name", cfg.BenchmarkName),
@@ -273,13 +292,13 @@ func getLatencyBuckets() []float64 {
 
 var testingMeterProvider metric.MeterProvider
 
-func setupMetrics(ctx context.Context, projectID string, host string, benchmarkName string) (metric.Float64Histogram, metric.Float64Histogram, metric.Int64Counter, metric.Int64Counter, metric.Float64Histogram, metric.Float64Histogram, func(), error) {
+func setupMetrics(ctx context.Context, projectID string, host string, benchmarkName string, isMock bool) (metric.Float64Histogram, metric.Float64Histogram, metric.Int64Counter, metric.Int64Counter, metric.Float64Histogram, metric.Float64Histogram, func(), error) {
 	var meterProvider metric.MeterProvider
 	cleanup := func() {}
 
 	if testingMeterProvider != nil {
 		meterProvider = testingMeterProvider
-	} else if os.Getenv("SPANNER_EMULATOR_HOST") != "" || (host != "" && (strings.Contains(host, "localhost:") || strings.Contains(host, "127.0.0.1:"))) {
+	} else if !isMock && (os.Getenv("SPANNER_EMULATOR_HOST") != "" || (host != "" && (strings.Contains(host, "localhost:") || strings.Contains(host, "127.0.0.1:")))) {
 		h, _ := noop.NewMeterProvider().Meter("").Float64Histogram("")
 		rh, _ := noop.NewMeterProvider().Meter("").Float64Histogram("")
 		o, _ := noop.NewMeterProvider().Meter("").Int64Counter("")
@@ -392,8 +411,18 @@ func createSpannerClient(ctx context.Context, project, instance, database, host 
 }
 
 func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, latencyHistogram metric.Float64Histogram, operationCounter metric.Int64Counter, errorCounter metric.Int64Counter, tableName string, targetTPS float64, concurrentThreads int, minId, maxId int64, attributes metric.MeasurementOption, loadType LoadType, cycleDurationStr string, peakFactor, burstFactor, burstDuration, burstFraction float64) {
-	tasks := make(chan struct{}, 1000000) // large buffered channel to simulate unbounded queue
+	var statMu sync.Mutex
+	var totalLatencyUs int64
+	var totalOps int64
+
 	wg := &sync.WaitGroup{}
+
+	if loadType == LoadTypeClosedLoop {
+		runClosedLoopBenchmark(ctx, b, client, latencyHistogram, operationCounter, errorCounter, tableName, concurrentThreads, minId, maxId, attributes)
+		return
+	}
+
+	tasks := make(chan struct{}, 1000000) // large buffered channel to simulate unbounded queue
 
 	// Start worker goroutines
 	for i := 0; i < concurrentThreads; i++ {
@@ -411,8 +440,16 @@ func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, late
 					start := time.Now()
 					err := b.Execute(ctx, client, tableName, minId, maxId)
 
+					duration := time.Since(start)
+					if err == nil {
+						statMu.Lock()
+						totalLatencyUs += duration.Microseconds()
+						totalOps++
+						statMu.Unlock()
+					}
+
 					if b.ShouldMeasureEntireMethod() {
-						latencyHistogram.Record(ctx, float64(time.Since(start).Microseconds()), attributes)
+						latencyHistogram.Record(ctx, float64(duration.Microseconds()), attributes)
 					}
 					operationCounter.Add(ctx, 1, attributes)
 					if err != nil {
@@ -432,4 +469,54 @@ func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, late
 	}
 
 	generator.Run(ctx, b, client, latencyHistogram, operationCounter, errorCounter, tableName, targetTPS, concurrentThreads, minId, maxId, attributes, cycleDurationStr, peakFactor, burstFactor, burstDuration, burstFraction, tasks, wg)
+
+	wg.Wait()
+	if totalOps > 0 {
+		fmt.Printf("Local Run Complete - Total Ops: %d, Average Latency: %.2f us\n", totalOps, float64(totalLatencyUs)/float64(totalOps))
+	}
+}
+
+func runClosedLoopBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, latencyHistogram metric.Float64Histogram, operationCounter metric.Int64Counter, errorCounter metric.Int64Counter, tableName string, concurrentThreads int, minId, maxId int64, attributes metric.MeasurementOption) {
+	var statMu sync.Mutex
+	var totalLatencyUs int64
+	var totalOps int64
+
+	wg := &sync.WaitGroup{}
+
+	for i := 0; i < concurrentThreads; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					start := time.Now()
+					err := b.Execute(ctx, client, tableName, minId, maxId)
+					duration := time.Since(start)
+					if err == nil {
+						statMu.Lock()
+						totalLatencyUs += duration.Microseconds()
+						totalOps++
+						statMu.Unlock()
+					}
+					if b.ShouldMeasureEntireMethod() {
+						latencyHistogram.Record(ctx, float64(duration.Microseconds()), attributes)
+					}
+					operationCounter.Add(ctx, 1, attributes)
+					if err != nil {
+						if ctx.Err() == nil {
+							log.Printf("Operation failed: %v", err)
+							errorCounter.Add(ctx, 1, attributes)
+						}
+					}
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if totalOps > 0 {
+		fmt.Printf("Local Run Complete - Total Ops: %d, Average Latency: %.2f us\n", totalOps, float64(totalLatencyUs)/float64(totalOps))
+	}
 }

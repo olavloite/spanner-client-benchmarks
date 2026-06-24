@@ -176,7 +176,7 @@ func (m *mockSpannerServer) ExecuteStreamingSql(req *spannerpb.ExecuteSqlRequest
 }
 
 func startMockServer() (*mockSpannerServer, string, func()) {
-	lis, err := net.Listen("tcp", "localhost:0")
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		panic(err)
 	}

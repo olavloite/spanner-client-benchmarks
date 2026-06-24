@@ -163,7 +163,7 @@ def main():
     workload_parser.add_argument(
         "--threads",
         type=int,
-        default=100,
+        default=10,
         help="ThreadPoolExecutor worker thread concurrency cap",
     )
     workload_parser.add_argument(

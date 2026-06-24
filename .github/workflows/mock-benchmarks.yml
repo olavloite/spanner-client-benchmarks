@@ -1,0 +1,22 @@
+name: Mock Benchmarks
+
+on:
+  schedule:
+    # Run daily at 12:00 UTC (midday), during a low-activity window for other schedules
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+
+jobs:
+  run:
+    uses: ./.github/workflows/benchmark-template.yml
+    with:
+      benchmark_types: '["point-select"]'
+      duration: '15m'
+      load_type: 'closed-loop'
+      threads: '1'
+      cpu: '2'
+      mock: 'true'
+      benchmark_name: 'scheduled-mock'
+      for_alerting: "${{ github.event_name == 'schedule' }}"
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}

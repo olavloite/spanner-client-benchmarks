@@ -1,4 +1,5 @@
 import {Spanner, SpannerOptions} from '@google-cloud/spanner';
+import * as grpc from '@grpc/grpc-js';
 
 /**
  * Creates a strongly-configured Spanner client instance.
@@ -16,15 +17,18 @@ export function createSpannerClient(projectId: string, host?: string): Spanner {
     } else if (endpoint.startsWith('https://')) {
       endpoint = endpoint.substring(8);
     }
-    options.apiEndpoint = endpoint;
 
     // If connecting to a local endpoint, disable SSL/authentication via environment or standard custom channel settings
     if (
       endpoint.startsWith('localhost:') ||
       endpoint.startsWith('127.0.0.1:')
     ) {
-      // The Node client library handles this automatically if SPANNER_EMULATOR_HOST is set.
-      // Otherwise, passing custom endpoint options or setting serviceName is possible.
+      const parts = endpoint.split(':');
+      options.apiEndpoint = parts[0];
+      options.port = parseInt(parts[1], 10);
+      options.sslCreds = grpc.credentials.createInsecure();
+    } else {
+      options.apiEndpoint = endpoint;
     }
   }
 
