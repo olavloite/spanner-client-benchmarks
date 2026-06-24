@@ -58,7 +58,8 @@ public abstract class AbstractBenchmark {
       double peakFactor,
       double burstFactor,
       double burstDuration,
-      double burstFraction) {
+      double burstFraction,
+      boolean isMock) {
     this.client = client;
     this.latencyHistogram = latencyHistogram;
     this.operationCounter = operationCounter;
@@ -79,10 +80,14 @@ public abstract class AbstractBenchmark {
     this.burstFactor = burstFactor;
     this.burstDuration = burstDuration;
     this.burstFraction = burstFraction;
+    String benchmarkTypeAttr = getBenchmarkType();
+    if (isMock) {
+      benchmarkTypeAttr = benchmarkTypeAttr + "-mock";
+    }
     // Pre-create attributes to avoid object creation overhead in the hot path
     this.attributes =
         Attributes.builder()
-            .put("benchmark_type", getBenchmarkType())
+            .put("benchmark_type", benchmarkTypeAttr)
             .put("tps", tps)
             .put("for_alerting", forAlerting)
             .put("benchmark_name", benchmarkName != null ? benchmarkName : "")
@@ -185,7 +190,7 @@ public abstract class AbstractBenchmark {
         });
   }
 
-  private static boolean isCancellationOrInterruption(Throwable e) {
+  static boolean isCancellationOrInterruption(Throwable e) {
     if (e == null) {
       return false;
     }

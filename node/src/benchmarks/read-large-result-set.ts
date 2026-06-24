@@ -43,6 +43,7 @@ export class ReadLargeResultSetBenchmark extends AbstractBenchmark {
     burstFactor = 1.0,
     burstDuration = 1.0,
     burstFraction = 0.1,
+    isMock = false,
   ) {
     super(
       database,
@@ -66,6 +67,7 @@ export class ReadLargeResultSetBenchmark extends AbstractBenchmark {
       burstFactor,
       burstDuration,
       burstFraction,
+      isMock,
     );
     this.numRows = numRows;
   }

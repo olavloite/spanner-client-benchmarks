@@ -30,7 +30,8 @@ public class ReadLargeResultSetCommand extends AbstractBenchmarkCommand {
       String resourceProbeInterval,
       Duration duration,
       boolean forAlerting,
-      String benchmarkName) {
+      String benchmarkName,
+      boolean isMock) {
     return new ReadLargeResultSetBenchmark(
         client,
         latencyHistogram,

@@ -56,6 +56,11 @@ public class BenchmarkApp implements Runnable {
   private String host;
 
   @Option(
+      names = {"--mock"},
+      description = "Use local mock Spanner server.")
+  private boolean mock;
+
+  @Option(
       names = {"--duration"},
       description =
           "Duration of the benchmark (e.g. 60s, 5m, inf for infinite). Defaults to infinite if not specified.")
@@ -115,6 +120,14 @@ public class BenchmarkApp implements Runnable {
     return host;
   }
 
+  public void setHost(String host) {
+    this.host = host;
+  }
+
+  public boolean isMock() {
+    return mock;
+  }
+
   public String getDuration() {
     return duration;
   }
@@ -139,11 +152,11 @@ public class BenchmarkApp implements Runnable {
 
   // Public so subcommands in subpackages can access it
   public static OpenTelemetry initializeOpenTelemetry(
-      String projectId, String host, String benchmarkName) {
+      String projectId, String host, String benchmarkName, boolean isMock) {
     if (testingOpenTelemetry != null) {
       return testingOpenTelemetry;
     }
-    if (host != null && host.startsWith("http://localhost:")) {
+    if (!isMock && host != null && (host.contains("localhost:") || host.contains("127.0.0.1:"))) {
       return OpenTelemetry.noop();
     }
 

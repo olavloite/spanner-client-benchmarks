@@ -29,12 +29,15 @@ func executeTPCCBenchmark(ctx context.Context, cmd *cli.Command) error {
 	}()
 
 	cfg := parseGlobalConfig(cmd)
+	if cfg.Mock {
+		return fmt.Errorf("mock is only supported for point-select benchmark")
+	}
 	warehouses := int(cmd.Int("warehouses"))
 	clients := int(cmd.Int("clients"))
 	items := int(cmd.Int("items"))
 	extended := cmd.Bool("extended")
 
-	latencyHistogram, _, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cleanupMetrics, err := setupMetrics(runCtx, cfg.Project, cfg.Host, cfg.BenchmarkName)
+	latencyHistogram, _, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cleanupMetrics, err := setupMetrics(runCtx, cfg.Project, cfg.Host, cfg.BenchmarkName, cfg.Mock)
 	if err != nil {
 		return fmt.Errorf("failed to initialize metrics: %w", err)
 	}

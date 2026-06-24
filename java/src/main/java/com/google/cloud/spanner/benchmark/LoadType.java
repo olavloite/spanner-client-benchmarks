@@ -145,6 +145,41 @@ public enum LoadType {
         AbstractBenchmark.sleepHybrid(nextTickTime);
       }
     }
+  },
+  CLOSED_LOOP {
+    @Override
+    public void run(AbstractBenchmark benchmark, ExecutorService executor) {
+      for (int i = 0; i < benchmark.threads; i++) {
+        executor.submit(
+            () -> {
+              while (!Thread.currentThread().isInterrupted()) {
+                long startTime = System.nanoTime();
+                try {
+                  benchmark.executeOperation();
+                } catch (Exception e) {
+                  if (!Thread.currentThread().isInterrupted()
+                      && !AbstractBenchmark.isCancellationOrInterruption(e)) {
+                    System.err.println("Operation failed: " + e.getMessage());
+                    benchmark.errorCounter.add(1, benchmark.getAttributes());
+                  }
+                } finally {
+                  if (benchmark.shouldMeasureEntireMethod()) {
+                    long endTime = System.nanoTime();
+                    long latencyNs = endTime - startTime;
+                    long latencyUs = latencyNs / 1000;
+                    benchmark.latencyHistogram.record(latencyUs, benchmark.getAttributes());
+                  }
+                  benchmark.operationCounter.add(1, benchmark.getAttributes());
+                }
+              }
+            });
+      }
+      try {
+        Thread.sleep(Long.MAX_VALUE);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    }
   };
 
   public abstract void run(AbstractBenchmark benchmark, ExecutorService executor);

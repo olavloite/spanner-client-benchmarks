@@ -75,6 +75,11 @@ on:
         required: false
         type: string
         default: 'false'
+      mock:
+        description: 'Run benchmark in mock mode (true/false)'
+        required: false
+        type: string
+        default: 'false'
     secrets:
       GCP_SA_KEY:
         required: true
@@ -124,4 +129,5 @@ jobs:
           BENCHMARK_NAME: ${{ inputs.benchmark_name }}
           WAREHOUSES: ${{ inputs.warehouses }}
           ITEMS: ${{ inputs.items }}
+          MOCK: ${{ inputs.mock }}
         run: ./run_benchmark.sh ${{ matrix.client }}

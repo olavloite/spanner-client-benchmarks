@@ -20,7 +20,8 @@ public class SelectAndUpdateCommand extends AbstractBenchmarkCommand {
       String resourceProbeInterval,
       Duration duration,
       boolean forAlerting,
-      String benchmarkName) {
+      String benchmarkName,
+      boolean isMock) {
     return new SelectAndUpdateBenchmark(
         client,
         latencyHistogram,

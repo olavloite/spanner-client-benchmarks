@@ -1,4 +1,4 @@
-use crate::{BenchmarkMetrics, Commands, run_task};
+use crate::{BenchmarkMetrics, Commands, run_task, run_task_closed_loop};
 use google_cloud_spanner::client::DatabaseClient;
 use opentelemetry::KeyValue;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -12,6 +12,7 @@ pub enum LoadType {
     Steady,
     Spiky,
     Gradual,
+    ClosedLoop,
 }
 
 pub struct RunConfig {
@@ -19,6 +20,7 @@ pub struct RunConfig {
     pub table: String,
     pub command: Commands,
     pub semaphore: Arc<Semaphore>,
+    pub threads: usize,
     pub metrics: BenchmarkMetrics,
     pub attributes: Vec<KeyValue>,
     pub tps: f64,
@@ -37,6 +39,7 @@ impl LoadType {
             LoadType::Steady => self.run_steady(config).await,
             LoadType::Spiky => self.run_spiky(config).await,
             LoadType::Gradual => self.run_gradual(config).await,
+            LoadType::ClosedLoop => self.run_closed_loop(config).await,
         }
     }
 
@@ -264,6 +267,44 @@ impl LoadType {
 
             next_tick_time += tick_duration;
             sleep_hybrid(next_tick_time).await;
+        }
+    }
+
+    async fn run_closed_loop(&self, config: RunConfig) {
+        let duration = config.duration;
+        let start_time = config.start_time;
+
+        let mut tasks = Vec::new();
+
+        for _ in 0..config.threads {
+            let db_client = config.db_client.clone();
+            let table = config.table.clone();
+            let command = config.command.clone();
+            let metrics = config.metrics.clone();
+            let attributes = config.attributes.clone();
+
+            let task = tokio::spawn(async move {
+                loop {
+                    if let Some(dur) = duration {
+                        if start_time.elapsed() >= dur {
+                            break;
+                        }
+                    }
+                    run_task_closed_loop(
+                        db_client.clone(),
+                        table.clone(),
+                        command.clone(),
+                        metrics.clone(),
+                        attributes.clone(),
+                    )
+                    .await;
+                }
+            });
+            tasks.push(task);
+        }
+
+        for task in tasks {
+            let _ = task.await;
         }
     }
 }

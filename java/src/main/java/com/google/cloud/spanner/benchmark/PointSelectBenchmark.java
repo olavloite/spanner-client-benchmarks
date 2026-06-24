@@ -11,6 +11,8 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public class PointSelectBenchmark extends AbstractBenchmark {
 
+  private final boolean isMock;
+
   public PointSelectBenchmark(
       DatabaseClient client,
       LongHistogram latencyHistogram,
@@ -32,7 +34,8 @@ public class PointSelectBenchmark extends AbstractBenchmark {
       double peakFactor,
       double burstFactor,
       double burstDuration,
-      double burstFraction) {
+      double burstFraction,
+      boolean isMock) {
     super(
         client,
         latencyHistogram,
@@ -54,14 +57,16 @@ public class PointSelectBenchmark extends AbstractBenchmark {
         peakFactor,
         burstFactor,
         burstDuration,
-        burstFraction);
+        burstFraction,
+        isMock);
+    this.isMock = isMock;
   }
 
   @Override
   protected void executeOperation() throws Exception {
-    long randomId = ThreadLocalRandom.current().nextLong(minId, maxId + 1);
+    long id = isMock ? 1L : ThreadLocalRandom.current().nextLong(minId, maxId + 1);
     String sql = "SELECT * FROM " + tableName + " WHERE id = @id";
-    Statement statement = Statement.newBuilder(sql).bind("id").to(randomId).build();
+    Statement statement = Statement.newBuilder(sql).bind("id").to(id).build();
 
     int dummy = 0;
     try (ResultSet resultSet = client.singleUse().executeQuery(statement)) {

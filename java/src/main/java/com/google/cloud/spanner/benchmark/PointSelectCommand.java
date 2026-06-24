@@ -20,7 +20,8 @@ public class PointSelectCommand extends AbstractBenchmarkCommand {
       String resourceProbeInterval,
       Duration duration,
       boolean forAlerting,
-      String benchmarkName) {
+      String benchmarkName,
+      boolean isMock) {
     return new PointSelectBenchmark(
         client,
         latencyHistogram,
@@ -42,6 +43,7 @@ public class PointSelectCommand extends AbstractBenchmarkCommand {
         peakFactor,
         burstFactor,
         burstDuration,
-        burstFraction);
+        burstFraction,
+        isMock);
   }
 }

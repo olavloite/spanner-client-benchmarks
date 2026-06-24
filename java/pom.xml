@@ -110,7 +110,6 @@
             <artifactId>google-cloud-spanner</artifactId>
             <version>${spanner.version}</version>
             <type>test-jar</type>
-            <scope>test</scope>
         </dependency>
 
         <!-- GAX gRPC testlib (needed for MockSpannerServiceImpl) -->
@@ -118,7 +117,6 @@
             <groupId>com.google.api</groupId>
             <artifactId>gax-grpc</artifactId>
             <classifier>testlib</classifier>
-            <scope>test</scope>
             <!-- Version managed by BOM -->
         </dependency>
 

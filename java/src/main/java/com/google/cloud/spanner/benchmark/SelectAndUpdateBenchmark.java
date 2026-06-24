@@ -54,7 +54,8 @@ public class SelectAndUpdateBenchmark extends AbstractBenchmark {
         peakFactor,
         burstFactor,
         burstDuration,
-        burstFraction);
+        burstFraction,
+        false);
   }
 
   @Override

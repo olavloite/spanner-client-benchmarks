@@ -53,7 +53,7 @@ public class TpccCommand implements Runnable {
     try {
       OpenTelemetry openTelemetry =
           BenchmarkApp.initializeOpenTelemetry(
-              parent.getProjectId(), parent.getHost(), parent.getBenchmarkName());
+              parent.getProjectId(), parent.getHost(), parent.getBenchmarkName(), false);
       Meter meter = openTelemetry.getMeter(METER_NAME);
       BenchmarkMetrics metrics = BenchmarkApp.createBenchmarkMetrics(meter, LATENCY_NAME);
 

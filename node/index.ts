@@ -1,5 +1,14 @@
+import './src/utils/disable-fetch';
+
 import {Command} from 'commander';
-import {ValueType} from '@opentelemetry/api';
+import {
+  diag,
+  DiagConsoleLogger,
+  DiagLogLevel,
+  ValueType,
+} from '@opentelemetry/api';
+
+diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.INFO);
 import {
   setupMetrics,
   LATENCY_NAME,
@@ -10,6 +19,7 @@ import {
   CPU_UTILIZATION_NAME,
 } from './src/metrics/otel';
 import {createSpannerClient} from './src/spanner/client';
+import {MockSpannerServer} from './src/spanner/mock-spanner';
 import {PointSelectBenchmark} from './src/benchmarks/point-select';
 import {SelectAndUpdateBenchmark} from './src/benchmarks/select-update';
 import {ReadLargeResultSetBenchmark} from './src/benchmarks/read-large-result-set';
@@ -81,7 +91,8 @@ async function main() {
     .option(
       '--burst-fraction <burstFraction>',
       'Fraction of total time spent in the burst state',
-    );
+    )
+    .option('--mock', 'Use local mock Spanner server', false);
 
   // Point Select Workload Subcommand
   program
@@ -207,7 +218,7 @@ function validateAndFillLoadParams(loadType: LoadType, globalOpts: any) {
       ? parseFloat(globalOpts.burstFraction)
       : 0.1;
 
-  if (loadType === LoadType.Steady) {
+  if (loadType === LoadType.Steady || loadType === LoadType.ClosedLoop) {
     if (
       globalOpts.cycleDuration !== undefined ||
       globalOpts.peakFactor !== undefined ||
@@ -216,7 +227,7 @@ function validateAndFillLoadParams(loadType: LoadType, globalOpts: any) {
       globalOpts.burstFraction !== undefined
     ) {
       console.error(
-        'Error: Cannot specify burst or gradual load options when load-type is steady',
+        'Error: Cannot specify burst or gradual load options when load-type is steady or closed-loop',
       );
       process.exit(1);
     }
@@ -254,6 +265,31 @@ function validateAndFillLoadParams(loadType: LoadType, globalOpts: any) {
   };
 }
 
+async function startMockSpannerServer(
+  tableName: string,
+): Promise<{mockServer: MockSpannerServer; host: string}> {
+  const mockServer = new MockSpannerServer();
+  const selectSql = `select * from ${tableName} where id = @id`;
+  const selectIdSql = `select id from ${tableName} where id = @id`;
+  const result = {
+    metadata: {
+      rowType: {
+        fields: [
+          {name: 'id', type: {code: 'INT64'}},
+          {name: 'value', type: {code: 'STRING'}},
+        ],
+      },
+    },
+    rows: [[{stringValue: '1'}, {stringValue: 'test-value'}]],
+  };
+  mockServer.addResult(selectSql, result);
+  mockServer.addResult(selectIdSql, result);
+
+  const port = await mockServer.start();
+  const host = `127.0.0.1:${port}`;
+  return {mockServer, host};
+}
+
 /**
  * Orchestrates the initialization and lifecycle of the benchmark execution.
  */
@@ -265,7 +301,7 @@ async function runBenchmarkAction(
   const projectId = globalOpts.project;
   const instanceId = globalOpts.instance;
   const databaseId = globalOpts.database;
-  const host = globalOpts.host;
+  let host = globalOpts.host;
   const durationStr = globalOpts.duration;
   const forAlerting = globalOpts.forAlerting;
   const benchmarkName = globalOpts.benchmarkName;
@@ -285,12 +321,27 @@ async function runBenchmarkAction(
   const minId = 1;
   const maxId = numRows;
   const tps = subOpts.tps ? parseFloat(subOpts.tps) : 10.0;
-  const threads = subOpts.threads ? parseInt(subOpts.threads, 10) : 100;
+  const threads = subOpts.threads ? parseInt(subOpts.threads, 10) : 10;
+
+  if (globalOpts.mock && type !== 'point-select') {
+    console.error('Error: mock is only supported for point-select benchmark');
+    process.exit(1);
+  }
+
+  let mockServer: MockSpannerServer | undefined;
+  if (globalOpts.mock) {
+    const setup = await startMockSpannerServer(tableName);
+    mockServer = setup.mockServer;
+    host = setup.host;
+    globalOpts.host = host;
+  }
 
   // Discover if running in an emulator environment
   const isEmulator =
     !!process.env.SPANNER_EMULATOR_HOST ||
-    (!!host && (host.includes('localhost:') || host.includes('127.0.0.1:')));
+    (!globalOpts.mock &&
+      !!host &&
+      (host.includes('localhost:') || host.includes('127.0.0.1:')));
 
   // 1. Bootstrap OpenTelemetry Metrics Exporter
   const {meter, shutdown: shutdownMetrics} = setupMetrics(
@@ -363,6 +414,7 @@ async function runBenchmarkAction(
       burstFactor,
       burstDuration,
       burstFraction,
+      globalOpts.mock,
     );
   } else if (type === 'select-update') {
     benchmark = new SelectAndUpdateBenchmark(
@@ -459,6 +511,13 @@ async function runBenchmarkAction(
       console.error('[Lifecycle] Error closing Spanner client:', err);
     }
 
+    if (mockServer) {
+      try {
+        await mockServer.stop();
+        console.log('[Lifecycle] Mock Spanner server stopped.');
+      } catch (e) {}
+    }
+
     await shutdownMetrics();
     console.log('[Lifecycle] Termination complete. Exiting.');
     process.exit(0);
@@ -476,10 +535,24 @@ async function runBenchmarkAction(
     // Execute standard cleanup if we finished normal duration instead of signal kill
     if (!isTerminating) {
       isTerminating = true;
+      console.log('[Cleanup] Closing Spanner client...');
       try {
-        await spanner.close();
+        spanner.close();
       } catch (e) {}
-      await shutdownMetrics();
+      console.log('[Cleanup] Stopping Mock Spanner server...');
+      if (mockServer) {
+        try {
+          await mockServer.stop();
+        } catch (e) {}
+      }
+      console.log('[Cleanup] Shutting down OpenTelemetry metrics...');
+      try {
+        await Promise.race([
+          shutdownMetrics(),
+          new Promise<void>(resolve => setTimeout(resolve, 2000)),
+        ]);
+      } catch (e) {}
+      process.exit(0);
     }
   }
 }

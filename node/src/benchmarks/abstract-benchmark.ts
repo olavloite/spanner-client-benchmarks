@@ -77,6 +77,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
     burstFactor = 1.0,
     burstDuration = 1.0,
     burstFraction = 0.1,
+    isMock = false,
   ) {
     this.database = database;
     this.latencyHistogram = latencyHistogram;
@@ -106,7 +107,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
 
     // Pre-create attributes to avoid object creation overhead on the hot path (parity with Go and Java)
     this.attributes = {
-      benchmark_type: this.getType(),
+      benchmark_type: isMock ? `${this.getType()}-mock` : this.getType(),
       tps: this.tps.toFixed(1),
       for_alerting: this.forAlerting,
       benchmark_name: benchmarkName,
@@ -150,6 +151,22 @@ export abstract class AbstractBenchmark implements IBenchmark {
         );
         this.stop();
       }, durationMs);
+    }
+
+    if (this.loadType === LoadType.ClosedLoop) {
+      for (let i = 0; i < this.threads; i++) {
+        this.runClosedLoop();
+      }
+
+      // Block and wait until the benchmark is stopped and all tasks are finished or cancelled
+      return new Promise<void>(resolve => {
+        const waiter = setInterval(() => {
+          if (this.isStopped) {
+            clearInterval(waiter);
+            resolve();
+          }
+        }, 100);
+      });
     }
 
     const sab = new SharedArrayBuffer(4);
@@ -322,6 +339,29 @@ export abstract class AbstractBenchmark implements IBenchmark {
       return this.tps + amplitude * Math.cos(angle - Math.PI);
     }
     return this.tps;
+  }
+
+  private async runClosedLoop(): Promise<void> {
+    while (!this.isStopped) {
+      await this.runTaskClosedLoop();
+    }
+  }
+
+  private async runTaskClosedLoop(): Promise<void> {
+    const startTimeNs = process.hrtime.bigint();
+    try {
+      await this.execute(this.database, this.tableName, this.minId, this.maxId);
+    } catch (err: any) {
+      console.error(`Operation failed: ${err?.message || err}`);
+      this.errorCounter.add(1, this.attributes);
+    } finally {
+      const endTimeNs = process.hrtime.bigint();
+      if (this.shouldMeasureEntireMethod()) {
+        const latencyUs = Number(endTimeNs - startTimeNs) / 1000;
+        this.latencyHistogram.record(latencyUs, this.attributes);
+      }
+      this.operationCounter.add(1, this.attributes);
+    }
   }
 
   private startResourceMonitoring(): void {

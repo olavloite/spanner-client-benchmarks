@@ -61,6 +61,7 @@ export function setupMetrics(
   // Create the Google Cloud Metric Exporter
   const exporter = new MetricExporter({
     projectId: projectId,
+    disableCreateMetricDescriptors: true,
   });
 
   // Export metrics every 60 seconds (matching Java and Go)
