@@ -92,7 +92,12 @@ async function main() {
       '--burst-fraction <burstFraction>',
       'Fraction of total time spent in the burst state',
     )
-    .option('--mock', 'Use local mock Spanner server', false);
+    .option('--mock', 'Use local mock Spanner server', false)
+    .option(
+      '--no-metrics',
+      'Disable metrics exporting (for testing purposes)',
+      false,
+    );
 
   // Point Select Workload Subcommand
   program
@@ -269,21 +274,7 @@ async function startMockSpannerServer(
   tableName: string,
 ): Promise<{mockServer: MockSpannerServer; host: string}> {
   const mockServer = new MockSpannerServer();
-  const selectSql = `select * from ${tableName} where id = @id`;
-  const selectIdSql = `select id from ${tableName} where id = @id`;
-  const result = {
-    metadata: {
-      rowType: {
-        fields: [
-          {name: 'id', type: {code: 'INT64'}},
-          {name: 'value', type: {code: 'STRING'}},
-        ],
-      },
-    },
-    rows: [[{stringValue: '1'}, {stringValue: 'test-value'}]],
-  };
-  mockServer.addResult(selectSql, result);
-  mockServer.addResult(selectIdSql, result);
+  mockServer.registerAllMockResults(tableName);
 
   const port = await mockServer.start();
   const host = `127.0.0.1:${port}`;
@@ -323,11 +314,6 @@ async function runBenchmarkAction(
   const tps = subOpts.tps ? parseFloat(subOpts.tps) : 10.0;
   const threads = subOpts.threads ? parseInt(subOpts.threads, 10) : 10;
 
-  if (globalOpts.mock && type !== 'point-select') {
-    console.error('Error: mock is only supported for point-select benchmark');
-    process.exit(1);
-  }
-
   let mockServer: MockSpannerServer | undefined;
   if (globalOpts.mock) {
     const setup = await startMockSpannerServer(tableName);
@@ -336,8 +322,9 @@ async function runBenchmarkAction(
     globalOpts.host = host;
   }
 
-  // Discover if running in an emulator environment
-  const isEmulator =
+  // Discover if running in an emulator or metrics disabled environment
+  const noMetrics =
+    !!globalOpts.noMetrics ||
     !!process.env.SPANNER_EMULATOR_HOST ||
     (!globalOpts.mock &&
       !!host &&
@@ -346,7 +333,7 @@ async function runBenchmarkAction(
   // 1. Bootstrap OpenTelemetry Metrics Exporter
   const {meter, shutdown: shutdownMetrics} = setupMetrics(
     projectId,
-    isEmulator,
+    noMetrics,
     benchmarkName,
   );
 

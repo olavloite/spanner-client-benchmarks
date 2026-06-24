@@ -65,6 +65,7 @@ func run(ctx context.Context, args []string) error {
 			&cli.StringFlag{Name: "benchmark-name", Usage: "Optional name to identify this benchmark run in metrics"},
 			&cli.StringFlag{Name: "host", Usage: "Custom Spanner host endpoint override"},
 			&cli.BoolFlag{Name: "mock", Value: false, Usage: "Use local mock Spanner server"},
+			&cli.BoolFlag{Name: "no-metrics", Value: false, Usage: "Disable metrics exporting (for testing purposes)"},
 			&cli.StringFlag{Name: "resource-probe-interval", Value: "10s", Usage: "Interval for probing resource usage (e.g. 10s, 1m). Set to 0 to disable"},
 			&cli.IntFlag{Name: "threads", Value: 10, Usage: "Number of parallel workers allowed"},
 			&cli.StringFlag{Name: "load-type", Value: "steady", Usage: "Load type (steady, spiky, gradual)"},
@@ -139,6 +140,7 @@ type GlobalConfig struct {
 	Host                  string
 	Threads               int
 	Mock                  bool
+	NoMetrics             bool
 }
 
 func parseGlobalConfig(cmd *cli.Command) GlobalConfig {
@@ -154,6 +156,7 @@ func parseGlobalConfig(cmd *cli.Command) GlobalConfig {
 		Host:                  cmd.String("host"),
 		Threads:               int(cmd.Int("threads")),
 		Mock:                  cmd.Bool("mock"),
+		NoMetrics:             cmd.Bool("no-metrics"),
 	}
 }
 
@@ -180,10 +183,6 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	burstDuration := cmd.Float("burst-duration")
 	burstFraction := cmd.Float("burst-fraction")
 
-	if cfg.Mock && benchmarkType != "point-select" {
-		return fmt.Errorf("mock is only supported for point-select benchmark")
-	}
-
 	if cfg.Mock {
 		mockSrv, host, mockCleanup := startMockServer()
 		defer mockCleanup()
@@ -203,7 +202,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 	}
 
 	// Setup Metrics
-	latencyHistogram, readLatencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cleanupMetrics, err := setupMetrics(runCtx, cfg.Project, cfg.Host, cfg.BenchmarkName, cfg.Mock)
+	latencyHistogram, readLatencyHistogram, operationCounter, errorCounter, memoryUsageHistogram, cpuUtilizationHistogram, cleanupMetrics, err := setupMetrics(runCtx, cfg.Project, cfg.Host, cfg.BenchmarkName, cfg.NoMetrics)
 	if err != nil {
 		return fmt.Errorf("failed to initialize metrics: %w", err)
 	}
@@ -292,13 +291,13 @@ func getLatencyBuckets() []float64 {
 
 var testingMeterProvider metric.MeterProvider
 
-func setupMetrics(ctx context.Context, projectID string, host string, benchmarkName string, isMock bool) (metric.Float64Histogram, metric.Float64Histogram, metric.Int64Counter, metric.Int64Counter, metric.Float64Histogram, metric.Float64Histogram, func(), error) {
+func setupMetrics(ctx context.Context, projectID string, host string, benchmarkName string, noMetrics bool) (metric.Float64Histogram, metric.Float64Histogram, metric.Int64Counter, metric.Int64Counter, metric.Float64Histogram, metric.Float64Histogram, func(), error) {
 	var meterProvider metric.MeterProvider
 	cleanup := func() {}
 
 	if testingMeterProvider != nil {
 		meterProvider = testingMeterProvider
-	} else if !isMock && (os.Getenv("SPANNER_EMULATOR_HOST") != "" || (host != "" && (strings.Contains(host, "localhost:") || strings.Contains(host, "127.0.0.1:")))) {
+	} else if noMetrics || os.Getenv("SPANNER_EMULATOR_HOST") != "" || (host != "" && (strings.Contains(host, "localhost:") || strings.Contains(host, "127.0.0.1:"))) {
 		h, _ := noop.NewMeterProvider().Meter("").Float64Histogram("")
 		rh, _ := noop.NewMeterProvider().Meter("").Float64Histogram("")
 		o, _ := noop.NewMeterProvider().Meter("").Int64Counter("")

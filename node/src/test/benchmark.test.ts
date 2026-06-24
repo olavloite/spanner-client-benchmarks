@@ -391,6 +391,22 @@ describe('Node.js Benchmark Integration Tests', () => {
     }
   }
 
+  function assertErrorCountIsZero(metricsData: any, benchmarkType: string) {
+    const errorMetric = findMetric(
+      metricsData,
+      'spanner_client_benchmarks/error_count',
+    );
+    if (errorMetric) {
+      assertMetricAttributes(errorMetric, {
+        client: 'node-client',
+        benchmark_type: benchmarkType,
+      });
+      for (const dp of errorMetric.dataPoints) {
+        assert.strictEqual(dp.value, 0, `Expected 0 errors, got ${dp.value}`);
+      }
+    }
+  }
+
   it('should execute Point Select workload cleanly and emit correct telemetry', async () => {
     const meter = provider.getMeter('spanner-benchmark');
     const latHist = meter.createHistogram('spanner_client_benchmarks/latency');
@@ -464,6 +480,8 @@ describe('Node.js Benchmark Integration Tests', () => {
       client: 'node-client',
       benchmark_type: 'point-select',
     });
+
+    assertErrorCountIsZero(metricsData, 'point-select');
   });
 
   it('should execute Point Select workload cleanly in closed-loop mode', async () => {
@@ -586,6 +604,8 @@ describe('Node.js Benchmark Integration Tests', () => {
       client: 'node-client',
       benchmark_type: 'select-update',
     });
+
+    assertErrorCountIsZero(metricsData, 'select-update');
   });
 
   it('should execute Read Large Result Set workload and measure iteration latency', async () => {
@@ -665,6 +685,8 @@ describe('Node.js Benchmark Integration Tests', () => {
       client: 'node-client',
       benchmark_type: 'read-large-result-set',
     });
+
+    assertErrorCountIsZero(metricsData, 'read-large-result-set');
   });
 
   it('should execute TPC-C benchmark runner workload with warehouses scale capacity checks', async () => {
@@ -736,5 +758,7 @@ describe('Node.js Benchmark Integration Tests', () => {
       client: 'node-client',
       benchmark_type: 'tpcc',
     });
+
+    assertErrorCountIsZero(metricsData, 'tpcc');
   });
 });

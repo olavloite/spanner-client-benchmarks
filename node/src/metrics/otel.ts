@@ -35,7 +35,7 @@ export interface MetricSetupResult {
  */
 export function setupMetrics(
   projectId: string,
-  isEmulator: boolean,
+  noMetrics: boolean,
   benchmarkName?: string,
 ): MetricSetupResult {
   if (testingMeterProvider) {
@@ -47,9 +47,9 @@ export function setupMetrics(
     };
   }
 
-  if (isEmulator) {
+  if (noMetrics) {
     console.log(
-      'Spanner Emulator or localhost detected. Initializing No-op metric provider.',
+      'Telemetry disabled or emulator detected. Initializing No-op metric provider.',
     );
     const noopMeter = metrics.getMeter(METER_NAME);
     return {

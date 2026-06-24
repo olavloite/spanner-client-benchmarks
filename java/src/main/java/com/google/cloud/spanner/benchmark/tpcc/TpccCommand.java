@@ -12,6 +12,8 @@ import com.google.cloud.spanner.SpannerOptions;
 import com.google.cloud.spanner.benchmark.AbstractBenchmark;
 import com.google.cloud.spanner.benchmark.BenchmarkApp;
 import com.google.cloud.spanner.benchmark.BenchmarkMetrics;
+import com.google.cloud.spanner.benchmark.MockServerUtil;
+import io.grpc.Server;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.metrics.Meter;
 import java.time.Duration;
@@ -50,10 +52,17 @@ public class TpccCommand implements Runnable {
 
   @Override
   public void run() {
+    Server server = null;
+    if (parent.isMock()) {
+      server = MockServerUtil.startMockSpannerServer(parent, null);
+    }
     try {
       OpenTelemetry openTelemetry =
           BenchmarkApp.initializeOpenTelemetry(
-              parent.getProjectId(), parent.getHost(), parent.getBenchmarkName(), false);
+              parent.getProjectId(),
+              parent.getHost(),
+              parent.getBenchmarkName(),
+              parent.isNoMetrics());
       Meter meter = openTelemetry.getMeter(METER_NAME);
       BenchmarkMetrics metrics = BenchmarkApp.createBenchmarkMetrics(meter, LATENCY_NAME);
 
@@ -96,6 +105,10 @@ public class TpccCommand implements Runnable {
       }
     } catch (Exception e) {
       e.printStackTrace();
+    } finally {
+      if (server != null) {
+        server.shutdown();
+      }
     }
   }
 }

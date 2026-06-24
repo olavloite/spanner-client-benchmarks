@@ -8,6 +8,7 @@ from opentelemetry.sdk.resources import Resource
 from main import main
 from src.metrics.otel import (
     CPU_UTILIZATION_NAME,
+    ERROR_COUNT_NAME,
     LATENCY_NAME,
     MEMORY_USAGE_NAME,
     OPERATION_COUNT_NAME,
@@ -73,6 +74,19 @@ class TestBenchmarkWorkloads(BaseBenchmarkTest):
                     f"Expected attribute {key} to be {value}, got {dp.attributes.get(key)}",
                 )
 
+    def assert_error_count_is_zero(self, metrics_data, benchmark_type, extended=None):
+        error_metric = self.find_metric(metrics_data, ERROR_COUNT_NAME)
+        if error_metric:
+            expected = {
+                "client": "python-client",
+                "benchmark_type": benchmark_type,
+            }
+            if extended is not None:
+                expected["extended"] = extended
+            self.assert_metric_attributes(error_metric, expected)
+            for dp in error_metric.data.data_points:
+                self.assertEqual(dp.value, 0, f"Expected 0 errors, got {dp.value}")
+
     def test_point_select_workload(self):
         args = [
             "main.py",
@@ -124,6 +138,8 @@ class TestBenchmarkWorkloads(BaseBenchmarkTest):
         cpu_metric = self.find_metric(metrics_data, CPU_UTILIZATION_NAME)
         self.assert_metric_attributes(cpu_metric, expected_attrs)
 
+        self.assert_error_count_is_zero(metrics_data, "point-select")
+
     def test_point_select_with_mock_flag(self):
         args = [
             "main.py",
@@ -169,6 +185,8 @@ class TestBenchmarkWorkloads(BaseBenchmarkTest):
 
         cpu_metric = self.find_metric(metrics_data, CPU_UTILIZATION_NAME)
         self.assert_metric_attributes(cpu_metric, expected_attrs)
+
+        self.assert_error_count_is_zero(metrics_data, "point-select-mock")
 
     def test_select_update_workload(self):
         args = [
@@ -217,6 +235,8 @@ class TestBenchmarkWorkloads(BaseBenchmarkTest):
 
         cpu_metric = self.find_metric(metrics_data, CPU_UTILIZATION_NAME)
         self.assert_metric_attributes(cpu_metric, expected_attrs)
+
+        self.assert_error_count_is_zero(metrics_data, "select-update")
 
     def test_read_large_result_set_workload(self):
         args = [
@@ -268,6 +288,8 @@ class TestBenchmarkWorkloads(BaseBenchmarkTest):
         cpu_metric = self.find_metric(metrics_data, CPU_UTILIZATION_NAME)
         self.assert_metric_attributes(cpu_metric, expected_attrs)
 
+        self.assert_error_count_is_zero(metrics_data, "read-large-result-set")
+
     def test_tpcc_workload(self):
         args = [
             "main.py",
@@ -316,6 +338,8 @@ class TestBenchmarkWorkloads(BaseBenchmarkTest):
 
         cpu_metric = self.find_metric(metrics_data, CPU_UTILIZATION_NAME)
         self.assert_metric_attributes(cpu_metric, expected_attrs)
+
+        self.assert_error_count_is_zero(metrics_data, "tpcc")
 
     def test_tpcc_extended_workload(self):
         args = [
@@ -367,3 +391,5 @@ class TestBenchmarkWorkloads(BaseBenchmarkTest):
 
         cpu_metric = self.find_metric(metrics_data, CPU_UTILIZATION_NAME)
         self.assert_metric_attributes(cpu_metric, expected_attrs)
+
+        self.assert_error_count_is_zero(metrics_data, "tpcc", extended="true")

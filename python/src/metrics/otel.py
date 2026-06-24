@@ -25,7 +25,7 @@ def set_testing_meter_provider(provider):
 
 
 def setup_metrics(
-    project_id: str, is_emulator: bool, benchmark_name: str = None
+    project_id: str, no_metrics: bool, benchmark_name: str = None
 ) -> Tuple[metrics.Meter, Callable[[], None]]:
     """
     Initializes OpenTelemetry metrics provider, binding a custom View for explicit
@@ -37,7 +37,7 @@ def setup_metrics(
         meter = _testing_meter_provider.get_meter(METER_NAME)
         return meter, lambda: None
 
-    if is_emulator or project_id == "fake-project":
+    if no_metrics or project_id == "fake-project":
         print(
             "Spanner Emulator, localhost, or fake-project detected. Initializing No-op metrics."
         )

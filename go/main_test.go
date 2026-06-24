@@ -186,6 +186,21 @@ func TestMetricsCollection(t *testing.T) {
 				t.Fatalf("cpu utilization metric was not collected")
 			}
 			assertMetricAttributes(t, m, expectedAttrs)
+
+			// Verify error_count (if collected, should be 0)
+			if m, ok := findMetric(&rm, "spanner_client_benchmarks/error_count"); ok {
+				assertMetricAttributes(t, m, expectedAttrs)
+				switch data := m.Data.(type) {
+				case metricdata.Sum[int64]:
+					for _, dp := range data.DataPoints {
+						if dp.Value != 0 {
+							t.Errorf("expected 0 error count, but got: %d", dp.Value)
+						}
+					}
+				default:
+					t.Errorf("expected error count metric to be of type Sum[int64], got: %T", m.Data)
+				}
+			}
 		})
 	}
 }

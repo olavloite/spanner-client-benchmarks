@@ -61,6 +61,11 @@ public class BenchmarkApp implements Runnable {
   private boolean mock;
 
   @Option(
+      names = {"--no-metrics"},
+      description = "Disable metrics exporting (for testing purposes).")
+  private boolean noMetrics;
+
+  @Option(
       names = {"--duration"},
       description =
           "Duration of the benchmark (e.g. 60s, 5m, inf for infinite). Defaults to infinite if not specified.")
@@ -128,6 +133,10 @@ public class BenchmarkApp implements Runnable {
     return mock;
   }
 
+  public boolean isNoMetrics() {
+    return noMetrics;
+  }
+
   public String getDuration() {
     return duration;
   }
@@ -152,11 +161,12 @@ public class BenchmarkApp implements Runnable {
 
   // Public so subcommands in subpackages can access it
   public static OpenTelemetry initializeOpenTelemetry(
-      String projectId, String host, String benchmarkName, boolean isMock) {
+      String projectId, String host, String benchmarkName, boolean noMetrics) {
     if (testingOpenTelemetry != null) {
       return testingOpenTelemetry;
     }
-    if (!isMock && host != null && (host.contains("localhost:") || host.contains("127.0.0.1:"))) {
+    if (noMetrics
+        || (host != null && (host.contains("localhost:") || host.contains("127.0.0.1:")))) {
       return OpenTelemetry.noop();
     }
 

@@ -254,7 +254,7 @@ class TpccBenchmarkRunner:
             self.stop()
 
         self.stop()
-        executor.shutdown(wait=False)
+        executor.shutdown(wait=True)
         print("TPC-C benchmark execution complete.")
 
     def stop(self) -> None:

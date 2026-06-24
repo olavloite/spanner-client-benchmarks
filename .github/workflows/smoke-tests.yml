@@ -1,0 +1,70 @@
+name: Container Smoke Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  smoke-test:
+    name: Build & Run Smoke Test for ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [go, java, node, python, rust]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Build Docker Image
+        working-directory: ${{ matrix.language }}
+        run: docker build -t benchmark-${{ matrix.language }} .
+
+      - name: Run Point Select Benchmark (Mock)
+        run: |
+          docker run --rm benchmark-${{ matrix.language }} \
+            --project=test-project \
+            --instance=test-instance \
+            --database=test-database \
+            --duration=5s \
+            --mock \
+            --no-metrics \
+            point-select \
+            --table=test
+
+      - name: Run Select and Update Benchmark (Mock)
+        run: |
+          docker run --rm benchmark-${{ matrix.language }} \
+            --project=test-project \
+            --instance=test-instance \
+            --database=test-database \
+            --duration=5s \
+            --mock \
+            --no-metrics \
+            select-update \
+            --table=test
+
+      - name: Run Read Large Result Set Benchmark (Mock)
+        run: |
+          docker run --rm benchmark-${{ matrix.language }} \
+            --project=test-project \
+            --instance=test-instance \
+            --database=test-database \
+            --duration=5s \
+            --mock \
+            --no-metrics \
+            read-large-result-set \
+            --table=test
+
+      - name: Run TPC-C Benchmark (Mock)
+        run: |
+          docker run --rm benchmark-${{ matrix.language }} \
+            --project=test-project \
+            --instance=test-instance \
+            --database=test-database \
+            --duration=5s \
+            --mock \
+            --no-metrics \
+            tpcc
