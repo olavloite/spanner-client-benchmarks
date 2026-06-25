@@ -302,8 +302,7 @@ class AbstractBenchmark(abc.ABC):
             self._socket.sendall(b"READY\n")
         except Exception as e:
             print(f"Failed to connect to sidecar socket: {e}", file=sys.stderr)
-            self.stop()
-            return
+            os._exit(1)
 
         try:
             while not self.is_stopped:
@@ -317,6 +316,7 @@ class AbstractBenchmark(abc.ABC):
         except Exception as e:
             if not self.is_stopped:
                 print(f"Socket reader loop error: {e}", file=sys.stderr)
+                os._exit(1)
         finally:
             self.stop()
 

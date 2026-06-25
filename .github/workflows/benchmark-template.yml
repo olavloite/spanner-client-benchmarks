@@ -54,12 +54,12 @@ on:
         description: 'Number of vCPUs'
         required: false
         type: string
-        default: '2'
+        default: '4'
       memory:
         description: 'Memory allocation'
         required: false
         type: string
-        default: '1Gi'
+        default: '4Gi'
       warehouses:
         description: 'Scale factor (number of warehouses) - TPC-C only (optional)'
         required: false

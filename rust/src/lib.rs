@@ -1096,14 +1096,14 @@ async fn run_socket_triggered_generator(socket_path: String, config: RunConfig) 
         Ok(s) => s,
         Err(e) => {
             eprintln!("Failed to connect to sidecar socket: {:?}", e);
-            return;
+            std::process::exit(1);
         }
     };
 
     // Send READY signal
     if let Err(e) = stream.write_all(b"READY\n").await {
         eprintln!("Failed to send READY signal: {:?}", e);
-        return;
+        std::process::exit(1);
     }
 
     let waiters = Arc::new(AtomicUsize::new(0));
@@ -1152,7 +1152,7 @@ async fn run_socket_triggered_generator(socket_path: String, config: RunConfig) 
                     }
                     Err(e) => {
                         eprintln!("Socket read error: {:?}", e);
-                        break;
+                        std::process::exit(1);
                     }
                 }
             }

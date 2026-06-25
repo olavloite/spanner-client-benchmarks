@@ -20,15 +20,15 @@ const (
 )
 
 type Config struct {
-	SocketPath       string
-	LoadType         LoadType
-	TargetTPS        float64
-	Duration         time.Duration
-	CycleDuration    time.Duration
-	PeakFactor       float64
-	BurstFactor      float64
-	BurstDuration    time.Duration
-	BurstFraction    float64
+	SocketPath    string
+	LoadType      LoadType
+	TargetTPS     float64
+	Duration      time.Duration
+	CycleDuration time.Duration
+	PeakFactor    float64
+	BurstFactor   float64
+	BurstDuration time.Duration
+	BurstFraction float64
 }
 
 func handleClient(conn net.Conn, cfg Config) {
@@ -83,7 +83,7 @@ func runGeneratorWorker(ctx context.Context, cfg Config, numWorkers int, startTi
 	defer wg.Done()
 
 	nextEventTime := time.Now()
-	
+
 	// Pre-calculate Spiky rates if needed
 	var mu1, mu2 float64
 	var spikyState struct {
@@ -91,11 +91,11 @@ func runGeneratorWorker(ctx context.Context, cfg Config, numWorkers int, startTi
 		inBurst             bool
 		nextStateChangeTime time.Time
 	}
-	
+
 	if cfg.LoadType == LoadTypeSpiky {
 		mu2 = 1.0 / cfg.BurstDuration.Seconds()
 		mu1 = mu2 * cfg.BurstFraction / (1.0 - cfg.BurstFraction)
-		
+
 		spikyState.inBurst = false
 		spikyState.nextStateChangeTime = startTime.Add(calculatePoissonDelay(mu1))
 	}
@@ -124,7 +124,7 @@ func runGeneratorWorker(ctx context.Context, cfg Config, numWorkers int, startTi
 					}
 					spikyState.nextStateChangeTime = now.Add(delay)
 				}
-				
+
 				rBurst := cfg.TargetTPS * cfg.BurstFactor
 				rNormal := (cfg.TargetTPS - cfg.BurstFraction*rBurst) / (1.0 - cfg.BurstFraction)
 				if spikyState.inBurst {
@@ -133,7 +133,7 @@ func runGeneratorWorker(ctx context.Context, cfg Config, numWorkers int, startTi
 					targetRate = rNormal
 				}
 				spikyState.Unlock()
-				
+
 			case LoadTypeGradual:
 				cycleNs := float64(cfg.CycleDuration.Nanoseconds())
 				elapsedNs := float64(now.Sub(startTime).Nanoseconds())

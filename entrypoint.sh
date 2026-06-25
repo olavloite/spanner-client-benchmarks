@@ -7,7 +7,11 @@ if [ "$USE_SIDECAR" = "true" ] && [ "$LOAD_TYPE" != "closed-loop" ]; then
   SOCKET_PATH="/tmp/benchmark.sock"
 
   # Build the argument string for the generator
-  GENERATOR_ARGS="--socket-path=$SOCKET_PATH --duration=$DURATION"
+  GENERATOR_ARGS="--socket-path=$SOCKET_PATH"
+
+  if [ -n "$DURATION" ]; then
+    GENERATOR_ARGS="$GENERATOR_ARGS --duration=$DURATION"
+  fi
 
   if [ -n "$LOAD_TYPE" ]; then
     GENERATOR_ARGS="$GENERATOR_ARGS --load-type=$LOAD_TYPE"

@@ -237,6 +237,7 @@ public abstract class AbstractBenchmark {
     } catch (Exception e) {
       if (!Thread.currentThread().isInterrupted()) {
         System.err.println("Socket reader loop error: " + e.getMessage());
+        System.exit(1);
       }
     } finally {
       cleanupSocket();

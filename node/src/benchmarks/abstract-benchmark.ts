@@ -269,6 +269,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
 
     this.socketClient.on('error', err => {
       console.error('Socket client error:', err);
+      process.exit(1);
     });
 
     this.socketClient.on('close', () => {
