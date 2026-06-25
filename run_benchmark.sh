@@ -59,8 +59,9 @@ cd "$CLIENT_TYPE"
 # Setup cleanup trap to remove temp files on script exit
 cleanup_temp_files() {
   echo "Cleaning up temporary sidecar files in $CLIENT_TYPE..."
-  rm -rf ./generator
-  rm -f ./entrypoint.sh
+  rm -rf "$INIT_DIR/$CLIENT_TYPE/generator"
+  rm -f "$INIT_DIR/$CLIENT_TYPE/entrypoint.sh"
+  rm -f "$INIT_DIR/$CLIENT_TYPE/gce_startup.sh"
 }
 trap cleanup_temp_files EXIT
 
@@ -68,17 +69,20 @@ trap cleanup_temp_files EXIT
 echo "Copying generator and entrypoint for container build..."
 cp -r ../generator ./generator
 cp ../entrypoint.sh ./entrypoint.sh
+if [ "$BENCHMARK_TARGET" = "gce" ]; then
+  cp ../gce_startup.sh ./gce_startup.sh
+fi
 
+# Resolved image and job naming
 SUFFIX="$(date +%s)-$(head -c 100 /dev/urandom | LC_ALL=C tr -dc 'a-z0-9' | head -c 4)"
 IMAGE_NAME="${IMAGE_NAME:-$REGION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/spanner-$CLIENT_TYPE-benchmark:$SUFFIX}"
-JOB_NAME="${JOB_NAME:-sb-$BENCHMARK_TYPE-$CLIENT_TYPE-$SUFFIX}"
 
-# Build the image using Cloud Build
-echo "Building image with Cloud Build for $CLIENT_TYPE..."
-gcloud builds submit --project "$PROJECT_ID" --config ../cloudbuild.yaml --substitutions="_IMAGE_NAME=$IMAGE_NAME,_USE_RELEASED_VERSION=${USE_RELEASED_VERSION:-false},_CLIENT_BRANCH=${CLIENT_BRANCH:-main},_CLIENT_REPO=${CLIENT_REPO:-}" --polling-interval="$POLLING_INTERVAL" .
+SIDECAR_LABEL="nosidecar"
+if [ "${USE_SIDECAR}" = "true" ]; then
+  SIDECAR_LABEL="sidecar"
+fi
+JOB_NAME="${JOB_NAME:-sb-$BENCHMARK_TYPE-$CLIENT_TYPE-$SIDECAR_LABEL-$SUFFIX}"
 
-cleanup_temp_files
-trap - EXIT
 
 BENCHMARK_NAME_FLAG=""
 if [ -n "$BENCHMARK_NAME" ]; then
@@ -143,9 +147,12 @@ if [ "$BENCHMARK_TARGET" = "gce" ]; then
 
   echo "Selected GCE machine type: $MACHINE_TYPE"
 
-  # Translate environment variables from --set-env-vars=K=V,K2=V2 to --container-env=K=V,K2=V2
+  # Translate environment variables from --set-env-vars=K=V,K2=V2 to multiple --container-env flags
   ENV_VARS="${ENV_FLAGS#*=}"
-  GCE_ENV_FLAGS="--container-env=$ENV_VARS"
+  GCE_ENV_FLAGS=""
+  for var in ${ENV_VARS//,/ }; do
+    GCE_ENV_FLAGS="$GCE_ENV_FLAGS --container-env=$var"
+  done
 
   # Translate comma-separated ARGS to multiple --container-arg flags
   GCE_CONTAINER_ARGS=""
@@ -153,53 +160,28 @@ if [ "$BENCHMARK_TARGET" = "gce" ]; then
     GCE_CONTAINER_ARGS="$GCE_CONTAINER_ARGS --container-arg=$arg"
   done
 
-  # Construct the self-deleting startup script (runs on host VM OS)
-  # It waits for the container to start, dynamically detects cores on the host,
-  # pins the container to all cores except Core 0 (if multi-core), and deletes the VM on exit.
-  SKIP_VM_CLEANUP="${SKIP_VM_CLEANUP:-false}"
-  DELETE_VM_CMD=""
-  if [ "$SKIP_VM_CLEANUP" = "false" ]; then
-    DELETE_VM_CMD="NAME=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/name)
-ZONE=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/zone | awk -F/ '{print \$NF}')
-PROJECT=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/project/project-id)
-TOKEN=\$(curl -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | sed -e 's/.*\"access_token\":\"\([^\"]*\)\".*/\1/')
-curl -s -X DELETE \
-  -H \"Authorization: Bearer \$TOKEN\" \
-  \"https://compute.googleapis.com/compute/v1/projects/\$PROJECT/zones/\$ZONE/instances/\$NAME\""
-  fi
-
-  STARTUP_SCRIPT="(
-while [ -z \"\$(docker ps -q --filter name=$JOB_NAME)\" ]; do sleep 1; done
-CID=\$(docker ps -q --filter name=$JOB_NAME)
-NUM_CORES=\$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo)
-if [ \$NUM_CORES -gt 1 ]; then
-  docker update --cpuset-cpus=1-\$((NUM_CORES - 1)) \$CID
-else
-  docker update --cpuset-cpus=0 \$CID
-fi
-docker wait \$CID
-$DELETE_VM_CMD
-) >/tmp/startup_script.log 2>&1 &"
-
-  echo "Deploying dedicated GCE Spot instance VM..."
   VM_ZONE="${ZONE:-$REGION-a}"
-  gcloud compute instances create-with-container "$JOB_NAME" \
-    --container-image="$IMAGE_NAME" \
-    --project="$PROJECT_ID" \
-    --zone="$VM_ZONE" \
-    --machine-type="$MACHINE_TYPE" \
-    --no-address \
-    --scopes="cloud-platform" \
-    --service-account="spanner-client-benchmarks@$PROJECT_ID.iam.gserviceaccount.com" \
-    --provisioning-model=SPOT \
-    --instance-termination-action=DELETE \
-    --labels=owner=spanner-client-benchmarks \
-    $GCE_ENV_FLAGS \
-    $GCE_CONTAINER_ARGS \
-    --metadata="startup-script=$STARTUP_SCRIPT"
 
-  echo "GCE VM instance $JOB_NAME deployed successfully and is running in the background."
+  # Submit asynchronous build and GCE deployment to Cloud Build
+  echo "Submitting asynchronous build and GCE deployment to Cloud Build for $CLIENT_TYPE..."
+  gcloud builds submit --project "$PROJECT_ID" \
+    --config ../cloudbuild_gce.yaml \
+    --ignore-file=../.gcloudignore \
+    --service-account="projects/$PROJECT_ID/serviceAccounts/spanner-client-benchmarks@$PROJECT_ID.iam.gserviceaccount.com" \
+    --async \
+    --substitutions="_IMAGE_NAME=$IMAGE_NAME,_USE_RELEASED_VERSION=${USE_RELEASED_VERSION:-false},_CLIENT_BRANCH=${CLIENT_BRANCH:-main},_CLIENT_REPO=${CLIENT_REPO:-},_JOB_NAME=$JOB_NAME,_ZONE=$VM_ZONE,_MACHINE_TYPE=$MACHINE_TYPE,_GCE_ENV_FLAGS=$GCE_ENV_FLAGS,_GCE_CONTAINER_ARGS=$GCE_CONTAINER_ARGS" \
+    .
+  echo "Cloud Build triggered asynchronously. GCE instance will boot on GCP once the build completes."
 else
+  # Build the image using Cloud Build (synchronously, like the original flow)
+  echo "Building image with Cloud Build for $CLIENT_TYPE..."
+  gcloud builds submit --project "$PROJECT_ID" \
+    --config ../cloudbuild.yaml \
+    --ignore-file=../.gcloudignore \
+    --substitutions="_IMAGE_NAME=$IMAGE_NAME,_USE_RELEASED_VERSION=${USE_RELEASED_VERSION:-false},_CLIENT_BRANCH=${CLIENT_BRANCH:-main},_CLIENT_REPO=${CLIENT_REPO:-}" \
+    --polling-interval="$POLLING_INTERVAL" \
+    .
+
   # Create or update the Cloud Run Job
   echo "Deploying Cloud Run Job..."
   gcloud run jobs deploy "$JOB_NAME" \

@@ -1,0 +1,40 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+  - 'build'
+  - '--build-arg'
+  - 'USE_RELEASED_VERSION=${_USE_RELEASED_VERSION}'
+  - '--build-arg'
+  - 'CLIENT_BRANCH=${_CLIENT_BRANCH}'
+  - '--build-arg'
+  - 'CLIENT_REPO=${_CLIENT_REPO}'
+  - '-t'
+  - '${_IMAGE_NAME}'
+  - '.'
+
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    gcloud compute instances create-with-container "${_JOB_NAME}" \
+      --container-image="${_IMAGE_NAME}" \
+      --project="${PROJECT_ID}" \
+      --zone="${_ZONE}" \
+      --machine-type="${_MACHINE_TYPE}" \
+      --no-address \
+      --scopes="cloud-platform" \
+      --service-account="spanner-client-benchmarks@${PROJECT_ID}.iam.gserviceaccount.com" \
+      --provisioning-model=SPOT \
+      --instance-termination-action=DELETE \
+      --container-restart-policy=never \
+      --labels=owner=spanner-client-benchmarks \
+      ${_GCE_ENV_FLAGS} \
+      ${_GCE_CONTAINER_ARGS} \
+      --metadata-from-file="startup-script=gce_startup.sh"
+
+images:
+- '${_IMAGE_NAME}'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

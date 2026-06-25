@@ -1,0 +1,21 @@
+# Exclude git directory and ignore files
+.git/
+.gitignore
+.gcloudignore
+
+# Exclude local package dependencies
+**/node_modules/
+**/bower_components/
+
+# Exclude local build artifacts and caches
+**/target/
+**/bin/
+**/out/
+**/.m2/
+**/build/
+**/dist/
+**/.venv/
+**/venv/
+**/env/
+**/__pycache__/
+*.log

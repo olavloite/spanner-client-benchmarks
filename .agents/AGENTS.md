@@ -9,6 +9,11 @@ When running manual, ad-hoc, or experimental benchmarks (either locally or on GC
 * **Bypass Cleanup**: Always set the environment variable `SKIP_CLEANUP=true` to bypass the execution of the slow automated image/job cleanup script.
 * **Alerting**: Ensure `FOR_ALERTING=false` (the default) is set so that experimental telemetry data does not affect production regression or alerting dashboard pipelines.
 
+### Process Affinity & Sidecar CPU Pinning
+When running sidecar-based benchmarks (`USE_SIDECAR=true`) on GCE VMs (`BENCHMARK_TARGET=gce`):
+* **Do NOT manually manipulate core pinning**: The `entrypoint.sh` automatically detects the hyperthread core topology of the GCE VM, registers the workload generator strictly on CPU 0, and allocates the client runner to all other CPUs (`1..N-1`).
+* **Starvation Prevention**: Single-threaded runtimes with helper thread pools (like Node.js with libuv crypto threads) require at least 3 vCPUs (i.e. `--cpu=4` mapping to `n2-standard-4` machines) to avoid internal CPU starvation and latency inflation. Avoid deploying sidecar Node benchmarks on `n2-standard-2` (2 vCPUs) machines.
+
 ## 📋 Pre-completion Checklist
 Before you state that a task is complete, you **MUST** run the code formatters, linters, and **unit tests** for all languages and directories that you have touched.
 

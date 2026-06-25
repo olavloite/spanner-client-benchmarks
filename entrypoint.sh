@@ -7,16 +7,13 @@ if [ "$USE_SIDECAR" = "true" ] && [ "$LOAD_TYPE" != "closed-loop" ]; then
   SOCKET_PATH="/tmp/benchmark.sock"
 
   # Build the argument string for the generator
-  GENERATOR_ARGS="--socket-path=$SOCKET_PATH"
+  GENERATOR_ARGS="--socket-path=$SOCKET_PATH --duration=$DURATION"
 
   if [ -n "$LOAD_TYPE" ]; then
     GENERATOR_ARGS="$GENERATOR_ARGS --load-type=$LOAD_TYPE"
   fi
   if [ -n "$TPS" ]; then
     GENERATOR_ARGS="$GENERATOR_ARGS --tps=$TPS"
-  fi
-  if [ -n "$DURATION" ]; then
-    GENERATOR_ARGS="$GENERATOR_ARGS --duration=$DURATION"
   fi
 
   if [ -n "$CYCLE_DURATION" ]; then
@@ -35,33 +32,36 @@ if [ "$USE_SIDECAR" = "true" ] && [ "$LOAD_TYPE" != "closed-loop" ]; then
     GENERATOR_ARGS="$GENERATOR_ARGS --burst-fraction=$BURST_FRACTION"
   fi
 
-  # Start the Go workload-generator in the background
-  echo "Starting workload-generator: workload-generator $GENERATOR_ARGS"
-  workload-generator $GENERATOR_ARGS &
-  GENERATOR_PID=$!
-
-  # Wait for the socket file to be created before launching the benchmark client
-  echo "Waiting for sidecar socket to be created..."
-  for i in $(seq 1 30); do
-    if [ -S "$SOCKET_PATH" ]; then
-      break
-    fi
-    sleep 0.1
-  done
-
-  if [ ! -S "$SOCKET_PATH" ]; then
-    echo "ERROR: Sidecar socket was not created within 3 seconds!" >&2
-    kill $GENERATOR_PID 2>/dev/null || true
-    exit 1
+  # Start the Go workload-generator in the background with CPU affinity if possible
+  CPU_COUNT=$(getconf _NPROCESSORS_ONLN || echo 1)
+  if [ "$CPU_COUNT" -gt 1 ] && command -v taskset >/dev/null 2>&1; then
+    GEN_CPUS="0"
+    
+    # Build list of CPUs for client (all CPUs except CPU 0)
+    CLIENT_CPUS=""
+    i=1
+    while [ "$i" -lt "$CPU_COUNT" ]; do
+      if [ -z "$CLIENT_CPUS" ]; then CLIENT_CPUS="$i"; else CLIENT_CPUS="$CLIENT_CPUS,$i"; fi
+      i=$((i + 1))
+    done
+    
+    echo "Isolating processes: Generator bound to CPU [$GEN_CPUS], Client bound to CPUs [$CLIENT_CPUS]"
+    taskset -c "$GEN_CPUS" workload-generator $GENERATOR_ARGS &
+    GENERATOR_PID=$!
+    
+    export SPANNER_BENCHMARK_SOCKET="$SOCKET_PATH"
+    trap 'kill $GENERATOR_PID 2>/dev/null || true' EXIT
+    
+    exec taskset -c "$CLIENT_CPUS" "$@"
+  else
+    echo "Starting workload-generator: workload-generator $GENERATOR_ARGS"
+    workload-generator $GENERATOR_ARGS &
+    GENERATOR_PID=$!
+    export SPANNER_BENCHMARK_SOCKET="$SOCKET_PATH"
+    trap 'kill $GENERATOR_PID 2>/dev/null || true' EXIT
+    exec "$@"
   fi
-  echo "Sidecar socket is ready. Starting benchmark client..."
-
-  # Export socket path for the client benchmark app
-  export SPANNER_BENCHMARK_SOCKET="$SOCKET_PATH"
-
-  # Clean up background generator if main process terminates
-  trap 'kill $GENERATOR_PID 2>/dev/null || true' EXIT
+else
+  # Execute the actual benchmark application command (replaces PID 1)
+  exec "$@"
 fi
-
-# Execute the actual benchmark application command (replaces PID 1)
-exec "$@"
