@@ -30,7 +30,10 @@ if [ "$USE_SIDECAR" = "true" ] && [ "$LOAD_TYPE" != "closed-loop" ]; then
     GENERATOR_ARGS="$GENERATOR_ARGS --burst-factor=$BURST_FACTOR"
   fi
   if [ -n "$BURST_DURATION" ]; then
-    GENERATOR_ARGS="$GENERATOR_ARGS --burst-duration=$BURST_DURATION"
+    case "$BURST_DURATION" in
+      *[a-zA-Z]*) GENERATOR_ARGS="$GENERATOR_ARGS --burst-duration=$BURST_DURATION" ;;
+      *) GENERATOR_ARGS="$GENERATOR_ARGS --burst-duration=${BURST_DURATION}s" ;;
+    esac
   fi
   if [ -n "$BURST_FRACTION" ]; then
     GENERATOR_ARGS="$GENERATOR_ARGS --burst-fraction=$BURST_FRACTION"
