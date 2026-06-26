@@ -14,6 +14,11 @@ use opentelemetry::metrics::{Counter, Histogram, MeterProvider};
 use opentelemetry_gcloud_monitoring_exporter::{GCPMetricsExporter, GCPMetricsExporterConfig};
 use opentelemetry_sdk::metrics::{Aggregation, Instrument, SdkMeterProvider, Stream};
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::AtomicUsize;
+use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixStream;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
 
@@ -604,7 +609,16 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         cycle_duration,
         peak_factor,
     };
-    args.load_type.run(config).await;
+    let socket_path = std::env::var("SPANNER_BENCHMARK_SOCKET").ok();
+    if let Some(path) = socket_path {
+        if !path.is_empty() {
+            run_socket_triggered_generator(path, config).await;
+        } else {
+            args.load_type.run(config).await;
+        }
+    } else {
+        args.load_type.run(config).await;
+    }
 
     // Wait for all active worker tasks to complete
     let _ = semaphore.acquire_many(args.threads as u32).await;
@@ -1071,4 +1085,77 @@ async fn start_mock_spanner_server(
         .map_err(|e| anyhow::anyhow!("Failed to start mock server: {:?}", e))?;
 
     Ok((address, server))
+}
+
+async fn run_socket_triggered_generator(socket_path: String, config: RunConfig) {
+    println!(
+        "Connecting to workload generator sidecar socket: {}",
+        socket_path
+    );
+    let mut stream = match UnixStream::connect(&socket_path).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to connect to sidecar socket: {:?}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Send READY signal
+    if let Err(e) = stream.write_all(b"READY\n").await {
+        eprintln!("Failed to send READY signal: {:?}", e);
+        std::process::exit(1);
+    }
+
+    let waiters = Arc::new(AtomicUsize::new(0));
+    let last_log = Arc::new(Mutex::new(Instant::now()));
+
+    let mut buf = [0u8; 1024];
+
+    // Enforce Duration timeout using tokio::time::sleep
+    let sleep_dur = config.duration.unwrap_or(Duration::from_secs(3600 * 24)); // 1 day fallback
+    let delay_future = tokio::time::sleep(sleep_dur);
+    tokio::pin!(delay_future);
+
+    loop {
+        tokio::select! {
+            _ = &mut delay_future => {
+                println!("Benchmark duration reached. Stopping socket client...");
+                break;
+            }
+            res = stream.read(&mut buf) => {
+                match res {
+                    Ok(0) => {
+                        println!("Workload generator socket connection closed by server.");
+                        break;
+                    }
+                    Ok(n) => {
+                        for i in 0..n {
+                            if buf[i] == 0x01 {
+                                let db_client = config.db_client.clone();
+                                let table = config.table.clone();
+                                let command = config.command.clone();
+                                let metrics = config.metrics.clone();
+                                let attributes = config.attributes.clone();
+                                let semaphore = config.semaphore.clone();
+                                let waiters = waiters.clone();
+                                let last_log = last_log.clone();
+
+                                tokio::spawn(async move {
+                                    let permit = match load_type::acquire_permit_with_logging(semaphore, &waiters, &last_log).await {
+                                        Some(p) => p,
+                                        None => return,
+                                    };
+                                    run_task(db_client, table, command, permit, metrics, attributes).await;
+                                });
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Socket read error: {:?}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+        }
+    }
 }

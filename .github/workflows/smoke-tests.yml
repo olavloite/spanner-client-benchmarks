@@ -18,6 +18,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      - name: Copy sidecar dependencies
+        run: |
+          cp -r generator/ ${{ matrix.language }}/
+          cp entrypoint.sh ${{ matrix.language }}/
+
       - name: Build Docker Image
         working-directory: ${{ matrix.language }}
         run: docker build -t benchmark-${{ matrix.language }} .
@@ -34,9 +39,33 @@ jobs:
             point-select \
             --table=test
 
+      - name: Run Point Select Benchmark in Sidecar Mode (Mock)
+        run: |
+          docker run --rm -e USE_SIDECAR=true -e DURATION=5s benchmark-${{ matrix.language }} \
+            --project=test-project \
+            --instance=test-instance \
+            --database=test-database \
+            --duration=5s \
+            --mock \
+            --no-metrics \
+            point-select \
+            --table=test
+
       - name: Run Select and Update Benchmark (Mock)
         run: |
           docker run --rm benchmark-${{ matrix.language }} \
+            --project=test-project \
+            --instance=test-instance \
+            --database=test-database \
+            --duration=5s \
+            --mock \
+            --no-metrics \
+            select-update \
+            --table=test
+
+      - name: Run Select and Update Benchmark in Sidecar Mode (Mock)
+        run: |
+          docker run --rm -e USE_SIDECAR=true -e DURATION=5s benchmark-${{ matrix.language }} \
             --project=test-project \
             --instance=test-instance \
             --database=test-database \

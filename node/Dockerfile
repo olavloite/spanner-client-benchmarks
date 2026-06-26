@@ -1,3 +1,9 @@
+# Stage 0: Build the Go sidecar generator
+FROM golang:1.26-alpine AS generator-build
+WORKDIR /build
+COPY generator/ .
+RUN CGO_ENABLED=0 go build -o workload-generator .
+
 # Stage 1: Build application against latest Spanner client source
 FROM node:22 AS build
 WORKDIR /app
@@ -33,4 +39,7 @@ COPY --from=build /app/node_modules ./node_modules
 # Copy package.json
 COPY --from=build /app/package.json ./package.json
 
-ENTRYPOINT ["node", "dist/index.js"]
+COPY --from=generator-build /build/workload-generator /usr/local/bin/workload-generator
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+ENTRYPOINT ["./entrypoint.sh", "node", "dist/index.js"]

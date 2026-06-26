@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 
+	"net"
 	"os"
 	"os/signal"
 	"strings"
@@ -462,12 +463,16 @@ func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, late
 		}()
 	}
 
-	generator, ok := generators[loadType]
-	if !ok {
-		log.Fatalf("No generator found for load type: %v", loadType)
+	socketPath := os.Getenv("SPANNER_BENCHMARK_SOCKET")
+	if socketPath != "" {
+		runSocketTriggeredGenerator(ctx, socketPath, tasks)
+	} else {
+		generator, ok := generators[loadType]
+		if !ok {
+			log.Fatalf("No generator found for load type: %v", loadType)
+		}
+		generator.Run(ctx, b, client, latencyHistogram, operationCounter, errorCounter, tableName, targetTPS, concurrentThreads, minId, maxId, attributes, cycleDurationStr, peakFactor, burstFactor, burstDuration, burstFraction, tasks, wg)
 	}
-
-	generator.Run(ctx, b, client, latencyHistogram, operationCounter, errorCounter, tableName, targetTPS, concurrentThreads, minId, maxId, attributes, cycleDurationStr, peakFactor, burstFactor, burstDuration, burstFraction, tasks, wg)
 
 	wg.Wait()
 	if totalOps > 0 {
@@ -517,5 +522,38 @@ func runClosedLoopBenchmark(ctx context.Context, b Benchmark, client *spanner.Cl
 	wg.Wait()
 	if totalOps > 0 {
 		fmt.Printf("Local Run Complete - Total Ops: %d, Average Latency: %.2f us\n", totalOps, float64(totalLatencyUs)/float64(totalOps))
+	}
+}
+
+func runSocketTriggeredGenerator(ctx context.Context, socketPath string, tasks chan struct{}) {
+	defer close(tasks)
+
+	log.Printf("Connecting to workload generator sidecar socket: %s", socketPath)
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		log.Fatalf("Failed to connect to sidecar socket: %v", err)
+	}
+	defer conn.Close()
+
+	// Send READY signal
+	_, err = conn.Write([]byte("READY\n"))
+	if err != nil {
+		log.Fatalf("Failed to send READY signal to sidecar: %v", err)
+	}
+
+	buf := make([]byte, 1)
+	for {
+		_, err := conn.Read(buf)
+		if err != nil {
+			// Connection closed or EOF
+			return
+		}
+		if buf[0] == 0x01 {
+			select {
+			case tasks <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+		}
 	}
 }

@@ -337,7 +337,7 @@ fn calculate_poisson_delay(rate: f64) -> Duration {
     Duration::from_secs_f64(delay_seconds)
 }
 
-async fn acquire_permit_with_logging(
+pub(crate) async fn acquire_permit_with_logging(
     semaphore: Arc<Semaphore>,
     waiters: &Arc<AtomicUsize>,
     last_log: &Arc<Mutex<Instant>>,

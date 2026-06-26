@@ -1,3 +1,9 @@
+# Stage 0: Build the Go sidecar generator
+FROM golang:1.26-alpine AS generator-build
+WORKDIR /build
+COPY generator/ .
+RUN CGO_ENABLED=0 go build -o workload-generator .
+
 # Stage 1: Build dependencies in virtual environment
 FROM python:3.14-slim AS build
 WORKDIR /app
@@ -37,4 +43,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY --from=build /app/main.py .
 COPY --from=build /app/src/ ./src/
 
-ENTRYPOINT ["python", "main.py"]
+COPY --from=generator-build /build/workload-generator /usr/local/bin/workload-generator
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+ENTRYPOINT ["./entrypoint.sh", "python", "main.py"]

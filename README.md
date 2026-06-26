@@ -118,6 +118,7 @@ These variables can be set as environment variables before executing `./run_benc
 - `SPANNER_DISABLE_BUILTIN_METRICS`: Set to `true` to disable client-side OpenTelemetry metrics emission inside the benchmark runner. Defaults to `false`.
 - `POLLING_INTERVAL`: Cloud Build polling interval in seconds. Defaults to `30`.
 - `SKIP_CLEANUP`: Set to `true` to skip running the automatic cleanup script (`cleanup_benchmarks.sh`) before deployment. Defaults to `false`.
+- `USE_SIDECAR`: Set to `true` to run the workload generator as a decoupled sidecar process, communicating with the client benchmark runner over a local Unix domain socket (`/tmp/benchmark.sock`). Defaults to `false`. When deployed to GCE, it enforces process CPU affinity isolation (workload generator on CPU 0, client runner on CPUs `1` to `N-1`) to minimize context-switch latency jitter.
 
 
 ---

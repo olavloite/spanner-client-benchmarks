@@ -5,6 +5,10 @@ import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.DoubleHistogram;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.LongHistogram;
+import java.net.StandardProtocolFamily;
+import java.net.UnixDomainSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SocketChannel;
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -36,6 +40,7 @@ public abstract class AbstractBenchmark {
   protected final DoubleHistogram cpuUtilizationHistogram;
   protected final String resourceProbeInterval;
   private ResourceMonitor resourceMonitor;
+  private SocketChannel socketChannel = null;
 
   public AbstractBenchmark(
       DatabaseClient client,
@@ -118,12 +123,23 @@ public abstract class AbstractBenchmark {
 
     startResourceMonitoring();
 
-    Thread generatorThread =
-        new Thread(
-            () -> {
-              loadType.run(this, executor);
-            },
-            "TPS-Generator");
+    String socketPath = System.getenv("SPANNER_BENCHMARK_SOCKET");
+    Thread generatorThread;
+    if (socketPath != null && !socketPath.isEmpty()) {
+      generatorThread =
+          new Thread(
+              () -> {
+                runSocketTriggeredGenerator(socketPath, executor);
+              },
+              "Socket-Generator");
+    } else {
+      generatorThread =
+          new Thread(
+              () -> {
+                loadType.run(this, executor);
+              },
+              "TPS-Generator");
+    }
 
     generatorThread.start();
 
@@ -135,6 +151,7 @@ public abstract class AbstractBenchmark {
       }
       System.out.println("Benchmark duration reached. Stopping...");
       generatorThread.interrupt();
+      cleanupSocket();
       if (resourceMonitor != null) {
         resourceMonitor.stop();
       }
@@ -142,6 +159,7 @@ public abstract class AbstractBenchmark {
     } catch (InterruptedException e) {
       System.out.println("Benchmark interrupted.");
       generatorThread.interrupt();
+      cleanupSocket();
       if (resourceMonitor != null) {
         resourceMonitor.stop();
       }
@@ -188,6 +206,52 @@ public abstract class AbstractBenchmark {
             operationCounter.add(1, getAttributes());
           }
         });
+  }
+
+  private void runSocketTriggeredGenerator(String socketPath, ExecutorService executor) {
+    System.out.println("Connecting to workload generator sidecar socket: " + socketPath);
+    try {
+      UnixDomainSocketAddress address = UnixDomainSocketAddress.of(socketPath);
+      socketChannel = SocketChannel.open(StandardProtocolFamily.UNIX);
+      socketChannel.connect(address);
+
+      // Send READY signal
+      ByteBuffer buffer = ByteBuffer.wrap("READY\n".getBytes());
+      socketChannel.write(buffer);
+
+      ByteBuffer readBuffer = ByteBuffer.allocate(1024);
+      while (socketChannel.isOpen()) {
+        int bytesRead = socketChannel.read(readBuffer);
+        if (bytesRead == -1) {
+          System.out.println("Workload generator socket connection closed by server.");
+          break;
+        }
+        readBuffer.flip();
+        for (int i = 0; i < bytesRead; i++) {
+          if (readBuffer.get(i) == 0x01) {
+            submitTask(executor);
+          }
+        }
+        readBuffer.clear();
+      }
+    } catch (Exception e) {
+      if (!Thread.currentThread().isInterrupted()) {
+        System.err.println("Socket reader loop error: " + e.getMessage());
+        System.exit(1);
+      }
+    } finally {
+      cleanupSocket();
+    }
+  }
+
+  private void cleanupSocket() {
+    if (socketChannel != null) {
+      try {
+        socketChannel.close();
+      } catch (Exception e) {
+        // Ignore
+      }
+    }
   }
 
   static boolean isCancellationOrInterruption(Throwable e) {
