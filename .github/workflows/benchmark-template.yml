@@ -80,6 +80,16 @@ on:
         required: false
         type: string
         default: 'false'
+      use_sidecar:
+        description: 'Use sidecar for load generation (true/false)'
+        required: false
+        type: string
+        default: 'false'
+      spanner_num_channels:
+        description: 'Number of gRPC channels (optional)'
+        required: false
+        type: string
+        default: ''
     secrets:
       GCP_SA_KEY:
         required: true
@@ -130,4 +140,6 @@ jobs:
           WAREHOUSES: ${{ inputs.warehouses }}
           ITEMS: ${{ inputs.items }}
           MOCK: ${{ inputs.mock }}
+          USE_SIDECAR: ${{ inputs.use_sidecar }}
+          SPANNER_NUM_CHANNELS: ${{ inputs.spanner_num_channels }}
         run: ./run_benchmark.sh ${{ matrix.client }}

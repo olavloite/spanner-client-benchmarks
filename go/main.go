@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -406,6 +407,13 @@ func createSpannerClient(ctx context.Context, project, instance, database, host 
 	var clientOpts []option.ClientOption
 	if host != "" {
 		clientOpts = append(clientOpts, option.WithEndpoint(host), option.WithGRPCDialOption(grpc.WithInsecure()), option.WithoutAuthentication())
+	}
+	numChannelsStr := os.Getenv("SPANNER_NUM_CHANNELS")
+	if numChannelsStr != "" {
+		if numChannels, err := strconv.Atoi(numChannelsStr); err == nil {
+			clientOpts = append(clientOpts, option.WithGRPCConnectionPool(numChannels))
+			log.Printf("Configured Spanner Go client with %d channels.", numChannels)
+		}
 	}
 	return spanner.NewClient(ctx, databaseName, clientOpts...)
 }

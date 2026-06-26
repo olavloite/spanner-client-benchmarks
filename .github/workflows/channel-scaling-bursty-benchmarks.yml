@@ -25,8 +25,10 @@ jobs:
       burst_factor: '3.8'
       burst_duration: '5.0'
       burst_fraction: '0.25'
-      cpu: '8'
+      cpu: '4'
       memory: '4Gi'
+      use_sidecar: 'true'
+      spanner_num_channels: '16'
       benchmark_name: 'channel-scaling-bursty-point-select'
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
@@ -39,13 +41,14 @@ jobs:
       benchmark_types: '["point-select"]'
       duration: '1h'
       load_type: 'spiky'
-      tps: '1300'
-      threads: '120'
+      tps: '600'
+      threads: '100'
       burst_factor: '3.0'
       burst_duration: '5.0'
       burst_fraction: '0.25'
-      cpu: '2'
-      memory: '1Gi'
+      cpu: '4'
+      memory: '4Gi'
+      use_sidecar: 'true'
       benchmark_name: 'channel-scaling-bursty-point-select'
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
@@ -63,8 +66,10 @@ jobs:
       burst_factor: '3.8'
       burst_duration: '5.0'
       burst_fraction: '0.25'
-      cpu: '8'
+      cpu: '4'
       memory: '4Gi'
+      use_sidecar: 'true'
+      spanner_num_channels: '16'
       benchmark_name: 'channel-scaling-bursty-select-update'
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
@@ -77,13 +82,14 @@ jobs:
       benchmark_types: '["select-update"]'
       duration: '1h'
       load_type: 'spiky'
-      tps: '1300'
-      threads: '120'
+      tps: '100'
+      threads: '80'
       burst_factor: '3.0'
       burst_duration: '5.0'
       burst_fraction: '0.25'
-      cpu: '2'
-      memory: '1Gi'
+      cpu: '4'
+      memory: '4Gi'
+      use_sidecar: 'true'
       benchmark_name: 'channel-scaling-bursty-select-update'
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
