@@ -17,7 +17,7 @@ for CLIENT_TYPE in "${SUPPORTED_CLIENTS[@]}"; do
   echo "Scanning artifacts for client: $CLIENT_TYPE"
   
   # Delete old Cloud Run jobs
-  JOBS_TO_DELETE=$(gcloud run jobs list --project="$PROJECT_ID" --region="$REGION" --filter="labels.owner=spanner-client-benchmarks OR name:spanner-benchmark- OR name:spanner-$CLIENT_TYPE-benchmark-job-" --format="value(name,metadata.creationTimestamp)" | python3 -c "
+  JOBS_TO_DELETE=$(gcloud run jobs list --project="$PROJECT_ID" --region="$REGION" --filter="metadata.labels.owner=spanner-client-benchmarks OR metadata.name:spanner-benchmark- OR metadata.name:spanner-$CLIENT_TYPE-benchmark-job-" --format="value(metadata.name,metadata.creationTimestamp)" | python3 -c "
 import sys
 from datetime import datetime, timezone
 threshold = datetime.fromisoformat('$EXPIRATION_DATE'.replace('Z', '+00:00'))
@@ -102,7 +102,7 @@ done
 echo "Checking for leaked GCE VM instances older than $EXPIRATION_DATE..."
 LEAKED_VMS=$(gcloud compute instances list \
   --project="$PROJECT_ID" \
-  --filter="labels.owner=spanner-client-benchmarks" \
+  --filter="labels.owner=spanner-client-benchmarks OR (name ~ '^sb-' AND serviceAccounts.email=spanner-client-benchmarks@$PROJECT_ID.iam.gserviceaccount.com)" \
   --format="value(name,zone,creationTimestamp)" | python3 -c "
 import sys
 from datetime import datetime, timezone
