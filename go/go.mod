@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/spanner v1.92.0
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.57.0
 	github.com/google/uuid v1.6.0
-	github.com/urfave/cli/v3 v3.10.0
+	github.com/urfave/cli/v3 v3.10.1
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/metric v1.44.0
 	go.opentelemetry.io/otel/sdk v1.44.0
