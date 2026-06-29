@@ -85,6 +85,16 @@ on:
         required: false
         type: string
         default: 'false'
+      cycle_duration:
+        description: 'Gradual load cycle duration (optional)'
+        required: false
+        type: string
+        default: ''
+      peak_factor:
+        description: 'Gradual load peak factor (optional)'
+        required: false
+        type: string
+        default: ''
       spanner_num_channels:
         description: 'Number of gRPC channels (optional)'
         required: false
@@ -141,5 +151,7 @@ jobs:
           ITEMS: ${{ inputs.items }}
           MOCK: ${{ inputs.mock }}
           USE_SIDECAR: ${{ inputs.use_sidecar }}
+          CYCLE_DURATION: ${{ inputs.cycle_duration }}
+          PEAK_FACTOR: ${{ inputs.peak_factor }}
           SPANNER_NUM_CHANNELS: ${{ inputs.spanner_num_channels }}
         run: ./run_benchmark.sh ${{ matrix.client }}

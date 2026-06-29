@@ -24,6 +24,7 @@ jobs:
       burst_duration: '5.0'
       burst_fraction: '0.1'
       benchmark_name: 'scheduled-bursty-point-select'
+      use_sidecar: 'true'
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
@@ -39,6 +40,7 @@ jobs:
       burst_duration: '5.0'
       burst_fraction: '0.1'
       benchmark_name: 'scheduled-bursty-select-update'
+      use_sidecar: 'true'
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}

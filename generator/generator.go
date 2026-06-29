@@ -144,8 +144,8 @@ func runGeneratorWorker(ctx context.Context, cfg Config, numWorkers int, startTi
 
 			// Distribute rate equally among workers
 			workerRate := targetRate / float64(numWorkers)
-			if workerRate <= 0.0 {
-				workerRate = 0.0001 // Prevent divide-by-zero or negative delays
+			if workerRate < 1.0 {
+				workerRate = 1.0 // Prevent huge Poisson delays when rate is near 0
 			}
 
 			delay := calculatePoissonDelay(workerRate)
