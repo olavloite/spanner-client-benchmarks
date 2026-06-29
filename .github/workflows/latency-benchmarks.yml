@@ -2,21 +2,68 @@ name: Latency Benchmarks
 
 on:
   schedule:
-    - cron: '42 5 * * *'
+    - cron: "42 5 * * *"
   workflow_dispatch:
     inputs:
       for_alerting:
-        description: 'Mark metrics for alerting'
+        description: "Mark metrics for alerting"
         required: false
         type: boolean
         default: false
 
 jobs:
-  run:
+  run-steady-point-select:
     uses: ./.github/workflows/benchmark-template.yml
     with:
-      benchmark_types: '["point-select", "select-update"]'
-      duration: '2h'
+      benchmark_types: '["point-select"]'
+      duration: "2h"
+      load_type: "steady"
+      tps: "100"
+      use_sidecar: "true"
+      benchmark_name: "scheduled-steady-point-select"
+      for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+
+  run-steady-select-update:
+    uses: ./.github/workflows/benchmark-template.yml
+    with:
+      benchmark_types: '["select-update"]'
+      duration: "2h"
+      load_type: "steady"
+      tps: "50"
+      use_sidecar: "true"
+      benchmark_name: "scheduled-steady-select-update"
+      for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+
+  run-sine-point-select:
+    uses: ./.github/workflows/benchmark-template.yml
+    with:
+      benchmark_types: '["point-select"]'
+      duration: "2h"
+      load_type: "gradual"
+      tps: "100"
+      cycle_duration: "1h"
+      peak_factor: "2.0"
+      use_sidecar: "true"
+      benchmark_name: "scheduled-sine-point-select"
+      for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+
+  run-sine-select-update:
+    uses: ./.github/workflows/benchmark-template.yml
+    with:
+      benchmark_types: '["select-update"]'
+      duration: "2h"
+      load_type: "gradual"
+      tps: "50"
+      cycle_duration: "1h"
+      peak_factor: "2.0"
+      use_sidecar: "true"
+      benchmark_name: "scheduled-sine-select-update"
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
