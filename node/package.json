@@ -20,7 +20,7 @@
     "commander": "^15.0.0"
   },
   "devDependencies": {
-    "@types/node": "^25.9.1",
+    "@types/node": "^26.1.0",
     "gts": "^7.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3"
