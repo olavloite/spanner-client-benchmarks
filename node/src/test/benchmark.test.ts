@@ -689,6 +689,82 @@ describe('Node.js Benchmark Integration Tests', () => {
     assertErrorCountIsZero(metricsData, 'read-large-result-set');
   });
 
+  it('should verify correctness of retrieved large result set rows and distinct values', async () => {
+    const rows = [];
+    for (let i = 0; i < 20; i++) {
+      rows.push(makeRow([
+        i % 2 === 0,
+        Buffer.from(`bytes-${i}`).toString('base64'),
+        `2026-06-${i < 10 ? '0' + i : i}`,
+        i + 0.1,
+        i + 0.2,
+        `${i}s`,
+        JSON.stringify({key: `val-${i}`}),
+        String(i * 10),
+        String(i + 0.5),
+        `string-${i}`,
+        {seconds: 1772532000 + i},
+        `uuid-${i}`,
+      ]));
+    }
+
+    mockServer.addResult(LARGE_RESULT_SET_SQL, {
+      metadata: {
+        row_type: {
+          fields: [
+            {name: 'random_bool', type: {code: 'BOOL'}},
+            {name: 'random_bytes', type: {code: 'BYTES'}},
+            {name: 'random_date', type: {code: 'DATE'}},
+            {name: 'random_float32', type: {code: 'FLOAT64'}},
+            {name: 'random_float64', type: {code: 'FLOAT64'}},
+            {name: 'random_interval', type: {code: 'STRING'}},
+            {name: 'random_json', type: {code: 'JSON'}},
+            {name: 'random_int64', type: {code: 'INT64'}},
+            {name: 'random_numeric', type: {code: 'NUMERIC'}},
+            {name: 'random_string', type: {code: 'STRING'}},
+            {name: 'random_timestamp', type: {code: 'TIMESTAMP'}},
+            {name: 'random_uuid', type: {code: 'STRING'}},
+          ],
+        },
+      },
+      rows: rows,
+    });
+
+    const query = {
+      sql: LARGE_RESULT_SET_SQL,
+      params: {
+        num_rows: 20,
+      },
+      types: {
+        num_rows: 'int64',
+      },
+    };
+
+    const stream = database.runStream(query);
+    const receivedRows: any[] = [];
+
+    await new Promise<void>((resolve, reject) => {
+      stream
+        .on('data', (row: any) => {
+          receivedRows.push(row.toJSON({wrapNumbers: true}));
+        })
+        .on('end', resolve)
+        .on('error', reject);
+    });
+
+    assert.strictEqual(receivedRows.length, 20);
+
+    for (let i = 0; i < 20; i++) {
+      const row = receivedRows[i];
+      assert.strictEqual(row.random_string, `string-${i}`);
+      assert.strictEqual(row.random_int64.value, String(i * 10));
+      assert.strictEqual(row.random_bool, i % 2 === 0);
+      assert.deepStrictEqual(row.random_json, {key: `val-${i}`});
+    }
+
+    registerMockResults(mockServer);
+  });
+
   it('should execute TPC-C benchmark runner workload with warehouses scale capacity checks', async () => {
     const meter = provider.getMeter('spanner-benchmark');
     const latHist = meter.createHistogram('spanner_client_benchmarks/latency');
@@ -760,5 +836,137 @@ describe('Node.js Benchmark Integration Tests', () => {
     });
 
     assertErrorCountIsZero(metricsData, 'tpcc');
+  });
+
+  it('should retry transaction when commit returns ABORTED error', async () => {
+    const originalUseNativeProxy = process.env.USE_NATIVE_PROXY;
+    process.env.USE_NATIVE_PROXY = 'true';
+
+    const testSpannerClient = createSpannerClient('fake-project', `127.0.0.1:${port}`);
+    const testDatabase = testSpannerClient.instance('fake-instance').database('fake-database', {
+      min: 0,
+      acquireTimeout: 1000,
+    });
+
+    try {
+      mockServer.registerAllMockResults('test_table');
+      mockServer.setAbortNextCommit(true);
+
+      let attempts = 0;
+      await testDatabase.runTransactionAsync(async (transaction: any) => {
+        attempts++;
+        console.log(`[Test] Commit Abort transaction attempt ${attempts} started`);
+        const selectQuery = {
+          sql: 'SELECT id FROM test_table WHERE id = @id',
+          params: { id: 1 },
+          types: { id: 'int64' }
+        };
+
+        const [rows] = await transaction.run(selectQuery);
+        assert.ok(rows.length > 0);
+
+        const updateQuery = {
+          sql: 'UPDATE test_table SET value = @value WHERE id = @id',
+          params: { id: 1, value: 'updated-val' },
+          types: { id: 'int64', value: 'string' }
+        };
+        await transaction.runUpdate(updateQuery);
+
+        await transaction.commit();
+      });
+
+      assert.strictEqual(attempts, 2);
+    } finally {
+      await testDatabase.close();
+      process.env.USE_NATIVE_PROXY = originalUseNativeProxy || '';
+    }
+  });
+
+  it('should retry transaction when streaming query returns ABORTED error', async () => {
+    const originalUseNativeProxy = process.env.USE_NATIVE_PROXY;
+    process.env.USE_NATIVE_PROXY = 'true';
+
+    const testSpannerClient = createSpannerClient('fake-project', `127.0.0.1:${port}`);
+    const testDatabase = testSpannerClient.instance('fake-instance').database('fake-database', {
+      min: 0,
+      acquireTimeout: 1000,
+    });
+
+    try {
+      mockServer.registerAllMockResults('test_table');
+      mockServer.setAbortNextQuery(true);
+
+      let attempts = 0;
+      await testDatabase.runTransactionAsync(async (transaction: any) => {
+        attempts++;
+        console.log(`[Test] Query Abort transaction attempt ${attempts} started`);
+        const selectQuery = {
+          sql: 'SELECT id FROM test_table WHERE id = @id',
+          params: { id: 1 },
+          types: { id: 'int64' }
+        };
+
+        const [rows] = await transaction.run(selectQuery);
+        assert.ok(rows.length > 0);
+
+        const updateQuery = {
+          sql: 'UPDATE test_table SET value = @value WHERE id = @id',
+          params: { id: 1, value: 'updated-val' },
+          types: { id: 'int64', value: 'string' }
+        };
+        await transaction.runUpdate(updateQuery);
+
+        await transaction.commit();
+      });
+
+      assert.strictEqual(attempts, 2);
+    } finally {
+      await testDatabase.close();
+      process.env.USE_NATIVE_PROXY = originalUseNativeProxy || '';
+    }
+  });
+
+  it('should retry transaction when streaming query returns ABORTED error mid-stream', async () => {
+    const originalUseNativeProxy = process.env.USE_NATIVE_PROXY;
+    process.env.USE_NATIVE_PROXY = 'true';
+
+    const testSpannerClient = createSpannerClient('fake-project', `127.0.0.1:${port}`);
+    const testDatabase = testSpannerClient.instance('fake-instance').database('fake-database', {
+      min: 0,
+      acquireTimeout: 1000,
+    });
+
+    try {
+      mockServer.registerAllMockResults('test_table');
+      mockServer.setAbortQueryMidStream(true);
+
+      let attempts = 0;
+      await testDatabase.runTransactionAsync(async (transaction: any) => {
+        attempts++;
+        console.log(`[Test] Mid-Stream Query Abort transaction attempt ${attempts} started`);
+        const selectQuery = {
+          sql: 'SELECT id FROM test_table WHERE id = @id',
+          params: { id: 1 },
+          types: { id: 'int64' }
+        };
+
+        const [rows] = await transaction.run(selectQuery);
+        assert.ok(rows.length > 0);
+
+        const updateQuery = {
+          sql: 'UPDATE test_table SET value = @value WHERE id = @id',
+          params: { id: 1, value: 'updated-val' },
+          types: { id: 'int64', value: 'string' }
+        };
+        await transaction.runUpdate(updateQuery);
+
+        await transaction.commit();
+      });
+
+      assert.strictEqual(attempts, 2);
+    } finally {
+      await testDatabase.close();
+      process.env.USE_NATIVE_PROXY = originalUseNativeProxy || '';
+    }
   });
 });

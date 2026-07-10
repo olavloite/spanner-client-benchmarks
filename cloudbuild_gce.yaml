@@ -8,15 +8,30 @@ steps:
   - 'CLIENT_BRANCH=${_CLIENT_BRANCH}'
   - '--build-arg'
   - 'CLIENT_REPO=${_CLIENT_REPO}'
+  - '--build-arg'
+  - 'COMPILE_RUST_ADDON=${_COMPILE_RUST_ADDON}'
+  - '--build-arg'
+  - 'COMPILE_GO_ADDON=${_COMPILE_GO_ADDON}'
+  - '--target=${_DOCKER_TARGET}'
   - '-t'
   - '${_IMAGE_NAME}'
   - '.'
+
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+  - 'push'
+  - '${_IMAGE_NAME}'
 
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: 'bash'
   args:
   - '-c'
   - |
+    TERMINATION_FLAG=""
+    if [ "${_TERMINATION_ACTION}" != "STOP" ]; then
+      TERMINATION_FLAG="--instance-termination-action=${_TERMINATION_ACTION}"
+    fi
+
     gcloud compute instances create-with-container "${_JOB_NAME}" \
       --container-image="${_IMAGE_NAME}" \
       --project="${PROJECT_ID}" \
@@ -25,10 +40,12 @@ steps:
       --no-address \
       --scopes="cloud-platform" \
       --service-account="spanner-client-benchmarks@${PROJECT_ID}.iam.gserviceaccount.com" \
-      --provisioning-model=SPOT \
-      --instance-termination-action=DELETE \
+      --provisioning-model="${_PROVISIONING_MODEL}" \
+      $$TERMINATION_FLAG \
       --container-restart-policy=never \
+      --boot-disk-size=50GB \
       --labels=owner=spanner-client-benchmarks \
+      --metadata="DEBUG_VM=${_DEBUG_VM}" \
       ${_GCE_ENV_FLAGS} \
       ${_GCE_CONTAINER_ARGS} \
       --metadata-from-file="startup-script=gce_startup.sh"
@@ -38,3 +55,9 @@ images:
 
 options:
   logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _PROVISIONING_MODEL: 'SPOT'
+  _TERMINATION_ACTION: 'DELETE'
+  _DEBUG_VM: 'false'
+  _DOCKER_TARGET: 'release'

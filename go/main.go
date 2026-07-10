@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -420,6 +421,7 @@ func createSpannerClient(ctx context.Context, project, instance, database, host 
 
 func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, latencyHistogram metric.Float64Histogram, operationCounter metric.Int64Counter, errorCounter metric.Int64Counter, tableName string, targetTPS float64, concurrentThreads int, minId, maxId int64, attributes metric.MeasurementOption, loadType LoadType, cycleDurationStr string, peakFactor, burstFactor, burstDuration, burstFraction float64) {
 	var statMu sync.Mutex
+	var latencies []int64
 	var totalLatencyUs int64
 	var totalOps int64
 
@@ -453,6 +455,7 @@ func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, late
 						statMu.Lock()
 						totalLatencyUs += duration.Microseconds()
 						totalOps++
+						latencies = append(latencies, duration.Microseconds())
 						statMu.Unlock()
 					}
 
@@ -483,8 +486,35 @@ func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, late
 	}
 
 	wg.Wait()
-	if totalOps > 0 {
-		fmt.Printf("Local Run Complete - Total Ops: %d, Average Latency: %.2f us\n", totalOps, float64(totalLatencyUs)/float64(totalOps))
+	if len(latencies) > 0 {
+		sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
+		var sum int64
+		for _, val := range latencies {
+			sum += val
+		}
+		mean := float64(sum) / float64(len(latencies))
+		min := latencies[0]
+		max := latencies[len(latencies)-1]
+		getPercentile := func(p float64) float64 {
+			idx := int(p / 100.0 * float64(len(latencies)))
+			if idx >= len(latencies) {
+				idx = len(latencies) - 1
+			}
+			return float64(latencies[idx])
+		}
+
+		fmt.Println("\n======================================")
+		fmt.Println("      LOCAL LATENCY REPORT (us) - GO")
+		fmt.Println("======================================")
+		fmt.Printf("Total Operations: %d\n", len(latencies))
+		fmt.Printf("Mean Latency:     %.2f us (%.2f ms)\n", mean, mean/1000)
+		fmt.Printf("Min Latency:      %.2f us (%.2f ms)\n", float64(min), float64(min)/1000)
+		fmt.Printf("P50 (Median):     %.2f us (%.2f ms)\n", getPercentile(50), getPercentile(50)/1000)
+		fmt.Printf("P90:              %.2f us (%.2f ms)\n", getPercentile(90), getPercentile(90)/1000)
+		fmt.Printf("P95:              %.2f us (%.2f ms)\n", getPercentile(95), getPercentile(95)/1000)
+		fmt.Printf("P99:              %.2f us (%.2f ms)\n", getPercentile(99), getPercentile(99)/1000)
+		fmt.Printf("Max Latency:      %.2f us (%.2f ms)\n", float64(max), float64(max)/1000)
+		fmt.Println("======================================\n")
 	}
 }
 

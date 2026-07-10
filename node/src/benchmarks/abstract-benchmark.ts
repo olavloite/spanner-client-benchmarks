@@ -47,6 +47,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
   private taskQueue: number[] = [];
   private lastQueueLogTime = 0;
   private isStopped = false;
+  private latencies: number[] = [];
   private worker: Worker | null = null;
   private socketClient?: net.Socket;
   private rBurst: number;
@@ -331,6 +332,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
       if (this.shouldMeasureEntireMethod()) {
         const latencyUs = Number(endTimeNs - startTimeNs) / 1000;
         this.latencyHistogram.record(latencyUs, this.attributes);
+        this.latencies.push(latencyUs);
       }
       this.operationCounter.add(1, this.attributes);
       this.activeTasks--;
@@ -398,6 +400,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
       if (this.shouldMeasureEntireMethod()) {
         const latencyUs = Number(endTimeNs - startTimeNs) / 1000;
         this.latencyHistogram.record(latencyUs, this.attributes);
+        this.latencies.push(latencyUs);
       }
       this.operationCounter.add(1, this.attributes);
     }
@@ -412,5 +415,36 @@ export abstract class AbstractBenchmark implements IBenchmark {
       () => this.isStopped,
     );
     this.resourceMonitor.start();
+  }
+
+  public printLatencySummary(): void {
+    const data = this.latencies;
+    if (data.length === 0) {
+      console.log('No latency metrics collected.');
+      return;
+    }
+    data.sort((a, b) => a - b);
+    const sum = data.reduce((a, b) => a + b, 0);
+    const mean = sum / data.length;
+    const min = data[0];
+    const max = data[data.length - 1];
+
+    const getPercentile = (p: number) => {
+      const idx = Math.floor((p / 100) * data.length);
+      return data[idx];
+    };
+
+    console.log('\n======================================');
+    console.log('      LOCAL LATENCY REPORT (us)');
+    console.log('======================================');
+    console.log(`Total Operations: ${data.length}`);
+    console.log(`Mean Latency:     ${(mean).toFixed(2)} us (${(mean / 1000).toFixed(2)} ms)`);
+    console.log(`Min Latency:      ${(min).toFixed(2)} us (${(min / 1000).toFixed(2)} ms)`);
+    console.log(`P50 (Median):     ${getPercentile(50).toFixed(2)} us (${(getPercentile(50) / 1000).toFixed(2)} ms)`);
+    console.log(`P90:              ${getPercentile(90).toFixed(2)} us (${(getPercentile(90) / 1000).toFixed(2)} ms)`);
+    console.log(`P95:              ${getPercentile(95).toFixed(2)} us (${(getPercentile(95) / 1000).toFixed(2)} ms)`);
+    console.log(`P99:              ${getPercentile(99).toFixed(2)} us (${(getPercentile(99) / 1000).toFixed(2)} ms)`);
+    console.log(`Max Latency:      ${(max).toFixed(2)} us (${(max / 1000).toFixed(2)} ms)`);
+    console.log('======================================\n');
   }
 }

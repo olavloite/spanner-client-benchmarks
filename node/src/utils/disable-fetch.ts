@@ -1,3 +1,14 @@
+process.on('uncaughtException', (err) => {
+  console.error('FATAL UNCAUGHT EXCEPTION ON STARTUP:', err);
+  // Delay exit by 5 seconds to ensure Fluent Bit has time to flush logs to Cloud Logging
+  setTimeout(() => process.exit(1), 5000);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('FATAL UNHANDLED REJECTION ON STARTUP:', reason);
+  // Delay exit by 5 seconds to ensure Fluent Bit has time to flush logs to Cloud Logging
+  setTimeout(() => process.exit(1), 5000);
+});
+
 // Disable global fetch to force standard HTTPS socket fallback in GCP exporters
 // @ts-ignore
 delete (globalThis as any).fetch;

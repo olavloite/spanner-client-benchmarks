@@ -59,6 +59,27 @@ if [ "$USE_SIDECAR" = "true" ] && [ "$LOAD_TYPE" != "closed-loop" ]; then
     export SPANNER_BENCHMARK_SOCKET="$SOCKET_PATH"
     trap 'kill $GENERATOR_PID 2>/dev/null || true' EXIT
     
+    echo "Waiting for sidecar socket to accept connections..."
+    node -e "
+    const net = require('net');
+    let retries = 0;
+    function tryConnect() {
+      const socket = net.createConnection('/tmp/benchmark.sock', () => {
+        socket.destroy();
+        process.exit(0);
+      });
+      socket.on('error', () => {
+        retries++;
+        if (retries > 300) {
+          console.error('Timeout waiting for workload-generator socket');
+          process.exit(1);
+        }
+        setTimeout(tryConnect, 100);
+      });
+    }
+    tryConnect();
+    "
+    
     exec taskset -c "$CLIENT_CPUS" "$@"
   else
     echo "Starting workload-generator: workload-generator $GENERATOR_ARGS"
@@ -66,6 +87,28 @@ if [ "$USE_SIDECAR" = "true" ] && [ "$LOAD_TYPE" != "closed-loop" ]; then
     GENERATOR_PID=$!
     export SPANNER_BENCHMARK_SOCKET="$SOCKET_PATH"
     trap 'kill $GENERATOR_PID 2>/dev/null || true' EXIT
+    
+    echo "Waiting for sidecar socket to accept connections..."
+    node -e "
+    const net = require('net');
+    let retries = 0;
+    function tryConnect() {
+      const socket = net.createConnection('/tmp/benchmark.sock', () => {
+        socket.destroy();
+        process.exit(0);
+      });
+      socket.on('error', () => {
+        retries++;
+        if (retries > 300) {
+          console.error('Timeout waiting for workload-generator socket');
+          process.exit(1);
+        }
+        setTimeout(tryConnect, 100);
+      });
+    }
+    tryConnect();
+    "
+    
     exec "$@"
   fi
 else
