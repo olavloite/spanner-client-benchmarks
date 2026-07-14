@@ -522,6 +522,9 @@ async function runBenchmarkAction(
     // Execute standard cleanup if we finished normal duration instead of signal kill
     if (!isTerminating) {
       isTerminating = true;
+      try {
+        benchmark.printLatencySummary();
+      } catch (e) {}
       console.log('[Cleanup] Closing Spanner client...');
       try {
         spanner.close();

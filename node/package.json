@@ -10,8 +10,8 @@
     "format": "gts fix"
   },
   "dependencies": {
-    "@google-cloud/spanner": "^8.7.1",
     "@google-cloud/opentelemetry-cloud-monitoring-exporter": "^0.21.0",
+    "@google-cloud/spanner": "file:../../../google-cloud-node/handwritten/spanner/google-cloud-spanner-8.8.0.tgz",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/core": "^2.7.1",
     "@opentelemetry/resources": "^2.7.1",
@@ -20,7 +20,10 @@
     "commander": "^15.0.0"
   },
   "devDependencies": {
+    "@grpc/grpc-js": "^1.13.2",
+    "@grpc/proto-loader": "^0.8.0",
     "@types/node": "^25.9.1",
+    "google-gax": "5.0.6",
     "gts": "^7.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3"

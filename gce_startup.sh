@@ -38,7 +38,18 @@ log_info() {
 
   # Wait for benchmark container to finish
   log_info "Waiting for container $CID to finish..."
+  docker logs -f $CID > /dev/console 2>&1 &
+  LOGS_PID=$!
   docker wait $CID
+  kill $LOGS_PID 2>/dev/null
+
+  # Check if self-deletion is disabled for debugging
+  DEBUG_VM=$(curl -s -f -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/attributes/DEBUG_VM || echo "false")
+  if [ "$DEBUG_VM" = "true" ]; then
+    log_info "Container $CID finished. DEBUG_VM is true, skipping self-deletion."
+    exit 0
+  fi
+
   log_info "Container $CID finished. Deleting instance..."
 
   # Dynamic self-deletion via GCE metadata server

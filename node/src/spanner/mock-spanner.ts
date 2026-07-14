@@ -9,6 +9,21 @@ export class MockSpannerServer {
   private results: Map<string, any> = new Map();
   private sessionCounter = 0;
   private transactionCounter = 0;
+  private abortNextCommit = false;
+  private abortNextQuery = false;
+  private abortQueryMidStream = false;
+
+  public setAbortNextCommit(abort: boolean) {
+    this.abortNextCommit = abort;
+  }
+
+  public setAbortNextQuery(abort: boolean) {
+    this.abortNextQuery = abort;
+  }
+
+  public setAbortQueryMidStream(abort: boolean) {
+    this.abortQueryMidStream = abort;
+  }
 
   constructor() {
     this.server = new grpc.Server();
@@ -185,14 +200,51 @@ export class MockSpannerServer {
 
   private executeStreamingSql(call: any) {
     this.requests.push(call.request);
+    if (this.abortNextQuery) {
+      this.abortNextQuery = false;
+      const err = new Error('Transaction was aborted.');
+      Object.assign(err, { code: grpc.status.ABORTED });
+      call.emit('error', err);
+      call.end();
+      return;
+    }
     const sql = call.request.sql;
     const result = this.getResultForSql(sql);
+    if (this.abortQueryMidStream) {
+      this.abortQueryMidStream = false;
+      const fields = result?.metadata?.row_type?.fields || [];
+      const firstPart: any = {
+        metadata: {
+          row_type: { fields },
+        },
+      };
+
+      if (call.request.transaction?.begin) {
+        this.transactionCounter++;
+        const txId = Buffer.from(`tx-${this.transactionCounter}`).toString('base64');
+        firstPart.metadata.transaction = { id: txId };
+      }
+
+      call.write(firstPart);
+
+      if (result?.rows && result.rows.length > 0) {
+        call.write({
+          values: result.rows[0],
+        });
+      }
+
+      setTimeout(() => {
+        const err = new Error('Transaction was aborted.');
+        Object.assign(err, { code: grpc.status.ABORTED });
+        call.emit('error', err);
+        call.end();
+      }, 5);
+      return;
+    }
     if (!result) {
-      call.emit('error', {
-        code: grpc.status.NOT_FOUND,
-        message: `No result found for SQL: ${sql}`,
-      });
-      call.end();
+      const err = new Error(`No result found for SQL: ${sql}`);
+      Object.assign(err, { code: grpc.status.NOT_FOUND });
+      call.destroy(err);
       return;
     }
 
@@ -211,24 +263,28 @@ export class MockSpannerServer {
       firstPart.metadata.transaction = {id: txId};
     }
 
-    call.write(firstPart);
+    const delay = Math.random() * 1.5 + 1.5; // Random between 1.5ms and 3.0ms
+    setTimeout(() => {
+      call.write(firstPart);
 
-    if (result.rows && result.rows.length > 0) {
-      for (const row of result.rows) {
+      if (result.rows && result.rows.length > 0) {
+        for (const row of result.rows) {
+          call.write({
+            values: row,
+          });
+        }
+      }
+
+      if (result.stats) {
         call.write({
-          values: row,
+          stats: result.stats,
         });
       }
-    }
 
-    if (result.stats) {
-      call.write({
-        stats: result.stats,
-      });
-    }
-
-    call.end();
+      call.end();
+    }, delay);
   }
+
 
   private executeBatchDml(call: any, callback: any) {
     this.requests.push(call.request);
@@ -265,6 +321,14 @@ export class MockSpannerServer {
 
   private commit(call: any, callback: any) {
     this.requests.push(call.request);
+    if (this.abortNextCommit) {
+      this.abortNextCommit = false;
+      callback({
+        code: grpc.status.ABORTED,
+        message: 'Transaction was aborted.',
+      });
+      return;
+    }
     callback(null, {
       commit_timestamp: {seconds: Math.floor(Date.now() / 1000), nanos: 0},
     });

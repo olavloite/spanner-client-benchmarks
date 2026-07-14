@@ -117,10 +117,12 @@ for line in sys.stdin:
             print(f'{name} {zone}')
 ")
 
-for row in $LEAKED_VMS; do
-  read -r name zone <<< "$row"
-  echo "Deleting leaked GCE VM instance: $name in zone $zone"
-  gcloud compute instances delete "$name" --project="$PROJECT_ID" --zone="$zone" --quiet --async
+echo "$LEAKED_VMS" | while read -r name zone; do
+  if [ -n "$name" ]; then
+    echo "Deleting leaked GCE VM instance: $name in zone $zone"
+    gcloud compute instances delete "$name" --project="$PROJECT_ID" --zone="$zone" --quiet &
+  fi
 done
+wait
 
 echo "Cleanup complete."

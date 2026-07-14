@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	spannerpb "google.golang.org/genproto/googleapis/spanner/v1"
 	"google.golang.org/grpc"
@@ -136,6 +138,9 @@ func (m *mockSpannerServer) ExecuteBatchDml(ctx context.Context, req *spannerpb.
 }
 
 func (m *mockSpannerServer) ExecuteStreamingSql(req *spannerpb.ExecuteSqlRequest, stream spannerpb.Spanner_ExecuteStreamingSqlServer) error {
+	delay := time.Duration(1500+rand.Intn(1500)) * time.Microsecond
+	time.Sleep(delay)
+
 	m.addRequest(req)
 	m.mu.Lock()
 	var matchedRes *spannerpb.ResultSet

@@ -62,8 +62,18 @@ cleanup_temp_files() {
   rm -rf "$INIT_DIR/$CLIENT_TYPE/generator"
   rm -f "$INIT_DIR/$CLIENT_TYPE/entrypoint.sh"
   rm -f "$INIT_DIR/$CLIENT_TYPE/gce_startup.sh"
+  rm -rf "$INIT_DIR/$CLIENT_TYPE/spanner-src"
 }
 trap cleanup_temp_files EXIT
+
+# Ensure empty spanner-src exists by default
+mkdir -p spanner-src
+
+# Copy local client source if compiling prototype client
+if [ "${USE_RELEASED_VERSION:-false}" = "false" ]; then
+  echo "Copying local Spanner client source into build context..."
+  rsync -a --delete --exclude="node_modules" --exclude="build" --exclude="native/target" --exclude="native-go/test_native.node" --exclude="native-go/native.node" --exclude=".git" --exclude="target" "/Users/loite/google-cloud-node/handwritten/spanner/" "./spanner-src/"
+fi
 
 # Copy generator and entrypoint into client directory
 echo "Copying generator and entrypoint for container build..."
@@ -122,9 +132,30 @@ fi
 if [ "$SPANNER_DISABLE_BUILTIN_METRICS" = "true" ]; then
   ENV_FLAGS="${ENV_FLAGS},SPANNER_DISABLE_BUILTIN_METRICS=true"
 fi
+if [ -n "$SPANNER_NATIVE_DATABASE_PATH" ]; then
+  ENV_FLAGS="${ENV_FLAGS},SPANNER_NATIVE_DATABASE_PATH=$SPANNER_NATIVE_DATABASE_PATH"
+fi
 
 # Add sidecar configuration env vars
 ENV_FLAGS="${ENV_FLAGS},USE_SIDECAR=${USE_SIDECAR:-false}"
+if [ -n "$USE_NATIVE_PROXY" ]; then
+  ENV_FLAGS="${ENV_FLAGS},USE_NATIVE_PROXY=$USE_NATIVE_PROXY"
+fi
+if [ -n "$SPANNER_NATIVE_V8" ]; then
+  ENV_FLAGS="${ENV_FLAGS},SPANNER_NATIVE_V8=$SPANNER_NATIVE_V8"
+fi
+if [ -n "$SPANNER_ARROW" ]; then
+  ENV_FLAGS="${ENV_FLAGS},SPANNER_ARROW=$SPANNER_ARROW"
+fi
+if [ -n "$SPANNER_NATIVE_NO_COPY_BUFFER" ]; then
+  ENV_FLAGS="${ENV_FLAGS},SPANNER_NATIVE_NO_COPY_BUFFER=$SPANNER_NATIVE_NO_COPY_BUFFER"
+fi
+if [ -n "$USE_GO_PROXY" ]; then
+  ENV_FLAGS="${ENV_FLAGS},USE_GO_PROXY=$USE_GO_PROXY"
+fi
+if [ -n "$USE_RUST_POC2" ]; then
+  ENV_FLAGS="${ENV_FLAGS},USE_RUST_POC2=$USE_RUST_POC2"
+fi
 if [ -n "$LOAD_TYPE" ]; then ENV_FLAGS="${ENV_FLAGS},LOAD_TYPE=$LOAD_TYPE"; fi
 if [ -n "$TPS" ]; then ENV_FLAGS="${ENV_FLAGS},TPS=$TPS"; fi
 if [ -n "$DURATION" ]; then ENV_FLAGS="${ENV_FLAGS},DURATION=$DURATION"; fi
@@ -165,6 +196,23 @@ if [ "$BENCHMARK_TARGET" = "gce" ]; then
 
   VM_ZONE="${ZONE:-$REGION-a}"
 
+  COMPILE_RUST_ADDON="true"
+  COMPILE_GO_ADDON="false"
+  if [ "$USE_GO_PROXY" = "true" ]; then
+    COMPILE_RUST_ADDON="false"
+    COMPILE_GO_ADDON="true"
+  fi
+
+  PROVISIONING_MODEL="SPOT"
+  TERMINATION_ACTION="DELETE"
+  DOCKER_TARGET="release"
+  if [ "$DEBUG_VM" = "true" ]; then
+    echo "DEBUG_VM is true. Deploying GCE VM as standard instance (will stop, not delete, on failure)..."
+    PROVISIONING_MODEL="STANDARD"
+    TERMINATION_ACTION="STOP"
+    DOCKER_TARGET="build"
+  fi
+
   # Submit asynchronous build and GCE deployment to Cloud Build
   echo "Submitting asynchronous build and GCE deployment to Cloud Build for $CLIENT_TYPE..."
   gcloud builds submit --project "$PROJECT_ID" \
@@ -172,16 +220,23 @@ if [ "$BENCHMARK_TARGET" = "gce" ]; then
     --ignore-file=../.gcloudignore \
     --service-account="projects/$PROJECT_ID/serviceAccounts/spanner-client-benchmarks@$PROJECT_ID.iam.gserviceaccount.com" \
     --async \
-    --substitutions="_IMAGE_NAME=$IMAGE_NAME,_USE_RELEASED_VERSION=${USE_RELEASED_VERSION:-false},_CLIENT_BRANCH=${CLIENT_BRANCH:-main},_CLIENT_REPO=${CLIENT_REPO:-},_JOB_NAME=$JOB_NAME,_ZONE=$VM_ZONE,_MACHINE_TYPE=$MACHINE_TYPE,_GCE_ENV_FLAGS=$GCE_ENV_FLAGS,_GCE_CONTAINER_ARGS=$GCE_CONTAINER_ARGS" \
+    --substitutions="_IMAGE_NAME=$IMAGE_NAME,_USE_RELEASED_VERSION=${USE_RELEASED_VERSION:-false},_CLIENT_BRANCH=${CLIENT_BRANCH:-main},_CLIENT_REPO=${CLIENT_REPO:-},_JOB_NAME=$JOB_NAME,_ZONE=$VM_ZONE,_MACHINE_TYPE=$MACHINE_TYPE,_GCE_ENV_FLAGS=$GCE_ENV_FLAGS,_GCE_CONTAINER_ARGS=$GCE_CONTAINER_ARGS,_COMPILE_RUST_ADDON=$COMPILE_RUST_ADDON,_COMPILE_GO_ADDON=$COMPILE_GO_ADDON,_PROVISIONING_MODEL=$PROVISIONING_MODEL,_TERMINATION_ACTION=$TERMINATION_ACTION,_DEBUG_VM=${DEBUG_VM:-false},_DOCKER_TARGET=$DOCKER_TARGET" \
     .
   echo "Cloud Build triggered asynchronously. GCE instance will boot on GCP once the build completes."
 else
+  COMPILE_RUST_ADDON="true"
+  COMPILE_GO_ADDON="false"
+  if [ "$USE_GO_PROXY" = "true" ]; then
+    COMPILE_RUST_ADDON="false"
+    COMPILE_GO_ADDON="true"
+  fi
+
   # Build the image using Cloud Build (synchronously, like the original flow)
   echo "Building image with Cloud Build for $CLIENT_TYPE..."
   gcloud builds submit --project "$PROJECT_ID" \
     --config ../cloudbuild.yaml \
     --ignore-file=../.gcloudignore \
-    --substitutions="_IMAGE_NAME=$IMAGE_NAME,_USE_RELEASED_VERSION=${USE_RELEASED_VERSION:-false},_CLIENT_BRANCH=${CLIENT_BRANCH:-main},_CLIENT_REPO=${CLIENT_REPO:-}" \
+    --substitutions="_IMAGE_NAME=$IMAGE_NAME,_USE_RELEASED_VERSION=${USE_RELEASED_VERSION:-false},_CLIENT_BRANCH=${CLIENT_BRANCH:-main},_CLIENT_REPO=${CLIENT_REPO:-},_COMPILE_RUST_ADDON=$COMPILE_RUST_ADDON,_COMPILE_GO_ADDON=$COMPILE_GO_ADDON" \
     --polling-interval="$POLLING_INTERVAL" \
     .
 
