@@ -257,10 +257,32 @@ func buildLargeMockResultSet() *spannerpb.ResultSet {
 	}
 }
 
+func buildNarrowMockResultSet() *spannerpb.ResultSet {
+	return &spannerpb.ResultSet{
+		Metadata: &spannerpb.ResultSetMetadata{
+			RowType: &spannerpb.StructType{
+				Fields: []*spannerpb.StructType_Field{
+					{Name: "random_int64_1", Type: &spannerpb.Type{Code: spannerpb.TypeCode_INT64}},
+					{Name: "random_int64_2", Type: &spannerpb.Type{Code: spannerpb.TypeCode_INT64}},
+				},
+			},
+		},
+		Rows: []*structpb.ListValue{
+			{
+				Values: []*structpb.Value{
+					{Kind: &structpb.Value_StringValue{StringValue: "100"}},
+					{Kind: &structpb.Value_StringValue{StringValue: "200"}},
+				},
+			},
+		},
+	}
+}
+
 func registerMockResults(m *mockSpannerServer) {
 	m.putStatementResult("SELECT * FROM test WHERE id = @id", buildMockResultSet())
 	m.putStatementResult("SELECT id FROM test WHERE id = @id", buildMockResultSet())
-	m.putStatementResult("SELECT\n  MOD(FARM_FINGERPRINT", buildLargeMockResultSet())
+	m.putStatementResult("AS random_bool", buildLargeMockResultSet())
+	m.putStatementResult("AS random_int64_1", buildNarrowMockResultSet())
 
 	warehouseResult := &spannerpb.ResultSet{
 		Metadata: &spannerpb.ResultSetMetadata{

@@ -1,6 +1,7 @@
 pub mod load_type;
 pub mod point_select;
 pub mod read_large_result_set;
+pub mod read_narrow_result_set;
 pub mod resource_monitor;
 pub mod select_update;
 pub mod tpcc;
@@ -97,6 +98,12 @@ pub enum Commands {
         #[arg(long, default_value_t = 0.05)]
         tps: f64,
         #[arg(long, default_value_t = 100000)]
+        num_rows: i64,
+    },
+    ReadNarrowResultSet {
+        #[arg(long, default_value_t = 0.05)]
+        tps: f64,
+        #[arg(long, default_value_t = 200000)]
         num_rows: i64,
     },
     Tpcc {
@@ -322,7 +329,10 @@ pub fn run_task(
     async move {
         let _permit = permit;
         let start = Instant::now();
-        let is_read_large = matches!(command, Commands::ReadLargeResultSet { .. });
+        let is_read_large = matches!(
+            command,
+            Commands::ReadLargeResultSet { .. } | Commands::ReadNarrowResultSet { .. }
+        );
         let res = match command {
             Commands::PointSelect { num_rows, .. } => {
                 point_select::execute_point_select(db_client, table, 1, num_rows).await
@@ -332,6 +342,15 @@ pub fn run_task(
             }
             Commands::ReadLargeResultSet { num_rows, .. } => {
                 read_large_result_set::execute_read_large_result_set(
+                    db_client,
+                    num_rows,
+                    metrics.read_latency.clone(),
+                    attributes.clone(),
+                )
+                .await
+            }
+            Commands::ReadNarrowResultSet { num_rows, .. } => {
+                read_narrow_result_set::execute_read_narrow_result_set(
                     db_client,
                     num_rows,
                     metrics.read_latency.clone(),
@@ -366,7 +385,10 @@ pub fn run_task_closed_loop(
 ) -> futures::future::BoxFuture<'static, ()> {
     async move {
         let start = Instant::now();
-        let is_read_large = matches!(command, Commands::ReadLargeResultSet { .. });
+        let is_read_large = matches!(
+            command,
+            Commands::ReadLargeResultSet { .. } | Commands::ReadNarrowResultSet { .. }
+        );
         let res = match command {
             Commands::PointSelect { num_rows, .. } => {
                 point_select::execute_point_select(db_client, table, 1, num_rows).await
@@ -376,6 +398,15 @@ pub fn run_task_closed_loop(
             }
             Commands::ReadLargeResultSet { num_rows, .. } => {
                 read_large_result_set::execute_read_large_result_set(
+                    db_client,
+                    num_rows,
+                    metrics.read_latency.clone(),
+                    attributes.clone(),
+                )
+                .await
+            }
+            Commands::ReadNarrowResultSet { num_rows, .. } => {
+                read_narrow_result_set::execute_read_narrow_result_set(
                     db_client,
                     num_rows,
                     metrics.read_latency.clone(),
@@ -540,6 +571,7 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         Commands::PointSelect { tps, num_rows } => (tps, num_rows),
         Commands::SelectUpdate { tps, num_rows } => (tps, num_rows),
         Commands::ReadLargeResultSet { tps, num_rows } => (tps, num_rows),
+        Commands::ReadNarrowResultSet { tps, num_rows } => (tps, num_rows),
         Commands::Tpcc { .. } => unreachable!(),
     };
 
@@ -553,6 +585,7 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         }
         Commands::SelectUpdate { .. } => "select-update",
         Commands::ReadLargeResultSet { .. } => "read-large-result-set",
+        Commands::ReadNarrowResultSet { .. } => "read-narrow-result-set",
         Commands::Tpcc { .. } => unreachable!(),
     };
 
@@ -793,7 +826,7 @@ pub fn register_all_mock_results(mock: &mut MockSpanner, table_name: &str) {
                 last: true,
                 ..Default::default()
             }
-        } else if sql.contains("random_bool") {
+        } else if sql.contains("AS random_bool") {
             PartialResultSet {
                 metadata: Some(ResultSetMetadata {
                     row_type: Some(StructType {
@@ -822,6 +855,21 @@ pub fn register_all_mock_results(mock: &mut MockSpanner, table_name: &str) {
                     string_value("hello"),
                     string_value("2026-06-02T13:43:09Z"),
                 ],
+                last: true,
+                ..Default::default()
+            }
+        } else if sql.contains("AS random_int64_1") {
+            PartialResultSet {
+                metadata: Some(ResultSetMetadata {
+                    row_type: Some(StructType {
+                        fields: vec![
+                            mock_field("random_int64_1", TypeCode::Int64),
+                            mock_field("random_int64_2", TypeCode::Int64),
+                        ],
+                    }),
+                    ..Default::default()
+                }),
+                values: vec![string_value("100"), string_value("200")],
                 last: true,
                 ..Default::default()
             }

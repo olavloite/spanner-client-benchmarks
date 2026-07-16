@@ -42,6 +42,10 @@ func TestAllBenchmarksExecution(t *testing.T) {
 			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--duration=1s", "read-large-result-set", "--num-rows=10", "--tps=100"},
 		},
 		{
+			name: "read-narrow-result-set",
+			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--duration=1s", "read-narrow-result-set", "--num-rows=10", "--tps=100"},
+		},
+		{
 			name: "tpcc",
 			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--duration=1s", "tpcc", "--warehouses=1", "--clients=2", "--items=100"},
 		},
@@ -98,6 +102,10 @@ func TestMetricsCollection(t *testing.T) {
 		{
 			name: "read-large-result-set",
 			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--duration=1s", "--resource-probe-interval=10ms", "read-large-result-set", "--num-rows=10", "--tps=100"},
+		},
+		{
+			name: "read-narrow-result-set",
+			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--duration=1s", "--resource-probe-interval=10ms", "read-narrow-result-set", "--num-rows=10", "--tps=100"},
 		},
 		{
 			name: "tpcc",

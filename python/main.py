@@ -260,6 +260,25 @@ def main():
         help="Number of rows to dynamically generate",
     )
 
+    # Read-Narrow subparser
+    rn_parser = subparsers.add_parser(
+        "read-narrow-result-set",
+        parents=[workload_parser],
+        help="Execute dynamic narrow result set iteration scenario",
+    )
+    rn_parser.add_argument(
+        "--tps",
+        type=float,
+        default=0.05,
+        help="Target Transactions Per Second rate limit",
+    )
+    rn_parser.add_argument(
+        "--num-rows",
+        type=int,
+        default=200000,
+        help="Number of rows to dynamically generate",
+    )
+
     # TPC-C subparser
     tpcc_parser = subparsers.add_parser(
         "tpcc", help="Execute closed-loop TPC-C benchmark"
@@ -331,7 +350,9 @@ def main():
 
     # Create shared metrics instruments (us unit matching standard spec)
     metric_name = (
-        READ_LATENCY_NAME if args.command == "read-large-result-set" else LATENCY_NAME
+        READ_LATENCY_NAME
+        if args.command in ("read-large-result-set", "read-narrow-result-set")
+        else LATENCY_NAME
     )
     latency_histogram = meter.create_histogram(
         name=metric_name,
@@ -366,6 +387,7 @@ def main():
     # 2. Initialize the Google Cloud Spanner Client driver
     from src.benchmarks.point_select import PointSelectBenchmark
     from src.benchmarks.read_large_result_set import ReadLargeResultSetBenchmark
+    from src.benchmarks.read_narrow_result_set import ReadNarrowResultSetBenchmark
     from src.benchmarks.select_update import SelectAndUpdateBenchmark
     from src.benchmarks.tpcc.benchmark import TpccBenchmarkRunner
     from src.spanner.client import create_spanner_client
@@ -427,6 +449,31 @@ def main():
         )
     elif args.command == "read-large-result-set":
         benchmark = ReadLargeResultSetBenchmark(
+            database=database,
+            latency_histogram=latency_histogram,
+            operation_counter=operation_counter,
+            error_counter=error_counter,
+            memory_usage_histogram=memory_usage_histogram,
+            cpu_utilization_histogram=cpu_utilization_histogram,
+            resource_probe_interval_str=args.resource_probe_interval,
+            table_name=args.table,
+            min_id=min_id,
+            max_id=max_id,
+            tps=args.tps,
+            threads=args.threads,
+            duration_sec=duration_sec,
+            for_alerting=args.for_alerting,
+            benchmark_name=args.benchmark_name,
+            num_rows=args.num_rows,
+            load_type=args.load_type,
+            cycle_duration_sec=cycle_duration_sec,
+            peak_factor=peak_factor,
+            burst_factor=burst_factor,
+            burst_duration=burst_duration,
+            burst_fraction=burst_fraction,
+        )
+    elif args.command == "read-narrow-result-set":
+        benchmark = ReadNarrowResultSetBenchmark(
             database=database,
             latency_histogram=latency_histogram,
             operation_counter=operation_counter,

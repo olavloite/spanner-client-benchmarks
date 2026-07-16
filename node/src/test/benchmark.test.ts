@@ -4,6 +4,7 @@ import {MockSpannerServer} from '../spanner/mock-spanner';
 import {PointSelectBenchmark} from '../benchmarks/point-select';
 import {SelectAndUpdateBenchmark} from '../benchmarks/select-update';
 import {ReadLargeResultSetBenchmark} from '../benchmarks/read-large-result-set';
+import {ReadNarrowResultSetBenchmark} from '../benchmarks/read-narrow-result-set';
 import {LoadType} from '../benchmarks/load-type';
 import {TpccBenchmarkRunner} from '../benchmarks/tpcc/benchmark';
 import {createSpannerClient} from '../spanner/client';
@@ -29,6 +30,11 @@ const LARGE_RESULT_SET_SQL = `SELECT
   GENERATE_UUID() AS random_string,
   TIMESTAMP_MICROS(ABS(MOD(FARM_FINGERPRINT(GENERATE_UUID()), 1230219000000000))) AS random_timestamp,
   NEW_UUID() AS random_uuid
+FROM UNNEST(GENERATE_ARRAY(1, @num_rows)) AS n`;
+
+const NARROW_RESULT_SET_SQL = `SELECT
+  FARM_FINGERPRINT(GENERATE_UUID()) AS random_int64_1,
+  FARM_FINGERPRINT(GENERATE_UUID()) AS random_int64_2
 FROM UNNEST(GENERATE_ARRAY(1, @num_rows)) AS n`;
 
 describe('Node.js Benchmark Integration Tests', () => {
@@ -179,6 +185,19 @@ describe('Node.js Benchmark Integration Tests', () => {
           'uuid',
         ]),
       ],
+    });
+
+    // Read Narrow Result Set
+    srv.addResult(NARROW_RESULT_SET_SQL, {
+      metadata: {
+        row_type: {
+          fields: [
+            {name: 'random_int64_1', type: {code: 'INT64'}},
+            {name: 'random_int64_2', type: {code: 'INT64'}},
+          ],
+        },
+      },
+      rows: [makeRow(['100', '200'])],
     });
 
     // TPC-C
@@ -687,6 +706,87 @@ describe('Node.js Benchmark Integration Tests', () => {
     });
 
     assertErrorCountIsZero(metricsData, 'read-large-result-set');
+  });
+
+  it('should execute Read Narrow Result Set workload and measure iteration latency', async () => {
+    const meter = provider.getMeter('spanner-benchmark');
+    const latHist = meter.createHistogram(
+      'spanner_client_benchmarks/read_latency',
+    );
+    const opCount = meter.createCounter(
+      'spanner_client_benchmarks/operation_count',
+    );
+    const errCount = meter.createCounter(
+      'spanner_client_benchmarks/error_count',
+    );
+    const memHist = meter.createHistogram(
+      'spanner_client_benchmarks/memory_usage',
+    );
+    const cpuHist = meter.createHistogram(
+      'spanner_client_benchmarks/cpu_utilization',
+    );
+
+    const benchmark = new ReadNarrowResultSetBenchmark(
+      database,
+      latHist,
+      opCount,
+      errCount,
+      memHist,
+      cpuHist,
+      '10ms',
+      'test',
+      1,
+      100,
+      10,
+      5,
+      1000,
+      false,
+      'test-run',
+      10,
+    );
+
+    await benchmark.run();
+
+    const reqs = await waitForRequests(1);
+    assert.ok(reqs.length >= 1);
+    const sqlReq = reqs.find(
+      r => r.sql && r.sql.includes('FROM UNNEST(GENERATE_ARRAY(1, @num_rows))'),
+    );
+    assert.ok(sqlReq, 'Should have executed the narrow result set query');
+
+    // Verify metrics
+    await reader.forceFlush();
+    const metricsData = exporter.getMetrics();
+    assertResourceMetrics(metricsData);
+
+    const countMetric = findMetric(
+      metricsData,
+      'spanner_client_benchmarks/operation_count',
+    );
+    assertMetricAttributes(countMetric, {
+      client: 'node-client',
+      benchmark_type: 'read-narrow-result-set',
+    });
+
+    const memMetric = findMetric(
+      metricsData,
+      'spanner_client_benchmarks/memory_usage',
+    );
+    assertMetricAttributes(memMetric, {
+      client: 'node-client',
+      benchmark_type: 'read-narrow-result-set',
+    });
+
+    const cpuMetric = findMetric(
+      metricsData,
+      'spanner_client_benchmarks/cpu_utilization',
+    );
+    assertMetricAttributes(cpuMetric, {
+      client: 'node-client',
+      benchmark_type: 'read-narrow-result-set',
+    });
+
+    assertErrorCountIsZero(metricsData, 'read-narrow-result-set');
   });
 
   it('should execute TPC-C benchmark runner workload with warehouses scale capacity checks', async () => {

@@ -18,6 +18,7 @@ SUPPORTED_BENCHMARKS = {
     "point-select",
     "select-update",
     "read-large-result-set",
+    "read-narrow-result-set",
     "tpcc",
     "tpcc-init",
 }

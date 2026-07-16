@@ -112,6 +112,17 @@ func run(ctx context.Context, args []string) error {
 				},
 			},
 			{
+				Name:  "read-narrow-result-set",
+				Usage: "Runs narrow result set iteration benchmark",
+				Flags: []cli.Flag{
+					&cli.FloatFlag{Name: "tps", Value: 0.05, Usage: "Target transactions per second"},
+					&cli.IntFlag{Name: "num-rows", Value: 200000, Usage: "Number of rows to dynamically generate"},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					return executeBenchmark(ctx, cmd, "read-narrow-result-set")
+				},
+			},
+			{
 				Name:  "tpcc",
 				Usage: "Runs closed-loop TPC-C benchmark",
 				Flags: []cli.Flag{
@@ -218,6 +229,8 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 		b = &SelectAndUpdateBenchmark{}
 	case "read-large-result-set":
 		b = NewReadLargeResultSetBenchmark(readLatencyHistogram, numRows)
+	case "read-narrow-result-set":
+		b = NewReadNarrowResultSetBenchmark(readLatencyHistogram, numRows)
 	default:
 		return fmt.Errorf("unsupported benchmark type: %s", benchmarkType)
 	}
@@ -248,7 +261,7 @@ func executeBenchmark(ctx context.Context, cmd *cli.Command, benchmarkType strin
 		attribute.Float64("peak_factor", peakFactor),
 		attribute.String("transaction_type", "none"),
 	}
-	if benchmarkType == "read-large-result-set" {
+	if benchmarkType == "read-large-result-set" || benchmarkType == "read-narrow-result-set" {
 		attributeList = append(attributeList, attribute.Int64("num_rows", numRows))
 	}
 	attributes := metric.WithAttributes(attributeList...)

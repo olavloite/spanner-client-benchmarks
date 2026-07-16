@@ -230,6 +230,49 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
   }
 
   @Test
+  public void testReadNarrowResultSetBenchmarkRuns() throws Exception {
+    Thread thread =
+        new Thread(
+            () -> {
+              try {
+                new picocli.CommandLine(new BenchmarkApp())
+                    .execute(
+                        new String[] {
+                          "-p",
+                          "my-project",
+                          "-i",
+                          "my-instance",
+                          "-d",
+                          "my-database",
+                          "--host",
+                          "http://localhost:" + port,
+                          "read-narrow-result-set",
+                          "-t",
+                          "my_table",
+                          "--num-rows",
+                          "10",
+                          "--tps",
+                          "10",
+                          "--threads",
+                          "2"
+                        });
+              } catch (Exception e) {
+                System.out.println("App terminated: " + e.getMessage());
+              }
+            });
+
+    thread.start();
+
+    waitForRequest(r -> r.getSql().contains("AS random_int64_1"), thread);
+
+    // Interrupt the thread to stop the infinite loop
+    thread.interrupt();
+    thread.join(5000); // Wait for it to finish
+    assertTrue("Thread should have finished", !thread.isAlive());
+    assertNoErrors();
+  }
+
+  @Test
   public void testTpccBenchmarkRuns() throws Exception {
     Thread thread =
         new Thread(

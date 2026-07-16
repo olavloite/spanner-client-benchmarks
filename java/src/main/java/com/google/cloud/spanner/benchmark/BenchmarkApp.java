@@ -27,6 +27,7 @@ import picocli.CommandLine.Option;
       PointSelectCommand.class,
       SelectAndUpdateCommand.class,
       ReadLargeResultSetCommand.class,
+      ReadNarrowResultSetCommand.class,
       TpccInitCommand.class,
       TpccCommand.class
     })

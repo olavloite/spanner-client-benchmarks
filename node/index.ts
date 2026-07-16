@@ -23,6 +23,7 @@ import {MockSpannerServer} from './src/spanner/mock-spanner';
 import {PointSelectBenchmark} from './src/benchmarks/point-select';
 import {SelectAndUpdateBenchmark} from './src/benchmarks/select-update';
 import {ReadLargeResultSetBenchmark} from './src/benchmarks/read-large-result-set';
+import {ReadNarrowResultSetBenchmark} from './src/benchmarks/read-narrow-result-set';
 import {parseDuration} from './src/utils/duration';
 import {AbstractBenchmark, LoadType} from './src/benchmarks/abstract-benchmark';
 
@@ -180,6 +181,33 @@ async function main() {
       );
     });
 
+  // Read Narrow Result Set Workload Subcommand
+  program
+    .command('read-narrow-result-set')
+    .description(
+      'Execute the dynamic narrow result set iteration and client-side decoding workload scenario',
+    )
+    .requiredOption('-t, --table <tableName>', 'Target database table name')
+    .option('--tps <tps>', 'Target transactions per second throughput', '0.05')
+    .option(
+      '--threads <threads>',
+      'Parallel async worker pool concurrency limit',
+      '100',
+    )
+    .option(
+      '--num-rows <numRows>',
+      'Number of rows to dynamically generate',
+      '200000',
+    )
+    .action(async subCommandOptions => {
+      const globalOptions = program.opts();
+      await runBenchmarkAction(
+        'read-narrow-result-set',
+        globalOptions,
+        subCommandOptions,
+      );
+    });
+
   // TPC-C Workload Subcommand
   program
     .command('tpcc')
@@ -285,7 +313,12 @@ async function startMockSpannerServer(
  * Orchestrates the initialization and lifecycle of the benchmark execution.
  */
 async function runBenchmarkAction(
-  type: 'point-select' | 'select-update' | 'read-large-result-set' | 'tpcc',
+  type:
+    | 'point-select'
+    | 'select-update'
+    | 'read-large-result-set'
+    | 'read-narrow-result-set'
+    | 'tpcc',
   globalOpts: any,
   subOpts: any,
 ) {
@@ -339,7 +372,9 @@ async function runBenchmarkAction(
 
   // Create the shared metric instruments (us units match Go/Java)
   const metricName =
-    type === 'read-large-result-set' ? READ_LATENCY_NAME : LATENCY_NAME;
+    type === 'read-large-result-set' || type === 'read-narrow-result-set'
+      ? READ_LATENCY_NAME
+      : LATENCY_NAME;
   const latencyHistogram = meter.createHistogram(metricName, {
     description: 'Query latency measured in microseconds',
     unit: 'us',
@@ -429,6 +464,31 @@ async function runBenchmarkAction(
     );
   } else if (type === 'read-large-result-set') {
     benchmark = new ReadLargeResultSetBenchmark(
+      database,
+      latencyHistogram,
+      operationCounter,
+      errorCounter,
+      memoryUsageHistogram,
+      cpuUtilizationHistogram,
+      globalOpts.resourceProbeInterval,
+      tableName,
+      minId,
+      maxId,
+      tps,
+      threads,
+      parsedDurationMs,
+      forAlerting,
+      benchmarkName,
+      maxId,
+      loadType,
+      cycleDurationMs,
+      peakFactor,
+      burstFactor,
+      burstDuration,
+      burstFraction,
+    );
+  } else if (type === 'read-narrow-result-set') {
+    benchmark = new ReadNarrowResultSetBenchmark(
       database,
       latencyHistogram,
       operationCounter,
