@@ -1,0 +1,112 @@
+import time
+from typing import Optional
+
+from google.cloud import spanner
+from google.cloud.spanner_v1.database import Database
+from opentelemetry.metrics import Counter, Histogram
+
+from .abstract_benchmark import AbstractBenchmark
+
+SQL = """SELECT
+  FARM_FINGERPRINT(GENERATE_UUID()) AS random_int64_1,
+  FARM_FINGERPRINT(GENERATE_UUID()) AS random_int64_2
+FROM UNNEST(GENERATE_ARRAY(1, @num_rows)) AS n"""
+
+
+class ReadNarrowResultSetBenchmark(AbstractBenchmark):
+    def __init__(
+        self,
+        database: Database,
+        latency_histogram: Histogram,
+        operation_counter: Counter,
+        error_counter: Counter,
+        memory_usage_histogram: Optional[Histogram],
+        cpu_utilization_histogram: Optional[Histogram],
+        resource_probe_interval_str: str,
+        table_name: str,
+        min_id: int,
+        max_id: int,
+        tps: float,
+        threads: int,
+        duration_sec: float | None,
+        for_alerting: bool,
+        benchmark_name: str,
+        num_rows: int,
+        load_type: str = "steady",
+        cycle_duration_sec: float | None = None,
+        peak_factor: float = 2.0,
+        burst_factor: float = 1.0,
+        burst_duration: float = 1.0,
+        burst_fraction: float = 0.1,
+    ):
+        super().__init__(
+            database,
+            latency_histogram,
+            operation_counter,
+            error_counter,
+            memory_usage_histogram,
+            cpu_utilization_histogram,
+            resource_probe_interval_str,
+            table_name,
+            min_id,
+            max_id,
+            tps,
+            threads,
+            duration_sec,
+            for_alerting,
+            benchmark_name,
+            load_type,
+            cycle_duration_sec,
+            peak_factor,
+            burst_factor,
+            burst_duration,
+            burst_fraction,
+        )
+        self.num_rows = num_rows
+
+    def get_benchmark_name(self) -> str:
+        return "Read Narrow Result Set Benchmark"
+
+    def get_benchmark_type(self) -> str:
+        return "read-narrow-result-set"
+
+    # INTENTIONAL: Do not change should_measure_entire_method to return True.
+    # We intentionally exclude the initial query execution and the first row fetch
+    # to measure purely the iteration and decoding latency of the remaining rows.
+    def should_measure_entire_method(self) -> bool:
+        return False
+
+    def get_attributes(self) -> dict:
+        attrs = super().get_attributes()
+        attrs["num_rows"] = self.num_rows
+        return attrs
+
+    def execute_operation(
+        self, database: Database, table_name: str, min_id: int, max_id: int
+    ) -> None:
+        with database.snapshot() as snapshot:
+            results = snapshot.execute_sql(
+                SQL,
+                params={"num_rows": self.num_rows},
+                param_types={"num_rows": spanner.param_types.INT64},
+            )
+
+            row_iterator = iter(results)
+            try:
+                first_row = next(row_iterator)
+                # Force full deserialization of the first row
+                for cell in first_row:
+                    pass
+            except StopIteration:
+                return
+
+            # Measure iteration duration of remaining rows
+            start_time = time.perf_counter()
+            for row in row_iterator:
+                # Force full deserialization of each row
+                for cell in row:
+                    pass
+            end_time = time.perf_counter()
+            latency_us = (end_time - start_time) * 1000000.0
+
+            self.latency_histogram.record(latency_us, self.get_attributes())

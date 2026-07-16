@@ -214,6 +214,36 @@ public abstract class AbstractBenchmarkTest {
     mockSpanner.putPartialStatementResult(
         StatementResult.query(Statement.of("SELECT\n  MOD(FARM_FINGERPRINT"), largeResultSet));
 
+    // Narrow result set mock
+    com.google.spanner.v1.ResultSet narrowResultSet =
+        com.google.spanner.v1.ResultSet.newBuilder()
+            .setMetadata(
+                ResultSetMetadata.newBuilder()
+                    .setRowType(
+                        StructType.newBuilder()
+                            .addFields(
+                                Field.newBuilder()
+                                    .setName("random_int64_1")
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build())
+                                    .build())
+                            .addFields(
+                                Field.newBuilder()
+                                    .setName("random_int64_2")
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build())
+                                    .build())
+                            .build())
+                    .build())
+            .addRows(
+                ListValue.newBuilder()
+                    .addValues(Value.newBuilder().setStringValue("100").build())
+                    .addValues(Value.newBuilder().setStringValue("200").build())
+                    .build())
+            .build();
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT\n  FARM_FINGERPRINT(GENERATE_UUID()) AS random_int64_1"),
+            narrowResultSet));
+
     // TPCC Queries mock
     com.google.spanner.v1.ResultSet warehouseCountResult =
         com.google.spanner.v1.ResultSet.newBuilder()

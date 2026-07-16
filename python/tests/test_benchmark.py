@@ -290,6 +290,58 @@ class TestBenchmarkWorkloads(BaseBenchmarkTest):
 
         self.assert_error_count_is_zero(metrics_data, "read-large-result-set")
 
+    def test_read_narrow_result_set_workload(self):
+        args = [
+            "main.py",
+            "-p",
+            "fake-project",
+            "-i",
+            "fake-instance",
+            "-d",
+            "fake-database",
+            "--host",
+            f"localhost:{self.port}",
+            "--duration",
+            "1s",
+            "--resource-probe-interval",
+            "10ms",
+            "read-narrow-result-set",
+            "--table",
+            "test",
+            "--tps",
+            "10",
+        ]
+
+        with patch("sys.argv", args), patch("os._exit"):
+            main()
+
+        from google.cloud.spanner_v1.types import spanner as spanner_types
+
+        self.wait_for_requests(spanner_types.ExecuteSqlRequest, min_count=1)
+
+        metrics_data = self.reader.get_metrics_data()
+        self.assert_resource_attributes(metrics_data)
+
+        expected_attrs = {
+            "client": "python-client",
+            "benchmark_type": "read-narrow-result-set",
+        }
+
+        op_count_metric = self.find_metric(metrics_data, OPERATION_COUNT_NAME)
+        self.assert_metric_attributes(op_count_metric, expected_attrs)
+
+        # Large read latency name is spanner_client_benchmarks/read_latency
+        read_latency_metric = self.find_metric(metrics_data, READ_LATENCY_NAME)
+        self.assert_metric_attributes(read_latency_metric, expected_attrs)
+
+        mem_metric = self.find_metric(metrics_data, MEMORY_USAGE_NAME)
+        self.assert_metric_attributes(mem_metric, expected_attrs)
+
+        cpu_metric = self.find_metric(metrics_data, CPU_UTILIZATION_NAME)
+        self.assert_metric_attributes(cpu_metric, expected_attrs)
+
+        self.assert_error_count_is_zero(metrics_data, "read-narrow-result-set")
+
     def test_tpcc_workload(self):
         args = [
             "main.py",

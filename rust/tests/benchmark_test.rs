@@ -5,7 +5,7 @@ use spanner_rust_benchmark::{Args, TEST_METER_PROVIDER, run_benchmark};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_benchmark_workloads() -> anyhow::Result<()> {
-    // 1. Setup Mock Spanner Server
+    // Setup Mock Spanner Server
     let mut mock = MockSpanner::new();
 
     spanner_rust_benchmark::register_all_mock_results(&mut mock, "test");
@@ -17,7 +17,7 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
         std::env::set_var("SPANNER_EMULATOR_HOST", &address);
     }
 
-    // 2. Initialize InMemory Metric Exporter & SdkMeterProvider
+    // Initialize InMemory Metric Exporter & SdkMeterProvider
     let exporter = InMemoryMetricExporter::default();
     let resource = opentelemetry_sdk::Resource::builder_empty()
         .with_attributes(vec![opentelemetry::KeyValue::new(
@@ -34,7 +34,7 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
     // Register test meter provider globally in our library OnceLock
     let _ = TEST_METER_PROVIDER.set(provider.clone());
 
-    // 3. Test PointSelect Workload
+    // Test PointSelect Workload
     {
         let args = Args::try_parse_from(vec![
             "benchmark",
@@ -62,7 +62,7 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
         run_benchmark(args).await?;
     }
 
-    // 4. Test SelectUpdate Workload
+    // Test SelectUpdate Workload
     {
         let args = Args::try_parse_from(vec![
             "benchmark",
@@ -90,7 +90,7 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
         run_benchmark(args).await?;
     }
 
-    // 5. Test ReadLargeResultSet Workload
+    // Test ReadLargeResultSet Workload
     {
         let args = Args::try_parse_from(vec![
             "benchmark",
@@ -118,7 +118,35 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
         run_benchmark(args).await?;
     }
 
-    // 6. Test Tpcc Workload
+    // Test ReadNarrowResultSet Workload
+    {
+        let args = Args::try_parse_from(vec![
+            "benchmark",
+            "--project",
+            "test-project",
+            "--instance",
+            "test-instance",
+            "--database",
+            "test-database",
+            "--table",
+            "test",
+            "--duration",
+            "1s",
+            "--host",
+            &address,
+            "--threads",
+            "1",
+            "--resource-probe-interval",
+            "10ms",
+            "read-narrow-result-set",
+            "--tps",
+            "10",
+        ])?;
+
+        run_benchmark(args).await?;
+    }
+
+    // Test Tpcc Workload
     {
         let args = Args::try_parse_from(vec![
             "benchmark",
@@ -146,7 +174,7 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
         run_benchmark(args).await?;
     }
 
-    // 7. Test Tpcc Extended Workload
+    // Test Tpcc Extended Workload
     {
         let args = Args::try_parse_from(vec![
             "benchmark",
@@ -176,7 +204,7 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
         run_benchmark(args).await?;
     }
 
-    // 8. Assert metrics have been emitted correctly
+    // Assert metrics have been emitted correctly
     provider.force_flush()?;
     let metrics = exporter.get_finished_metrics()?;
     assert!(

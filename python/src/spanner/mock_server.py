@@ -10,6 +10,7 @@ from google.cloud.spanner_v1.testing.mock_spanner import (
 )
 
 from src.benchmarks.read_large_result_set import SQL as LARGE_RESULT_SET_SQL
+from src.benchmarks.read_narrow_result_set import SQL as NARROW_RESULT_SET_SQL
 
 
 def make_result_set(cols, rows_data, stats=None):
@@ -89,6 +90,16 @@ def register_all_mock_results(mock, table_name="test"):
         "uuid",
     ]
     mock.add_result(LARGE_RESULT_SET_SQL, make_result_set(cols_large, [row_large] * 10))
+
+    # Read Narrow Result Set workload
+    cols_narrow = [
+        ("random_int64_1", types.TypeCode.INT64),
+        ("random_int64_2", types.TypeCode.INT64),
+    ]
+    row_narrow = ["100", "200"]
+    mock.add_result(
+        NARROW_RESULT_SET_SQL, make_result_set(cols_narrow, [row_narrow] * 10)
+    )
 
     # TPC-C workload
     mock.add_result(

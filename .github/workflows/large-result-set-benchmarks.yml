@@ -15,7 +15,7 @@ jobs:
   run:
     uses: ./.github/workflows/benchmark-template.yml
     with:
-      benchmark_types: '["read-large-result-set"]'
+      benchmark_types: '["read-large-result-set", "read-narrow-result-set"]'
       duration: "1h"
       load_type: "closed-loop"
       threads: "1"
