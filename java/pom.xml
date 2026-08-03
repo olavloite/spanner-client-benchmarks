@@ -14,8 +14,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <otel.version>1.64.0</otel.version>
         <otel.gcp.version>0.37.0</otel.gcp.version>
-        <spanner.version>6.119.0</spanner.version>
-        <grpc-gcp.version>1.12.0</grpc-gcp.version>
+        <spanner.version>6.120.0</spanner.version>
+        <grpc-gcp.version>1.13.0</grpc-gcp.version>
     </properties>
 
     <dependencyManagement>
@@ -23,7 +23,7 @@
             <dependency>
                 <groupId>com.google.cloud</groupId>
                 <artifactId>libraries-bom</artifactId>
-                <version>26.85.1</version>
+                <version>26.86.0</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -160,7 +160,7 @@
                     <dependency>
                         <groupId>com.google.googlejavaformat</groupId>
                         <artifactId>google-java-format</artifactId>
-                        <version>1.35.0</version>
+                        <version>1.36.1</version>
                     </dependency>
                 </dependencies>
             </plugin>
@@ -198,7 +198,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
-                <version>3.5.0</version>
+                <version>3.5.1</version>
                 <configuration>
                     <archive>
                         <manifest>
