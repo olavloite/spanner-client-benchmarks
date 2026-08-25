@@ -5,34 +5,41 @@ pub mod read_narrow_result_set;
 pub mod resource_monitor;
 pub mod select_update;
 pub mod tpcc;
+pub mod ycsb;
 
 use clap::{ArgAction, Parser, Subcommand};
 use futures::FutureExt;
-use google_cloud_spanner::client::Spanner;
-use load_type::{LoadType, RunConfig};
+use google_cloud_spanner::client::{DatabaseClient, Spanner};
+use load_type::{BenchmarkTask, LoadType, RunConfig};
 use opentelemetry::KeyValue;
 use opentelemetry::metrics::{Counter, Histogram, MeterProvider};
 use opentelemetry_gcloud_monitoring_exporter::{GCPMetricsExporter, GCPMetricsExporterConfig};
 use opentelemetry_sdk::metrics::{Aggregation, Instrument, SdkMeterProvider, Stream};
+use std::env;
+use std::process;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::OnceLock;
 use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::Semaphore;
 use tokio::time::Instant;
+use ycsb::{KeyDistribution, YcsbBenchmarkState, YcsbWorkload};
 
 use google_cloud_auth::credentials::anonymous;
 use prost_types::{Value, value::Kind};
 use spanner_grpc_mock::MockSpanner;
+use spanner_grpc_mock::google::rpc::Status;
 use spanner_grpc_mock::google::spanner::v1::{
     CommitResponse, ExecuteBatchDmlResponse, PartialResultSet, ResultSet, ResultSetMetadata,
     ResultSetStats, Session, StructType, Transaction, Type, TypeCode, result_set_stats::RowCount,
     struct_type::Field, transaction_selector::Selector,
 };
+use uuid::Uuid;
 
-pub static TEST_METER_PROVIDER: std::sync::OnceLock<SdkMeterProvider> = std::sync::OnceLock::new();
+pub static TEST_METER_PROVIDER: OnceLock<SdkMeterProvider> = OnceLock::new();
 
 #[derive(Parser, Debug, Clone)]
 #[command(
@@ -115,6 +122,44 @@ pub enum Commands {
         items: i64,
         #[arg(long, default_value_t = false, action = ArgAction::Set)]
         extended: bool,
+    },
+    #[command(name = "ycsb")]
+    Ycsb {
+        #[arg(short, long, value_enum, default_value_t = YcsbWorkload::B)]
+        workload: YcsbWorkload,
+        #[arg(long, value_enum, default_value_t = KeyDistribution::ScrambledZipfian)]
+        distribution: KeyDistribution,
+        #[arg(long, default_value_t = 100000)]
+        record_count: i64,
+        #[arg(long, default_value_t = 12)]
+        zero_padding: usize,
+        #[arg(long, default_value_t = 10)]
+        field_count: usize,
+        #[arg(long, default_value_t = 100)]
+        field_length: usize,
+        #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
+        use_read_row: bool,
+        #[arg(long, default_value_t = 10.0)]
+        tps: f64,
+    },
+    #[command(name = "ycsb-init")]
+    YcsbInit {
+        #[arg(long, default_value_t = 100000)]
+        record_count: i64,
+        #[arg(long, default_value_t = 12)]
+        zero_padding: usize,
+        #[arg(long, default_value_t = 10)]
+        field_count: usize,
+        #[arg(long, default_value_t = 100)]
+        field_length: usize,
+        #[arg(long, default_value_t = 500)]
+        batch_size: usize,
+        #[arg(long, default_value_t = 16)]
+        threads: usize,
+        #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
+        skip_schema: bool,
+        #[arg(long, default_value_t = false, action = ArgAction::SetTrue)]
+        skip_data: bool,
     },
 }
 
@@ -207,7 +252,7 @@ async fn setup_metrics(
         .map_err(|e| anyhow::anyhow!("{:?}", e))?;
 
     let service_name = benchmark_name.unwrap_or_else(|| "spanner-benchmark".to_string());
-    let instance_id = uuid::Uuid::new_v4().to_string();
+    let instance_id = Uuid::new_v4().to_string();
     let resource = opentelemetry_sdk::Resource::builder()
         .with_attributes(vec![
             KeyValue::new("service.name", service_name),
@@ -226,7 +271,7 @@ async fn setup_metrics(
                         record_min_max: true,
                     })
                     .build()
-                    .unwrap())
+                    .expect("Failed to build latency metric stream view"))
             } else if i.name() == "spanner_client_benchmarks/read_latency" {
                 Some(Stream::builder()
                     .with_aggregation(Aggregation::ExplicitBucketHistogram {
@@ -239,7 +284,7 @@ async fn setup_metrics(
                         record_min_max: true,
                     })
                     .build()
-                    .unwrap())
+                    .expect("Failed to build read_latency metric stream view"))
             } else if i.name() == "spanner_client_benchmarks/memory_usage" {
                 const MB: f64 = 1024.0 * 1024.0;
                 Some(Stream::builder()
@@ -251,7 +296,7 @@ async fn setup_metrics(
                         record_min_max: true,
                     })
                     .build()
-                    .unwrap())
+                    .expect("Failed to build memory_usage metric stream view"))
             } else if i.name() == "spanner_client_benchmarks/cpu_utilization" {
                 Some(Stream::builder()
                     .with_aggregation(Aggregation::ExplicitBucketHistogram {
@@ -259,7 +304,7 @@ async fn setup_metrics(
                         record_min_max: true,
                     })
                     .build()
-                    .unwrap())
+                    .expect("Failed to build cpu_utilization metric stream view"))
             } else {
                 None
             }
@@ -318,118 +363,112 @@ async fn setup_metrics(
     ))
 }
 
-pub fn run_task(
-    db_client: google_cloud_spanner::client::DatabaseClient,
+struct PointSelectTask {
     table: String,
-    command: Commands,
-    permit: OwnedSemaphorePermit,
-    metrics: BenchmarkMetrics,
-    attributes: Vec<KeyValue>,
-) -> futures::future::BoxFuture<'static, ()> {
-    async move {
-        let _permit = permit;
-        let start = Instant::now();
-        let is_read_large = matches!(
-            command,
-            Commands::ReadLargeResultSet { .. } | Commands::ReadNarrowResultSet { .. }
-        );
-        let res = match command {
-            Commands::PointSelect { num_rows, .. } => {
-                point_select::execute_point_select(db_client, table, 1, num_rows).await
-            }
-            Commands::SelectUpdate { num_rows, .. } => {
-                select_update::execute_select_update(db_client, table, 1, num_rows).await
-            }
-            Commands::ReadLargeResultSet { num_rows, .. } => {
-                read_large_result_set::execute_read_large_result_set(
-                    db_client,
-                    num_rows,
-                    metrics.read_latency.clone(),
-                    attributes.clone(),
-                )
-                .await
-            }
-            Commands::ReadNarrowResultSet { num_rows, .. } => {
-                read_narrow_result_set::execute_read_narrow_result_set(
-                    db_client,
-                    num_rows,
-                    metrics.read_latency.clone(),
-                    attributes.clone(),
-                )
-                .await
-            }
-            Commands::Tpcc { .. } => unreachable!(),
-        };
-        let duration_us = start.elapsed().as_micros() as f64;
-
-        metrics.operation_count.add(1, &attributes);
-
-        if let Err(e) = &res {
-            metrics.error_count.add(1, &attributes);
-            eprintln!("Operation failed: {:?}", e);
-        }
-
-        if !is_read_large {
-            metrics.latency.record(duration_us, &attributes);
-        }
-    }
-    .boxed()
+    num_rows: i64,
 }
 
-pub fn run_task_closed_loop(
-    db_client: google_cloud_spanner::client::DatabaseClient,
-    table: String,
-    command: Commands,
-    metrics: BenchmarkMetrics,
-    attributes: Vec<KeyValue>,
-) -> futures::future::BoxFuture<'static, ()> {
-    async move {
-        let start = Instant::now();
-        let is_read_large = matches!(
-            command,
-            Commands::ReadLargeResultSet { .. } | Commands::ReadNarrowResultSet { .. }
-        );
-        let res = match command {
-            Commands::PointSelect { num_rows, .. } => {
-                point_select::execute_point_select(db_client, table, 1, num_rows).await
-            }
-            Commands::SelectUpdate { num_rows, .. } => {
-                select_update::execute_select_update(db_client, table, 1, num_rows).await
-            }
-            Commands::ReadLargeResultSet { num_rows, .. } => {
-                read_large_result_set::execute_read_large_result_set(
-                    db_client,
-                    num_rows,
-                    metrics.read_latency.clone(),
-                    attributes.clone(),
-                )
-                .await
-            }
-            Commands::ReadNarrowResultSet { num_rows, .. } => {
-                read_narrow_result_set::execute_read_narrow_result_set(
-                    db_client,
-                    num_rows,
-                    metrics.read_latency.clone(),
-                    attributes.clone(),
-                )
-                .await
-            }
-            Commands::Tpcc { .. } => unreachable!(),
-        };
-        let duration_us = start.elapsed().as_micros() as f64;
-
-        metrics.operation_count.add(1, &attributes);
-
-        if let Err(e) = &res {
-            metrics.error_count.add(1, &attributes);
-            eprintln!("Operation failed: {:?}", e);
-        }
-
-        if !is_read_large {
-            metrics.latency.record(duration_us, &attributes);
-        }
+impl BenchmarkTask for PointSelectTask {
+    fn execute(
+        &self,
+        client: DatabaseClient,
+    ) -> futures::future::BoxFuture<'static, anyhow::Result<()>> {
+        let table = self.table.clone();
+        let num_rows = self.num_rows;
+        async move { point_select::execute_point_select(client, table, 1, num_rows).await }.boxed()
     }
-    .boxed()
+}
+
+struct SelectUpdateTask {
+    table: String,
+    num_rows: i64,
+}
+
+impl BenchmarkTask for SelectUpdateTask {
+    fn execute(
+        &self,
+        client: DatabaseClient,
+    ) -> futures::future::BoxFuture<'static, anyhow::Result<()>> {
+        let table = self.table.clone();
+        let num_rows = self.num_rows;
+        async move { select_update::execute_select_update(client, table, 1, num_rows).await }
+            .boxed()
+    }
+}
+
+struct ReadLargeResultSetTask {
+    num_rows: i64,
+    read_latency: opentelemetry::metrics::Histogram<f64>,
+    attributes: Vec<KeyValue>,
+}
+
+impl BenchmarkTask for ReadLargeResultSetTask {
+    fn execute(
+        &self,
+        client: DatabaseClient,
+    ) -> futures::future::BoxFuture<'static, anyhow::Result<()>> {
+        let num_rows = self.num_rows;
+        let read_latency = self.read_latency.clone();
+        let attributes = self.attributes.clone();
+        async move {
+            read_large_result_set::execute_read_large_result_set(
+                client,
+                num_rows,
+                read_latency,
+                attributes,
+            )
+            .await
+        }
+        .boxed()
+    }
+
+    fn records_custom_read_latency(&self) -> bool {
+        true
+    }
+}
+
+struct ReadNarrowResultSetTask {
+    num_rows: i64,
+    read_latency: opentelemetry::metrics::Histogram<f64>,
+    attributes: Vec<KeyValue>,
+}
+
+impl BenchmarkTask for ReadNarrowResultSetTask {
+    fn execute(
+        &self,
+        client: DatabaseClient,
+    ) -> futures::future::BoxFuture<'static, anyhow::Result<()>> {
+        let num_rows = self.num_rows;
+        let read_latency = self.read_latency.clone();
+        let attributes = self.attributes.clone();
+        async move {
+            read_narrow_result_set::execute_read_narrow_result_set(
+                client,
+                num_rows,
+                read_latency,
+                attributes,
+            )
+            .await
+        }
+        .boxed()
+    }
+
+    fn records_custom_read_latency(&self) -> bool {
+        true
+    }
+}
+
+struct YcsbTask {
+    state: Arc<YcsbBenchmarkState>,
+}
+
+impl BenchmarkTask for YcsbTask {
+    fn execute(
+        &self,
+        client: DatabaseClient,
+    ) -> futures::future::BoxFuture<'static, anyhow::Result<()>> {
+        Arc::clone(&self.state).execute_operation(client)
+    }
 }
 
 pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
@@ -487,23 +526,34 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
     let cycle_duration = load_type::parse_duration(&cycle_duration_str)
         .ok_or_else(|| anyhow::anyhow!("Failed to parse cycle duration: {}", cycle_duration_str))?;
 
-    let table_name = args.table.clone().unwrap_or_else(|| "test".to_string());
+    let table_name = args.table.clone().unwrap_or_else(|| {
+        if matches!(
+            args.command,
+            Commands::Ycsb { .. } | Commands::YcsbInit { .. }
+        ) {
+            "usertable".to_string()
+        } else {
+            "test".to_string()
+        }
+    });
     let mut _mock_server = None;
     let mut mock_address = None;
     if args.mock {
-        let (addr, srv) = start_mock_spanner_server(&table_name).await?;
-        mock_address = Some(addr);
-        _mock_server = Some(srv);
+        let (address, server) = start_mock_spanner_server(&table_name).await?;
+        mock_address = Some(address);
+        _mock_server = Some(server);
     }
 
     // Build Spanner client
     let mut builder = Spanner::builder();
     if args.mock {
-        let addr = mock_address.as_ref().unwrap();
-        let endpoint = if addr.starts_with("http://") {
-            addr.clone()
+        let address = mock_address
+            .as_ref()
+            .expect("Mock address must be present when mock is enabled");
+        let endpoint = if address.starts_with("http://") {
+            address.clone()
         } else {
-            format!("http://{}", addr)
+            format!("http://{}", address)
         };
         builder = builder
             .with_endpoint(endpoint)
@@ -512,7 +562,7 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         builder = builder.with_endpoint(host);
     }
     let spanner = builder.build().await?;
-    let db_client = spanner
+    let database_client = spanner
         .database_client(format!(
             "projects/{}/instances/{}/databases/{}",
             args.project, args.instance, args.database
@@ -534,10 +584,7 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         let mut base_attributes = vec![
             KeyValue::new("benchmark_type", "tpcc"),
             KeyValue::new("for_alerting", args.for_alerting),
-            KeyValue::new(
-                "benchmark_name",
-                args.benchmark_name.unwrap_or_else(|| "".to_string()),
-            ),
+            KeyValue::new("benchmark_name", args.benchmark_name.unwrap_or_default()),
             KeyValue::new("client", "rust-client"),
             KeyValue::new("concurrent_clients", clients as i64),
         ];
@@ -549,8 +596,8 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
             metrics.clone(),
             base_attributes.clone(),
         );
-        let res = tpcc::run_tpcc_benchmark(
-            db_client,
+        let result = tpcc::run_tpcc_benchmark(
+            database_client,
             warehouses,
             clients,
             items,
@@ -563,7 +610,51 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         if is_owned_provider {
             let _ = _meter_provider.shutdown();
         }
-        return res;
+        return result;
+    }
+
+    if let Commands::YcsbInit {
+        record_count,
+        zero_padding,
+        field_count,
+        field_length,
+        batch_size,
+        threads,
+        skip_schema,
+        skip_data,
+    } = args.command
+    {
+        let table_name = args.table.unwrap_or_else(|| "usertable".to_string());
+        if !skip_schema {
+            ycsb::create_table(
+                &database_client,
+                &args.project,
+                &args.instance,
+                &args.database,
+                &table_name,
+                field_count,
+                args.host.clone(),
+                args.mock,
+            )
+            .await?;
+        }
+        if !skip_data {
+            ycsb::populate_data(
+                database_client,
+                &table_name,
+                record_count,
+                field_count,
+                field_length,
+                zero_padding,
+                threads,
+                batch_size,
+            )
+            .await?;
+        }
+        if is_owned_provider {
+            let _ = _meter_provider.shutdown();
+        }
+        return Ok(());
     }
 
     // Extract subcommand parameters for standard benchmarks
@@ -572,7 +663,8 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         Commands::SelectUpdate { tps, num_rows } => (tps, num_rows),
         Commands::ReadLargeResultSet { tps, num_rows } => (tps, num_rows),
         Commands::ReadNarrowResultSet { tps, num_rows } => (tps, num_rows),
-        Commands::Tpcc { .. } => unreachable!(),
+        Commands::Ycsb { tps, .. } => (tps, 0),
+        Commands::Tpcc { .. } | Commands::YcsbInit { .. } => unreachable!(),
     };
 
     let benchmark_type_str = match &args.command {
@@ -586,17 +678,21 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         Commands::SelectUpdate { .. } => "select-update",
         Commands::ReadLargeResultSet { .. } => "read-large-result-set",
         Commands::ReadNarrowResultSet { .. } => "read-narrow-result-set",
-        Commands::Tpcc { .. } => unreachable!(),
+        Commands::Ycsb { .. } => {
+            if args.mock {
+                "ycsb-mock"
+            } else {
+                "ycsb"
+            }
+        }
+        Commands::Tpcc { .. } | Commands::YcsbInit { .. } => unreachable!(),
     };
 
-    let attributes = vec![
+    let mut attributes = vec![
         KeyValue::new("benchmark_type", benchmark_type_str),
         KeyValue::new("tps", format!("{:.1}", tps)),
         KeyValue::new("for_alerting", args.for_alerting),
-        KeyValue::new(
-            "benchmark_name",
-            args.benchmark_name.unwrap_or_else(|| "".to_string()),
-        ),
+        KeyValue::new("benchmark_name", args.benchmark_name.unwrap_or_default()),
         KeyValue::new("client", "rust-client"),
         KeyValue::new("load_type", format!("{:?}", args.load_type).to_lowercase()),
         KeyValue::new("burst_factor", burst_factor),
@@ -604,8 +700,17 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         KeyValue::new("burst_fraction", burst_fraction),
         KeyValue::new("cycle_duration_ms", cycle_duration.as_millis() as i64),
         KeyValue::new("peak_factor", peak_factor),
-        KeyValue::new("transaction_type", "none"),
     ];
+
+    if let Commands::Ycsb { workload, .. } = &args.command {
+        attributes.push(KeyValue::new("workload", workload.name()));
+        attributes.push(KeyValue::new(
+            "transaction_type",
+            format!("ycsb-{}", workload.name().to_lowercase()),
+        ));
+    } else {
+        attributes.push(KeyValue::new("transaction_type", "none"));
+    }
 
     println!(
         "Starting Spanner Rust Benchmark preset: {:?} for duration: {}, target TPS: {}, threads: {}",
@@ -619,17 +724,78 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
     );
 
     let semaphore = Arc::new(Semaphore::new(args.threads));
-    let table = args.table.clone().expect("--table is required");
-    let command = args.command.clone();
+    let table = table_name.clone();
+
+    let (task, ycsb_state): (Arc<dyn BenchmarkTask>, Option<Arc<YcsbBenchmarkState>>) =
+        match args.command {
+            Commands::PointSelect { num_rows, .. } => (
+                Arc::new(PointSelectTask {
+                    table: table.clone(),
+                    num_rows,
+                }),
+                None,
+            ),
+            Commands::SelectUpdate { num_rows, .. } => (
+                Arc::new(SelectUpdateTask {
+                    table: table.clone(),
+                    num_rows,
+                }),
+                None,
+            ),
+            Commands::ReadLargeResultSet { num_rows, .. } => (
+                Arc::new(ReadLargeResultSetTask {
+                    num_rows,
+                    read_latency: metrics.read_latency.clone(),
+                    attributes: attributes.clone(),
+                }),
+                None,
+            ),
+            Commands::ReadNarrowResultSet { num_rows, .. } => (
+                Arc::new(ReadNarrowResultSetTask {
+                    num_rows,
+                    read_latency: metrics.read_latency.clone(),
+                    attributes: attributes.clone(),
+                }),
+                None,
+            ),
+            Commands::Ycsb {
+                workload,
+                distribution,
+                record_count,
+                zero_padding,
+                field_count,
+                field_length,
+                use_read_row,
+                ..
+            } => {
+                let state = Arc::new(YcsbBenchmarkState::new(
+                    table.clone(),
+                    workload,
+                    distribution,
+                    record_count,
+                    zero_padding,
+                    field_count,
+                    field_length,
+                    use_read_row,
+                    args.mock,
+                ));
+                (
+                    Arc::new(YcsbTask {
+                        state: Arc::clone(&state),
+                    }),
+                    Some(state),
+                )
+            }
+            Commands::Tpcc { .. } | Commands::YcsbInit { .. } => unreachable!(),
+        };
 
     // Loop to generate tasks with Poisson delays
     let start_time = Instant::now();
 
     let config = RunConfig {
-        db_client,
-        table,
-        command,
-        semaphore: semaphore.clone(),
+        database_client,
+        task,
+        semaphore: Arc::clone(&semaphore),
         threads: args.threads,
         metrics,
         attributes,
@@ -642,7 +808,7 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
         cycle_duration,
         peak_factor,
     };
-    let socket_path = std::env::var("SPANNER_BENCHMARK_SOCKET").ok();
+    let socket_path = env::var("SPANNER_BENCHMARK_SOCKET").ok();
     if let Some(path) = socket_path {
         if !path.is_empty() {
             run_socket_triggered_generator(path, config).await;
@@ -657,6 +823,9 @@ pub async fn run_benchmark(args: Args) -> anyhow::Result<()> {
     let _ = semaphore.acquire_many(args.threads as u32).await;
 
     println!("Benchmark completed successfully.");
+    if let Some(state) = &ycsb_state {
+        state.print_summary();
+    }
     if is_owned_provider {
         let _ = _meter_provider.shutdown();
     }
@@ -747,7 +916,7 @@ pub fn register_all_mock_results(mock: &mut MockSpanner, table_name: &str) {
             .collect();
         Ok(tonic::Response::new(ExecuteBatchDmlResponse {
             result_sets,
-            status: Some(spanner_grpc_mock::google::rpc::Status {
+            status: Some(Status {
                 code: 0,
                 message: "OK".to_string(),
                 ..Default::default()
@@ -797,22 +966,45 @@ pub fn register_all_mock_results(mock: &mut MockSpanner, table_name: &str) {
             });
         let (tx, rx) = tokio::sync::mpsc::channel(1);
 
-        let result_set = if sql.contains("SELECT id, value FROM")
-            || sql.contains(&format!("FROM {}", target_table))
+        let result_set = if sql.contains("field0")
+            || sql.contains("TABLE_NAME = @tableName")
+            || sql.contains("SELECT id, value FROM")
+            || (sql.contains(&format!("FROM {}", target_table)) && !sql.contains("AS random_"))
         {
-            PartialResultSet {
-                metadata: Some(ResultSetMetadata {
-                    row_type: Some(StructType {
-                        fields: vec![
-                            mock_field("id", TypeCode::Int64),
-                            mock_field("value", TypeCode::String),
-                        ],
+            if sql.contains("field0")
+                || sql.contains("TABLE_NAME = @tableName")
+                || target_table == "usertable"
+            {
+                let fields = (0..10)
+                    .map(|i| mock_field(&format!("field{}", i), TypeCode::String))
+                    .collect();
+                let values = (0..10)
+                    .map(|i| string_value(&format!("test-field-{}", i)))
+                    .collect();
+                PartialResultSet {
+                    metadata: Some(ResultSetMetadata {
+                        row_type: Some(StructType { fields }),
+                        ..Default::default()
                     }),
+                    values,
+                    last: true,
                     ..Default::default()
-                }),
-                values: vec![string_value("1"), string_value("test-value")],
-                last: true,
-                ..Default::default()
+                }
+            } else {
+                PartialResultSet {
+                    metadata: Some(ResultSetMetadata {
+                        row_type: Some(StructType {
+                            fields: vec![
+                                mock_field("id", TypeCode::Int64),
+                                mock_field("value", TypeCode::String),
+                            ],
+                        }),
+                        ..Default::default()
+                    }),
+                    values: vec![string_value("1"), string_value("test-value")],
+                    last: true,
+                    ..Default::default()
+                }
             }
         } else if sql.contains("SELECT id FROM") {
             PartialResultSet {
@@ -986,8 +1178,8 @@ pub fn register_all_mock_results(mock: &mut MockSpanner, table_name: &str) {
         };
 
         let mut result_set = result_set;
-        if let Some(meta) = &mut result_set.metadata {
-            meta.transaction = transaction;
+        if let Some(metadata) = &mut result_set.metadata {
+            metadata.transaction = transaction;
         } else {
             result_set.metadata = Some(ResultSetMetadata {
                 transaction,
@@ -1100,6 +1292,27 @@ pub fn register_all_mock_results(mock: &mut MockSpanner, table_name: &str) {
                 last: true,
                 ..Default::default()
             }
+        } else if table == "usertable" || req.columns.iter().any(|c| c.starts_with("field")) {
+            let count = if req.columns.is_empty() {
+                10
+            } else {
+                req.columns.len()
+            };
+            let fields = (0..count)
+                .map(|i| mock_field(&format!("field{}", i), TypeCode::String))
+                .collect();
+            let values = (0..count)
+                .map(|i| string_value(&format!("test-field-{}", i)))
+                .collect();
+            PartialResultSet {
+                metadata: Some(ResultSetMetadata {
+                    row_type: Some(StructType { fields }),
+                    ..Default::default()
+                }),
+                values,
+                last: true,
+                ..Default::default()
+            }
         } else {
             PartialResultSet {
                 last: true,
@@ -1107,8 +1320,8 @@ pub fn register_all_mock_results(mock: &mut MockSpanner, table_name: &str) {
             }
         };
 
-        if let Some(meta) = &mut result_set.metadata {
-            meta.transaction = transaction;
+        if let Some(metadata) = &mut result_set.metadata {
+            metadata.transaction = transaction;
         } else {
             result_set.metadata = Some(ResultSetMetadata {
                 transaction,
@@ -1144,24 +1357,24 @@ async fn run_socket_triggered_generator(socket_path: String, config: RunConfig) 
         Ok(s) => s,
         Err(e) => {
             eprintln!("Failed to connect to sidecar socket: {:?}", e);
-            std::process::exit(1);
+            process::exit(1);
         }
     };
 
     // Send READY signal
     if let Err(e) = stream.write_all(b"READY\n").await {
         eprintln!("Failed to send READY signal: {:?}", e);
-        std::process::exit(1);
+        process::exit(1);
     }
 
     let waiters = Arc::new(AtomicUsize::new(0));
     let last_log = Arc::new(Mutex::new(Instant::now()));
 
-    let mut buf = [0u8; 1024];
+    let mut buffer = [0u8; 1024];
 
     // Enforce Duration timeout using tokio::time::sleep
-    let sleep_dur = config.duration.unwrap_or(Duration::from_secs(3600 * 24)); // 1 day fallback
-    let delay_future = tokio::time::sleep(sleep_dur);
+    let sleep_duration = config.duration.unwrap_or(Duration::from_secs(3600 * 24)); // 1 day fallback
+    let delay_future = tokio::time::sleep(sleep_duration);
     tokio::pin!(delay_future);
 
     loop {
@@ -1170,37 +1383,36 @@ async fn run_socket_triggered_generator(socket_path: String, config: RunConfig) 
                 println!("Benchmark duration reached. Stopping socket client...");
                 break;
             }
-            res = stream.read(&mut buf) => {
-                match res {
+            result = stream.read(&mut buffer) => {
+                match result {
                     Ok(0) => {
                         println!("Workload generator socket connection closed by server.");
                         break;
                     }
                     Ok(n) => {
-                        for i in 0..n {
-                            if buf[i] == 0x01 {
-                                let db_client = config.db_client.clone();
-                                let table = config.table.clone();
-                                let command = config.command.clone();
+                        for &byte in buffer.iter().take(n) {
+                            if byte == 0x01 {
+                                let database_client = config.database_client.clone();
+                                let task = Arc::clone(&config.task);
                                 let metrics = config.metrics.clone();
                                 let attributes = config.attributes.clone();
-                                let semaphore = config.semaphore.clone();
-                                let waiters = waiters.clone();
-                                let last_log = last_log.clone();
+                                let semaphore = Arc::clone(&config.semaphore);
+                                let waiters = Arc::clone(&waiters);
+                                let last_log = Arc::clone(&last_log);
 
                                 tokio::spawn(async move {
                                     let permit = match load_type::acquire_permit_with_logging(semaphore, &waiters, &last_log).await {
                                         Some(p) => p,
                                         None => return,
                                     };
-                                    run_task(db_client, table, command, permit, metrics, attributes).await;
+                                    load_type::run_task(database_client, task, permit, metrics, attributes).await;
                                 });
                             }
                         }
                     }
                     Err(e) => {
                         eprintln!("Socket read error: {:?}", e);
-                        std::process::exit(1);
+                        process::exit(1);
                     }
                 }
             }

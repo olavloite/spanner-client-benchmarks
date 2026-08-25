@@ -161,6 +161,7 @@ public enum LoadType {
                       && !AbstractBenchmark.isCancellationOrInterruption(e)) {
                     System.err.println("Operation failed: " + e.getMessage());
                     benchmark.errorCounter.add(1, benchmark.getAttributes());
+                    benchmark.localErrorCounter.increment();
                   }
                 } finally {
                   if (benchmark.shouldMeasureEntireMethod()) {
@@ -170,6 +171,7 @@ public enum LoadType {
                     benchmark.latencyHistogram.record(latencyUs, benchmark.getAttributes());
                   }
                   benchmark.operationCounter.add(1, benchmark.getAttributes());
+                  benchmark.localOperationCounter.increment();
                 }
               }
             });

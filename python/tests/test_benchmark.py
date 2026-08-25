@@ -445,3 +445,325 @@ class TestBenchmarkWorkloads(BaseBenchmarkTest):
         self.assert_metric_attributes(cpu_metric, expected_attrs)
 
         self.assert_error_count_is_zero(metrics_data, "tpcc", extended="true")
+
+    def _test_ycsb_workload_helper(self, wl: str):
+        args = [
+            "main.py",
+            "-p",
+            "fake-project",
+            "-i",
+            "fake-instance",
+            "-d",
+            "fake-database",
+            "--host",
+            f"localhost:{self.port}",
+            "--duration",
+            "1s",
+            "--resource-probe-interval",
+            "10ms",
+            "ycsb",
+            "--workload",
+            wl,
+            "--record-count",
+            "1000",
+            "--tps",
+            "10",
+        ]
+
+        with patch("sys.argv", args), patch("os._exit"):
+            main()
+
+        from google.cloud.spanner_v1.types import spanner as spanner_types
+
+        self.wait_for_requests(spanner_types.ExecuteSqlRequest, min_count=1)
+
+        metrics_data = self.reader.get_metrics_data()
+        self.assert_resource_attributes(metrics_data)
+
+        expected_attrs = {
+            "client": "python-client",
+            "benchmark_type": "ycsb",
+            "workload": wl,
+            "transaction_type": f"ycsb-{wl.lower()}",
+        }
+
+        op_count_metric = self.find_metric(metrics_data, OPERATION_COUNT_NAME)
+        self.assert_metric_attributes(op_count_metric, expected_attrs)
+
+        mem_metric = self.find_metric(metrics_data, MEMORY_USAGE_NAME)
+        self.assert_metric_attributes(mem_metric, expected_attrs)
+
+        cpu_metric = self.find_metric(metrics_data, CPU_UTILIZATION_NAME)
+        self.assert_metric_attributes(cpu_metric, expected_attrs)
+
+        self.assert_error_count_is_zero(metrics_data, "ycsb")
+
+    def test_ycsb_workload_a(self):
+        self._test_ycsb_workload_helper("A")
+
+    def test_ycsb_workload_b(self):
+        self._test_ycsb_workload_helper("B")
+
+    def test_ycsb_workload_c(self):
+        self._test_ycsb_workload_helper("C")
+
+    def test_ycsb_workload_d(self):
+        self._test_ycsb_workload_helper("D")
+
+    def test_ycsb_workload_e(self):
+        self._test_ycsb_workload_helper("E")
+
+    def test_ycsb_workload_f(self):
+        self._test_ycsb_workload_helper("F")
+
+    def test_ycsb_with_mock_flag(self):
+        args = [
+            "main.py",
+            "-p",
+            "fake-project",
+            "-i",
+            "fake-instance",
+            "-d",
+            "fake-database",
+            "--duration",
+            "1s",
+            "--resource-probe-interval",
+            "10ms",
+            "--mock",
+            "ycsb",
+            "--workload",
+            "B",
+            "--tps",
+            "10",
+        ]
+
+        with patch("sys.argv", args), patch("os._exit"):
+            main()
+
+        metrics_data = self.reader.get_metrics_data()
+        self.assert_resource_attributes(metrics_data)
+
+        expected_attrs = {
+            "client": "python-client",
+            "benchmark_type": "ycsb-mock",
+            "workload": "B",
+            "transaction_type": "ycsb-b",
+        }
+
+        op_count_metric = self.find_metric(metrics_data, OPERATION_COUNT_NAME)
+        self.assert_metric_attributes(op_count_metric, expected_attrs)
+        self.assert_error_count_is_zero(metrics_data, "ycsb-mock")
+
+    def test_ycsb_read_row(self):
+        args = [
+            "main.py",
+            "-p",
+            "fake-project",
+            "-i",
+            "fake-instance",
+            "-d",
+            "fake-database",
+            "--host",
+            f"localhost:{self.port}",
+            "--duration",
+            "1s",
+            "--resource-probe-interval",
+            "10ms",
+            "ycsb",
+            "--workload",
+            "B",
+            "--use-read-row",
+            "--tps",
+            "10",
+        ]
+
+        with patch("sys.argv", args), patch("os._exit"):
+            main()
+
+        from google.cloud.spanner_v1.types import spanner as spanner_types
+
+        self.wait_for_requests(spanner_types.ReadRequest, min_count=1)
+
+    def test_ycsb_closed_loop(self):
+        args = [
+            "main.py",
+            "-p",
+            "fake-project",
+            "-i",
+            "fake-instance",
+            "-d",
+            "fake-database",
+            "--host",
+            f"localhost:{self.port}",
+            "--duration",
+            "1s",
+            "--resource-probe-interval",
+            "10ms",
+            "ycsb",
+            "--workload",
+            "B",
+            "--load-type",
+            "closed-loop",
+            "--threads",
+            "2",
+        ]
+
+        with patch("sys.argv", args), patch("os._exit"):
+            main()
+
+        metrics_data = self.reader.get_metrics_data()
+        op_count_metric = self.find_metric(metrics_data, OPERATION_COUNT_NAME)
+        self.assertIsNotNone(op_count_metric)
+
+    def test_ycsb_init(self):
+        args = [
+            "main.py",
+            "-p",
+            "fake-project",
+            "-i",
+            "fake-instance",
+            "-d",
+            "fake-database",
+            "--host",
+            f"localhost:{self.port}",
+            "ycsb-init",
+            "--record-count",
+            "10",
+            "--threads",
+            "2",
+            "--batch-size",
+            "5",
+        ]
+
+        with patch("sys.argv", args):
+            main()
+
+        from google.cloud.spanner_v1.types import spanner as spanner_types
+
+        self.wait_for_requests(spanner_types.CommitRequest, min_count=1)
+
+    def test_ycsb_read_missing_row_raises(self):
+        from src.benchmarks.ycsb.benchmark import YcsbBenchmark
+        from src.benchmarks.ycsb.workload import Workload
+        from src.spanner.client import create_spanner_client
+
+        spanner_client = create_spanner_client("fake-project", f"localhost:{self.port}")
+        instance = spanner_client.instance("fake-instance")
+        database = instance.database("fake-database")
+
+        meter = self.provider.get_meter("test")
+        latency_hist = meter.create_histogram("latency")
+        op_counter = meter.create_counter("ops")
+        err_counter = meter.create_counter("errors")
+
+        # Point to empty_table where mock returns 0 rows to verify RuntimeError is raised
+        benchmark = YcsbBenchmark(
+            database=database,
+            latency_histogram=latency_hist,
+            operation_counter=op_counter,
+            error_counter=err_counter,
+            memory_usage_histogram=None,
+            cpu_utilization_histogram=None,
+            resource_probe_interval_str="0",
+            table_name="empty_table",
+            workload=Workload.C,
+            use_read_row=False,
+            is_mock=False,
+        )
+
+        with self.assertRaises(RuntimeError):
+            benchmark._execute_read(database)
+
+        with self.assertRaises(RuntimeError):
+            benchmark._execute_rmw(database)
+
+    def test_ycsb_workload_d_uses_skewed_latest(self):
+        from src.benchmarks.ycsb.benchmark import YcsbBenchmark
+        from src.benchmarks.ycsb.workload import Workload
+        from src.spanner.client import create_spanner_client
+
+        spanner_client = create_spanner_client("fake-project", f"localhost:{self.port}")
+        instance = spanner_client.instance("fake-instance")
+        database = instance.database("fake-database")
+
+        meter = self.provider.get_meter("test")
+        latency_hist = meter.create_histogram("latency")
+        op_counter = meter.create_counter("ops")
+        err_counter = meter.create_counter("errors")
+
+        benchmark = YcsbBenchmark(
+            database=database,
+            latency_histogram=latency_hist,
+            operation_counter=op_counter,
+            error_counter=err_counter,
+            memory_usage_histogram=None,
+            cpu_utilization_histogram=None,
+            resource_probe_interval_str="0",
+            table_name="usertable",
+            workload=Workload.D,
+            record_count=100000,
+            is_mock=False,
+        )
+
+        called = False
+        orig_next = benchmark.skewed_latest_generator.next_value
+
+        def mock_next():
+            nonlocal called
+            called = True
+            return 0
+
+        benchmark.skewed_latest_generator.next_value = mock_next
+        benchmark._execute_read(database)
+        self.assertTrue(
+            called, "Workload D _execute_read must invoke skewed_latest_generator"
+        )
+
+    def test_ycsb_e_range_scan_read_row(self):
+        args = [
+            "main.py",
+            "-p",
+            "fake-project",
+            "-i",
+            "fake-instance",
+            "-d",
+            "fake-database",
+            "--host",
+            f"localhost:{self.port}",
+            "--duration",
+            "1s",
+            "--resource-probe-interval",
+            "10ms",
+            "ycsb",
+            "--workload",
+            "E",
+            "--use-read-row",
+            "--tps",
+            "10",
+        ]
+
+        with patch("sys.argv", args), patch("os._exit"):
+            main()
+
+        from google.cloud.spanner_v1.types import spanner as spanner_types
+
+        self.wait_for_requests(spanner_types.ReadRequest, min_count=1)
+
+    def test_ycsb_init_skip_flags(self):
+        args = [
+            "main.py",
+            "-p",
+            "fake-project",
+            "-i",
+            "fake-instance",
+            "-d",
+            "fake-database",
+            "--host",
+            f"localhost:{self.port}",
+            "ycsb-init",
+            "--skip-schema",
+            "--skip-data",
+        ]
+
+        with patch("sys.argv", args):
+            main()

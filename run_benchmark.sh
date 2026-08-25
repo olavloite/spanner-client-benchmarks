@@ -19,9 +19,15 @@ fi
 # Default values if not set in environment
 PROJECT_ID="${PROJECT_ID:-appdev-soda-spanner-staging}"
 INSTANCE_ID="${INSTANCE_ID:-knut-test-ycsb}"
-DATABASE_ID="${DATABASE_ID:-spring-data-jpa}"
-TABLE_NAME="${TABLE_NAME:-test}"
 BENCHMARK_TYPE="${BENCHMARK_TYPE:-point-select}"
+if [ -z "$DATABASE_ID" ]; then
+  if [ "$BENCHMARK_TYPE" = "tpcc" ] || [ "$BENCHMARK_TYPE" = "tpcc-init" ] || [ "$BENCHMARK_TYPE" = "ycsb" ] || [ "$BENCHMARK_TYPE" = "ycsb-init" ]; then
+    DATABASE_ID="benchmarks"
+  else
+    DATABASE_ID="spring-data-jpa"
+  fi
+fi
+TABLE_NAME="${TABLE_NAME:-test}"
 CPU="${CPU:-4}"
 MEMORY="${MEMORY:-4Gi}"
 REGION="${REGION:-europe-north1}"
@@ -93,6 +99,34 @@ if [ "$BENCHMARK_TYPE" = "tpcc" ] || [ "$BENCHMARK_TYPE" = "tpcc-init" ]; then
   ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}${BENCHMARK_NAME_FLAG}$BENCHMARK_TYPE,--warehouses=${WAREHOUSES:-1000},--items=${ITEMS:-1000000}"
   if [ "$BENCHMARK_TYPE" = "tpcc" ]; then
     ARGS="${ARGS},--clients=${CLIENTS:-10}"
+  fi
+elif [ "$BENCHMARK_TYPE" = "ycsb" ] || [ "$BENCHMARK_TYPE" = "ycsb-init" ]; then
+  MOCK_FLAG=""
+  if [ "$MOCK" = "true" ]; then
+    MOCK_FLAG="--mock,"
+  fi
+  TABLE_NAME="${TABLE_NAME:-usertable}"
+  ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}${BENCHMARK_NAME_FLAG}${MOCK_FLAG}$BENCHMARK_TYPE,--table=$TABLE_NAME"
+  if [ "$BENCHMARK_TYPE" = "ycsb" ]; then
+    if [ -n "$WORKLOAD" ]; then ARGS="${ARGS},--workload=$WORKLOAD"; fi
+    if [ -n "$DISTRIBUTION" ]; then ARGS="${ARGS},--distribution=$DISTRIBUTION"; fi
+    if [ -n "$TPS" ]; then ARGS="${ARGS},--tps=$TPS"; fi
+    if [ -n "$THREADS" ]; then ARGS="${ARGS},--threads=$THREADS"; fi
+    if [ -n "$RECORD_COUNT" ]; then ARGS="${ARGS},--record-count=$RECORD_COUNT"; fi
+    if [ -n "$ZERO_PADDING" ]; then ARGS="${ARGS},--zero-padding=$ZERO_PADDING"; fi
+    if [ -n "$FIELD_COUNT" ]; then ARGS="${ARGS},--field-count=$FIELD_COUNT"; fi
+    if [ -n "$FIELD_LENGTH" ]; then ARGS="${ARGS},--field-length=$FIELD_LENGTH"; fi
+    if [ -n "$LOAD_TYPE" ]; then ARGS="${ARGS},--load-type=$LOAD_TYPE"; fi
+    if [ "$USE_READ_ROW" = "true" ]; then ARGS="${ARGS},--use-read-row"; fi
+  elif [ "$BENCHMARK_TYPE" = "ycsb-init" ]; then
+    if [ -n "$RECORD_COUNT" ]; then ARGS="${ARGS},--record-count=$RECORD_COUNT"; fi
+    if [ -n "$THREADS" ]; then ARGS="${ARGS},--threads=$THREADS"; fi
+    if [ -n "$BATCH_SIZE" ]; then ARGS="${ARGS},--batch-size=$BATCH_SIZE"; fi
+    if [ -n "$FIELD_COUNT" ]; then ARGS="${ARGS},--field-count=$FIELD_COUNT"; fi
+    if [ -n "$FIELD_LENGTH" ]; then ARGS="${ARGS},--field-length=$FIELD_LENGTH"; fi
+    if [ -n "$ZERO_PADDING" ]; then ARGS="${ARGS},--zero-padding=$ZERO_PADDING"; fi
+    if [ "$SKIP_SCHEMA" = "true" ]; then ARGS="${ARGS},--skip-schema"; fi
+    if [ "$SKIP_DATA" = "true" ]; then ARGS="${ARGS},--skip-data"; fi
   fi
 else
   MOCK_FLAG=""

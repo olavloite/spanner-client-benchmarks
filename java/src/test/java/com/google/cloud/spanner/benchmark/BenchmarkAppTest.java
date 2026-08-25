@@ -412,4 +412,454 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
     thread.join(5000);
     assertNoErrors();
   }
+
+  @Test
+  public void testYcsbBenchmarkWorkloadB_RunsReadsAndUpdates() throws Exception {
+    Thread thread =
+        new Thread(
+            () -> {
+              try {
+                new picocli.CommandLine(new BenchmarkApp())
+                    .execute(
+                        new String[] {
+                          "-p",
+                          "my-project",
+                          "-i",
+                          "my-instance",
+                          "-d",
+                          "my-database",
+                          "--host",
+                          "http://localhost:" + port,
+                          "ycsb",
+                          "-t",
+                          "usertable",
+                          "-w",
+                          "B",
+                          "--tps",
+                          "50",
+                          "--threads",
+                          "2"
+                        });
+              } catch (Exception e) {
+                System.out.println("App terminated: " + e.getMessage());
+              }
+            });
+
+    thread.start();
+
+    waitForRequest(
+        r ->
+            r.getSql()
+                .contains(
+                    "SELECT field0, field1, field2, field3, field4, field5, field6, field7, field8, field9 FROM usertable WHERE id = @id"),
+        thread);
+    waitForCommit(
+        r ->
+            r.getMutationsList().stream()
+                .anyMatch(m -> m.getInsertOrUpdate().getTable().equals("usertable")),
+        thread);
+
+    thread.interrupt();
+    thread.join(5000);
+    assertTrue("Thread should have finished", !thread.isAlive());
+    assertNoErrors();
+  }
+
+  @Test
+  public void testYcsbBenchmarkWorkloadE_RunsScans() throws Exception {
+    Thread thread =
+        new Thread(
+            () -> {
+              try {
+                new picocli.CommandLine(new BenchmarkApp())
+                    .execute(
+                        new String[] {
+                          "-p",
+                          "my-project",
+                          "-i",
+                          "my-instance",
+                          "-d",
+                          "my-database",
+                          "--host",
+                          "http://localhost:" + port,
+                          "ycsb",
+                          "-t",
+                          "usertable",
+                          "-w",
+                          "E",
+                          "--tps",
+                          "20",
+                          "--threads",
+                          "2"
+                        });
+              } catch (Exception e) {
+                System.out.println("App terminated: " + e.getMessage());
+              }
+            });
+
+    thread.start();
+
+    waitForRequest(
+        r ->
+            r.getSql()
+                .contains(
+                    "SELECT field0, field1, field2, field3, field4, field5, field6, field7, field8, field9 FROM usertable WHERE id >= @startKey ORDER BY id LIMIT @scanLength"),
+        thread);
+
+    thread.interrupt();
+    thread.join(5000);
+    assertTrue("Thread should have finished", !thread.isAlive());
+    assertNoErrors();
+  }
+
+  @Test
+  public void testYcsbBenchmarkWithReadRow() throws Exception {
+    Thread thread =
+        new Thread(
+            () -> {
+              try {
+                new picocli.CommandLine(new BenchmarkApp())
+                    .execute(
+                        new String[] {
+                          "-p",
+                          "my-project",
+                          "-i",
+                          "my-instance",
+                          "-d",
+                          "my-database",
+                          "--host",
+                          "http://localhost:" + port,
+                          "ycsb",
+                          "-t",
+                          "usertable",
+                          "-w",
+                          "C",
+                          "--use-read-row",
+                          "--tps",
+                          "20",
+                          "--threads",
+                          "2"
+                        });
+              } catch (Exception e) {
+                System.out.println("App terminated: " + e.getMessage());
+              }
+            });
+
+    thread.start();
+
+    waitForRead(r -> r.getTable().equals("usertable"), thread);
+
+    thread.interrupt();
+    thread.join(5000);
+    assertTrue("Thread should have finished", !thread.isAlive());
+    assertNoErrors();
+  }
+
+  @Test
+  public void testYcsbBenchmarkEmbeddedMock() throws Exception {
+    Thread thread =
+        new Thread(
+            () -> {
+              try {
+                new picocli.CommandLine(new BenchmarkApp())
+                    .execute(
+                        new String[] {
+                          "-p",
+                          "my-project",
+                          "-i",
+                          "my-instance",
+                          "-d",
+                          "my-database",
+                          "--mock",
+                          "--no-metrics",
+                          "--duration",
+                          "2s",
+                          "ycsb",
+                          "-t",
+                          "usertable",
+                          "-w",
+                          "B",
+                          "--tps",
+                          "20",
+                          "--threads",
+                          "2"
+                        });
+              } catch (Exception e) {
+                System.out.println("App terminated: " + e.getMessage());
+              }
+            });
+
+    thread.start();
+    thread.join(10000);
+    assertTrue("Thread should have finished naturally after duration", !thread.isAlive());
+  }
+
+  @Test
+  public void testYcsbInitRuns() throws Exception {
+    Thread thread =
+        new Thread(
+            () -> {
+              try {
+                new picocli.CommandLine(new BenchmarkApp())
+                    .execute(
+                        new String[] {
+                          "-p",
+                          "my-project",
+                          "-i",
+                          "my-instance",
+                          "-d",
+                          "my-database",
+                          "--host",
+                          "http://localhost:" + port,
+                          "ycsb-init",
+                          "-t",
+                          "usertable",
+                          "--skip-schema",
+                          "--record-count",
+                          "20",
+                          "--threads",
+                          "2",
+                          "--batch-size",
+                          "5"
+                        });
+              } catch (Exception e) {
+                System.out.println("App terminated: " + e.getMessage());
+              }
+            });
+
+    thread.start();
+
+    waitForCommit(
+        r ->
+            r.getMutationsList().stream()
+                .anyMatch(m -> m.getInsertOrUpdate().getTable().equals("usertable")),
+        thread);
+
+    thread.join(10000);
+    assertTrue("Init thread should have finished", !thread.isAlive());
+  }
+
+  @Test
+  public void testYcsbWorkloadARuns() throws Exception {
+    Thread thread =
+        new Thread(
+            () -> {
+              try {
+                new picocli.CommandLine(new BenchmarkApp())
+                    .execute(
+                        new String[] {
+                          "-p",
+                          "my-project",
+                          "-i",
+                          "my-instance",
+                          "-d",
+                          "my-database",
+                          "--host",
+                          "http://localhost:" + port,
+                          "ycsb",
+                          "-t",
+                          "usertable",
+                          "-w",
+                          "A",
+                          "--tps",
+                          "20",
+                          "--threads",
+                          "2"
+                        });
+              } catch (Exception e) {
+                System.out.println("App terminated: " + e.getMessage());
+              }
+            });
+
+    thread.start();
+
+    waitForRequest(
+        r ->
+            r.getSql()
+                .contains(
+                    "SELECT field0, field1, field2, field3, field4, field5, field6, field7, field8, field9 FROM usertable WHERE id = @id"),
+        thread);
+
+    thread.interrupt();
+    thread.join(5000);
+    assertTrue("Thread should have finished", !thread.isAlive());
+    assertNoErrors();
+  }
+
+  @Test
+  public void testYcsbWorkloadDRuns() throws Exception {
+    Thread thread =
+        new Thread(
+            () -> {
+              try {
+                new picocli.CommandLine(new BenchmarkApp())
+                    .execute(
+                        new String[] {
+                          "-p",
+                          "my-project",
+                          "-i",
+                          "my-instance",
+                          "-d",
+                          "my-database",
+                          "--host",
+                          "http://localhost:" + port,
+                          "ycsb",
+                          "-t",
+                          "usertable",
+                          "-w",
+                          "D",
+                          "--tps",
+                          "20",
+                          "--threads",
+                          "2"
+                        });
+              } catch (Exception e) {
+                System.out.println("App terminated: " + e.getMessage());
+              }
+            });
+
+    thread.start();
+
+    waitForRequest(
+        r ->
+            r.getSql()
+                .contains(
+                    "SELECT field0, field1, field2, field3, field4, field5, field6, field7, field8, field9 FROM usertable WHERE id = @id"),
+        thread);
+
+    thread.interrupt();
+    thread.join(5000);
+    assertTrue("Thread should have finished", !thread.isAlive());
+    assertNoErrors();
+  }
+
+  @Test
+  public void testYcsbWorkloadFRuns() throws Exception {
+    Thread thread =
+        new Thread(
+            () -> {
+              try {
+                new picocli.CommandLine(new BenchmarkApp())
+                    .execute(
+                        new String[] {
+                          "-p",
+                          "my-project",
+                          "-i",
+                          "my-instance",
+                          "-d",
+                          "my-database",
+                          "--host",
+                          "http://localhost:" + port,
+                          "ycsb",
+                          "-t",
+                          "usertable",
+                          "-w",
+                          "F",
+                          "--tps",
+                          "20",
+                          "--threads",
+                          "2"
+                        });
+              } catch (Exception e) {
+                System.out.println("App terminated: " + e.getMessage());
+              }
+            });
+
+    thread.start();
+
+    waitForRead(r -> r.getTable().equals("usertable"), thread);
+
+    thread.interrupt();
+    thread.join(5000);
+    assertTrue("Thread should have finished", !thread.isAlive());
+    assertNoErrors();
+  }
+
+  @Test
+  public void testYcsbWorkloadEScanWithReadApi() throws Exception {
+    Thread thread =
+        new Thread(
+            () -> {
+              try {
+                new picocli.CommandLine(new BenchmarkApp())
+                    .execute(
+                        new String[] {
+                          "-p",
+                          "my-project",
+                          "-i",
+                          "my-instance",
+                          "-d",
+                          "my-database",
+                          "--host",
+                          "http://localhost:" + port,
+                          "ycsb",
+                          "-t",
+                          "usertable",
+                          "-w",
+                          "E",
+                          "--use-read-row",
+                          "--tps",
+                          "20",
+                          "--threads",
+                          "2"
+                        });
+              } catch (Exception e) {
+                System.out.println("App terminated: " + e.getMessage());
+              }
+            });
+
+    thread.start();
+
+    waitForRead(r -> r.getTable().equals("usertable"), thread);
+
+    thread.interrupt();
+    thread.join(5000);
+    assertTrue("Thread should have finished", !thread.isAlive());
+    assertNoErrors();
+  }
+
+  @Test
+  public void testYcsbBenchmarkWithoutExplicitTable() throws Exception {
+    Thread thread =
+        new Thread(
+            () -> {
+              try {
+                new picocli.CommandLine(new BenchmarkApp())
+                    .execute(
+                        new String[] {
+                          "-p",
+                          "my-project",
+                          "-i",
+                          "my-instance",
+                          "-d",
+                          "my-database",
+                          "--host",
+                          "http://localhost:" + port,
+                          "ycsb",
+                          "-w",
+                          "B",
+                          "--tps",
+                          "20",
+                          "--threads",
+                          "2"
+                        });
+              } catch (Exception e) {
+                System.out.println("App terminated: " + e.getMessage());
+              }
+            });
+
+    thread.start();
+
+    waitForRequest(
+        r ->
+            r.getSql()
+                .contains(
+                    "SELECT field0, field1, field2, field3, field4, field5, field6, field7, field8, field9 FROM usertable WHERE id = @id"),
+        thread);
+
+    thread.interrupt();
+    thread.join(5000);
+    assertTrue("Thread should have finished", !thread.isAlive());
+    assertNoErrors();
+  }
 }

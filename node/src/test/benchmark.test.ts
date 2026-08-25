@@ -7,6 +7,13 @@ import {ReadLargeResultSetBenchmark} from '../benchmarks/read-large-result-set';
 import {ReadNarrowResultSetBenchmark} from '../benchmarks/read-narrow-result-set';
 import {LoadType} from '../benchmarks/load-type';
 import {TpccBenchmarkRunner} from '../benchmarks/tpcc/benchmark';
+import {
+  YcsbBenchmark,
+  Workload,
+  KeyDistribution,
+  initSchema,
+  populateData,
+} from '../benchmarks/ycsb';
 import {createSpannerClient} from '../spanner/client';
 import {setTestingMeterProvider} from '../metrics/otel';
 import {
@@ -119,6 +126,7 @@ describe('Node.js Benchmark Integration Tests', () => {
 
   function registerMockResults(srv: MockSpannerServer) {
     srv.clearResults();
+    srv.registerAllMockResults('test');
 
     // Point Select
     srv.addResult('SELECT * FROM test WHERE id = @id', {
@@ -860,5 +868,445 @@ describe('Node.js Benchmark Integration Tests', () => {
     });
 
     assertErrorCountIsZero(metricsData, 'tpcc');
+  });
+
+  it('should execute YCSB Workload B cleanly and emit correct telemetry', async () => {
+    const meter = provider.getMeter('spanner-benchmark');
+    const latHist = meter.createHistogram('spanner_client_benchmarks/latency');
+    const opCount = meter.createCounter(
+      'spanner_client_benchmarks/operation_count',
+    );
+    const errCount = meter.createCounter(
+      'spanner_client_benchmarks/error_count',
+    );
+    const memHist = meter.createHistogram(
+      'spanner_client_benchmarks/memory_usage',
+    );
+    const cpuHist = meter.createHistogram(
+      'spanner_client_benchmarks/cpu_utilization',
+    );
+
+    const benchmark = new YcsbBenchmark(
+      database,
+      latHist,
+      opCount,
+      errCount,
+      memHist,
+      cpuHist,
+      '10ms',
+      'test',
+      10,
+      5,
+      1000,
+      false,
+      'ycsb-b-run',
+      LoadType.Steady,
+      null,
+      2.0,
+      1.0,
+      1.0,
+      0.1,
+      true, // mock mode
+      Workload.B,
+      KeyDistribution.ScrambledZipfian,
+      1000,
+      12,
+      10,
+      100,
+      false,
+    );
+
+    await benchmark.run();
+
+    const reqs = await waitForRequests(1);
+    assert.ok(reqs.length >= 1);
+
+    // Verify metrics
+    await reader.forceFlush();
+    const metricsData = exporter.getMetrics();
+    assertResourceMetrics(metricsData);
+
+    const countMetric = findMetric(
+      metricsData,
+      'spanner_client_benchmarks/operation_count',
+    );
+    assertMetricAttributes(countMetric, {
+      client: 'node-client',
+      benchmark_type: 'ycsb-mock',
+      workload: 'B',
+      transaction_type: 'ycsb-b',
+    });
+
+    assertErrorCountIsZero(metricsData, 'ycsb-mock');
+  });
+
+  it('should execute YCSB Workload B cleanly in closed-loop mode', async () => {
+    const meter = provider.getMeter('spanner-benchmark');
+    const latHist = meter.createHistogram('spanner_client_benchmarks/latency');
+    const opCount = meter.createCounter(
+      'spanner_client_benchmarks/operation_count',
+    );
+    const errCount = meter.createCounter(
+      'spanner_client_benchmarks/error_count',
+    );
+    const memHist = meter.createHistogram(
+      'spanner_client_benchmarks/memory_usage',
+    );
+    const cpuHist = meter.createHistogram(
+      'spanner_client_benchmarks/cpu_utilization',
+    );
+
+    const benchmark = new YcsbBenchmark(
+      database,
+      latHist,
+      opCount,
+      errCount,
+      memHist,
+      cpuHist,
+      '10ms',
+      'test',
+      10,
+      2,
+      1000,
+      false,
+      'ycsb-closed-loop',
+      LoadType.ClosedLoop,
+      null,
+      2.0,
+      1.0,
+      1.0,
+      0.1,
+      true, // mock mode
+      Workload.B,
+      KeyDistribution.ScrambledZipfian,
+      1000,
+      12,
+      10,
+      100,
+      false,
+    );
+
+    await benchmark.run();
+
+    const reqs = await waitForRequests(1);
+    assert.ok(reqs.length >= 1);
+  });
+
+  it('should execute YCSB Workload D (Latest) cleanly with mock server', async () => {
+    const meter = provider.getMeter('spanner-benchmark');
+    const latHist = meter.createHistogram('spanner_client_benchmarks/latency');
+    const opCount = meter.createCounter(
+      'spanner_client_benchmarks/operation_count',
+    );
+    const errCount = meter.createCounter(
+      'spanner_client_benchmarks/error_count',
+    );
+    const memHist = meter.createHistogram(
+      'spanner_client_benchmarks/memory_usage',
+    );
+    const cpuHist = meter.createHistogram(
+      'spanner_client_benchmarks/cpu_utilization',
+    );
+
+    const benchmark = new YcsbBenchmark(
+      database,
+      latHist,
+      opCount,
+      errCount,
+      memHist,
+      cpuHist,
+      '10ms',
+      'test',
+      10,
+      2,
+      1000,
+      false,
+      'ycsb-d-run',
+      LoadType.Steady,
+      null,
+      2.0,
+      1.0,
+      1.0,
+      0.1,
+      true, // mock mode
+      Workload.D,
+      KeyDistribution.Uniform,
+      1000,
+      12,
+      10,
+      100,
+      false,
+    );
+
+    await benchmark.run();
+
+    const reqs = await waitForRequests(1);
+    assert.ok(reqs.length >= 1);
+
+    await reader.forceFlush();
+    const metricsData = exporter.getMetrics();
+    const countMetric = findMetric(
+      metricsData,
+      'spanner_client_benchmarks/operation_count',
+    );
+    assertMetricAttributes(countMetric, {
+      client: 'node-client',
+      benchmark_type: 'ycsb-mock',
+      workload: 'D',
+      transaction_type: 'ycsb-d',
+    });
+  });
+
+  it('should execute YCSB Workload E (Scan) cleanly with mock server', async () => {
+    const meter = provider.getMeter('spanner-benchmark');
+    const latHist = meter.createHistogram('spanner_client_benchmarks/latency');
+    const opCount = meter.createCounter(
+      'spanner_client_benchmarks/operation_count',
+    );
+    const errCount = meter.createCounter(
+      'spanner_client_benchmarks/error_count',
+    );
+    const memHist = meter.createHistogram(
+      'spanner_client_benchmarks/memory_usage',
+    );
+    const cpuHist = meter.createHistogram(
+      'spanner_client_benchmarks/cpu_utilization',
+    );
+
+    const benchmark = new YcsbBenchmark(
+      database,
+      latHist,
+      opCount,
+      errCount,
+      memHist,
+      cpuHist,
+      '10ms',
+      'test',
+      10,
+      2,
+      1000,
+      false,
+      'ycsb-scan-run',
+      LoadType.Steady,
+      null,
+      2.0,
+      1.0,
+      1.0,
+      0.1,
+      true, // mock mode
+      Workload.E,
+      KeyDistribution.Uniform,
+      1000,
+      12,
+      10,
+      100,
+      false,
+    );
+
+    await benchmark.run();
+
+    const reqs = await waitForRequests(1);
+    assert.ok(reqs.length >= 1);
+
+    await reader.forceFlush();
+    const metricsData = exporter.getMetrics();
+    const countMetric = findMetric(
+      metricsData,
+      'spanner_client_benchmarks/operation_count',
+    );
+    assertMetricAttributes(countMetric, {
+      client: 'node-client',
+      benchmark_type: 'ycsb-mock',
+      workload: 'E',
+      transaction_type: 'ycsb-e',
+    });
+  });
+
+  it('should execute YCSB Workload F (RMW) cleanly with mock server', async () => {
+    const meter = provider.getMeter('spanner-benchmark');
+    const latHist = meter.createHistogram('spanner_client_benchmarks/latency');
+    const opCount = meter.createCounter(
+      'spanner_client_benchmarks/operation_count',
+    );
+    const errCount = meter.createCounter(
+      'spanner_client_benchmarks/error_count',
+    );
+    const memHist = meter.createHistogram(
+      'spanner_client_benchmarks/memory_usage',
+    );
+    const cpuHist = meter.createHistogram(
+      'spanner_client_benchmarks/cpu_utilization',
+    );
+
+    const benchmark = new YcsbBenchmark(
+      database,
+      latHist,
+      opCount,
+      errCount,
+      memHist,
+      cpuHist,
+      '10ms',
+      'test',
+      10,
+      2,
+      1000,
+      false,
+      'ycsb-f-run',
+      LoadType.Steady,
+      null,
+      2.0,
+      1.0,
+      1.0,
+      0.1,
+      true, // mock mode
+      Workload.F,
+      KeyDistribution.Uniform,
+      1000,
+      12,
+      10,
+      100,
+      false,
+    );
+
+    await benchmark.run();
+
+    const reqs = await waitForRequests(1);
+    assert.ok(reqs.length >= 1);
+
+    await reader.forceFlush();
+    const metricsData = exporter.getMetrics();
+    const countMetric = findMetric(
+      metricsData,
+      'spanner_client_benchmarks/operation_count',
+    );
+    assertMetricAttributes(countMetric, {
+      client: 'node-client',
+      benchmark_type: 'ycsb-mock',
+      workload: 'F',
+      transaction_type: 'ycsb-f',
+    });
+  });
+
+  it('should throw Error when executing read on non-existent rows', async () => {
+    const meter = provider.getMeter('spanner-benchmark');
+    const latHist = meter.createHistogram('spanner_client_benchmarks/latency');
+    const opCount = meter.createCounter(
+      'spanner_client_benchmarks/operation_count',
+    );
+    const errCount = meter.createCounter(
+      'spanner_client_benchmarks/error_count',
+    );
+    const memHist = meter.createHistogram(
+      'spanner_client_benchmarks/memory_usage',
+    );
+    const cpuHist = meter.createHistogram(
+      'spanner_client_benchmarks/cpu_utilization',
+    );
+
+    // Register empty result for table 'empty_tbl'
+    mockServer.addResult(
+      'SELECT field0, field1, field2, field3, field4, field5, field6, field7, field8, field9 FROM empty_tbl WHERE id = @id',
+      {
+        metadata: {
+          row_type: {
+            fields: [{name: 'field0', type: {code: 'STRING'}}],
+          },
+        },
+        rows: [],
+      },
+    );
+
+    const benchmark = new YcsbBenchmark(
+      database,
+      latHist,
+      opCount,
+      errCount,
+      memHist,
+      cpuHist,
+      '10ms',
+      'empty_tbl',
+      10,
+      1,
+      100,
+      false,
+      'ycsb-empty',
+      LoadType.Steady,
+      null,
+      2.0,
+      1.0,
+      1.0,
+      0.1,
+      true,
+      Workload.C, // 100% Read
+    );
+
+    await assert.rejects(
+      async () => {
+        await benchmark.execute(database, 'empty_tbl', 0, 10);
+      },
+      {
+        message: /Row not found for key:/,
+      },
+    );
+  });
+
+  it('should execute initSchema and populateData cleanly with mock server', async () => {
+    await initSchema(database, 'test', 10, false);
+    await populateData(database, 'test', 10, 12, 10, 100, 5, 2, false);
+
+    const reqs = await waitForRequests(1);
+    assert.ok(reqs.length >= 1);
+  });
+
+  it('should execute YCSB with useReadRow: true cleanly with mock server', async () => {
+    const meter = provider.getMeter('spanner-benchmark');
+    const latHist = meter.createHistogram('spanner_client_benchmarks/latency');
+    const opCount = meter.createCounter(
+      'spanner_client_benchmarks/operation_count',
+    );
+    const errCount = meter.createCounter(
+      'spanner_client_benchmarks/error_count',
+    );
+    const memHist = meter.createHistogram(
+      'spanner_client_benchmarks/memory_usage',
+    );
+    const cpuHist = meter.createHistogram(
+      'spanner_client_benchmarks/cpu_utilization',
+    );
+
+    const benchmark = new YcsbBenchmark(
+      database,
+      latHist,
+      opCount,
+      errCount,
+      memHist,
+      cpuHist,
+      '10ms',
+      'test',
+      10,
+      2,
+      1000,
+      false,
+      'ycsb-readrow-run',
+      LoadType.Steady,
+      null,
+      2.0,
+      1.0,
+      1.0,
+      0.1,
+      true, // mock mode
+      Workload.B,
+      KeyDistribution.Uniform,
+      1000,
+      12,
+      10,
+      100,
+      true, // useReadRow
+    );
+
+    await benchmark.run();
+
+    const reqs = await waitForRequests(1);
+    assert.ok(reqs.length >= 1);
   });
 });

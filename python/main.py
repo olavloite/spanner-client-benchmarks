@@ -146,7 +146,7 @@ def main():
         "--mock",
         action="store_true",
         default=False,
-        help="Connect to a local in-memory mock Spanner server (only supported with point-select workload).",
+        help="Connect to a local in-memory mock Spanner server for offline testing and verification.",
     )
     parser.add_argument(
         "--use-uds",
@@ -174,27 +174,37 @@ def main():
     )
     workload_parser.add_argument(
         "--load-type",
-        default="steady",
+        default=argparse.SUPPRESS,
         choices=["steady", "spiky", "gradual", "closed-loop"],
         help="Load type",
     )
     workload_parser.add_argument(
-        "--cycle-duration", help="Duration of a full cycle for gradual load"
+        "--cycle-duration",
+        default=argparse.SUPPRESS,
+        help="Duration of a full cycle for gradual load",
     )
     workload_parser.add_argument(
         "--peak-factor",
         type=float,
+        default=argparse.SUPPRESS,
         help="Ratio of peak rate to average rate for gradual load",
     )
     workload_parser.add_argument(
-        "--burst-factor", type=float, help="Ratio of burst rate to average rate"
+        "--burst-factor",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Ratio of burst rate to average rate",
     )
     workload_parser.add_argument(
-        "--burst-duration", type=float, help="Average duration of a burst in seconds"
+        "--burst-duration",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Average duration of a burst in seconds",
     )
     workload_parser.add_argument(
         "--burst-fraction",
         type=float,
+        default=argparse.SUPPRESS,
         help="Fraction of total time spent in the burst state",
     )
 
@@ -297,6 +307,167 @@ def main():
         action="store_true",
         default=False,
         help="Run TPC-C benchmark with extended coverage of client library features",
+    )
+
+    # YCSB Workload subparser
+    ycsb_parser = subparsers.add_parser(
+        "ycsb",
+        help="Execute standard YCSB benchmark workloads (A, B, C, D, E, F)",
+    )
+    ycsb_parser.add_argument(
+        "-w",
+        "--workload",
+        default="B",
+        help="YCSB workload scenario: A, B, C, D, E, or F",
+    )
+    ycsb_parser.add_argument(
+        "--distribution",
+        default="scrambled-zipfian",
+        choices=["scrambled-zipfian", "zipfian", "uniform"],
+        help="Key distribution: scrambled-zipfian, zipfian, uniform",
+    )
+    ycsb_parser.add_argument(
+        "-t",
+        "--table",
+        default="usertable",
+        help="Target database table name",
+    )
+    ycsb_parser.add_argument(
+        "--record-count",
+        type=int,
+        default=100000,
+        help="Total number of records in user table",
+    )
+    ycsb_parser.add_argument(
+        "--zero-padding",
+        type=int,
+        default=12,
+        help="Zero-padding width for primary keys",
+    )
+    ycsb_parser.add_argument(
+        "--field-count",
+        type=int,
+        default=10,
+        help="Number of fields per record",
+    )
+    ycsb_parser.add_argument(
+        "--field-length",
+        type=int,
+        default=100,
+        help="Byte length of each field value",
+    )
+    ycsb_parser.add_argument(
+        "--use-read-row",
+        action="store_true",
+        default=False,
+        help="Use Spanner Read/ReadRow API instead of SQL query for point lookups",
+    )
+    ycsb_parser.add_argument(
+        "--tps",
+        type=float,
+        default=10.0,
+        help="Target Transactions Per Second rate limit",
+    )
+    ycsb_parser.add_argument(
+        "--threads",
+        type=int,
+        default=10,
+        help="ThreadPoolExecutor worker thread concurrency cap",
+    )
+    ycsb_parser.add_argument(
+        "--load-type",
+        default=argparse.SUPPRESS,
+        choices=["steady", "spiky", "gradual", "closed-loop"],
+        help="Load type",
+    )
+    ycsb_parser.add_argument(
+        "--cycle-duration",
+        default=argparse.SUPPRESS,
+        help="Duration of a full cycle for gradual load",
+    )
+    ycsb_parser.add_argument(
+        "--peak-factor",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Ratio of peak rate to average rate for gradual load",
+    )
+    ycsb_parser.add_argument(
+        "--burst-factor",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Ratio of burst rate to average rate",
+    )
+    ycsb_parser.add_argument(
+        "--burst-duration",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Average duration of a burst in seconds",
+    )
+    ycsb_parser.add_argument(
+        "--burst-fraction",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Fraction of total time spent in the burst state",
+    )
+
+    # YCSB Init subparser
+    ycsb_init_parser = subparsers.add_parser(
+        "ycsb-init",
+        help="Initializes schema and pre-populates data for YCSB",
+    )
+    ycsb_init_parser.add_argument(
+        "-t",
+        "--table",
+        default="usertable",
+        help="Target database table name",
+    )
+    ycsb_init_parser.add_argument(
+        "--record-count",
+        type=int,
+        default=100000,
+        help="Total number of records to pre-populate",
+    )
+    ycsb_init_parser.add_argument(
+        "--zero-padding",
+        type=int,
+        default=12,
+        help="Zero-padding width for primary keys",
+    )
+    ycsb_init_parser.add_argument(
+        "--field-count",
+        type=int,
+        default=10,
+        help="Number of fields per record",
+    )
+    ycsb_init_parser.add_argument(
+        "--field-length",
+        type=int,
+        default=100,
+        help="Byte length of each field value",
+    )
+    ycsb_init_parser.add_argument(
+        "--threads",
+        type=int,
+        default=16,
+        help="Number of parallel worker threads for data population",
+    )
+    ycsb_init_parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=500,
+        help="Mutation batch size for population writes",
+    )
+    ycsb_init_parser.add_argument(
+        "--skip-schema",
+        action="store_true",
+        default=False,
+        help="Skip schema creation (DDL) if table already exists or is externally managed",
+    )
+    ycsb_init_parser.add_argument(
+        "--skip-data",
+        action="store_true",
+        default=False,
+        help="Skip data pre-population if table has already been populated",
     )
 
     args = parser.parse_args()
@@ -514,9 +685,51 @@ def main():
             benchmark_name=args.benchmark_name,
             extended=args.extended,
         )
+    elif args.command == "ycsb":
+        from src.benchmarks.ycsb import (
+            YcsbBenchmark,
+            parse_distribution,
+            parse_workload,
+        )
+
+        workload = parse_workload(args.workload)
+        distribution = parse_distribution(args.distribution)
+        table_name = getattr(args, "table", "usertable")
+
+        benchmark = YcsbBenchmark(
+            database=database,
+            latency_histogram=latency_histogram,
+            operation_counter=operation_counter,
+            error_counter=error_counter,
+            memory_usage_histogram=memory_usage_histogram,
+            cpu_utilization_histogram=cpu_utilization_histogram,
+            resource_probe_interval_str=args.resource_probe_interval,
+            table_name=table_name,
+            workload=workload,
+            distribution=distribution,
+            record_count=args.record_count,
+            zero_padding=args.zero_padding,
+            field_count=args.field_count,
+            field_length=args.field_length,
+            use_read_row=args.use_read_row,
+            tps=args.tps,
+            threads=args.threads,
+            duration_sec=duration_sec,
+            for_alerting=args.for_alerting,
+            benchmark_name=args.benchmark_name,
+            load_type=args.load_type,
+            cycle_duration_sec=cycle_duration_sec,
+            peak_factor=peak_factor,
+            burst_factor=burst_factor,
+            burst_duration=burst_duration,
+            burst_fraction=burst_fraction,
+            is_mock=args.mock,
+        )
+    elif args.command == "ycsb-init":
+        benchmark = None
     else:
         print(
-            f"Error: Unsupported benchmark type: '{args.command}'. Valid options are: 'point-select', 'select-update', 'read-large-result-set', 'tpcc'.",
+            f"Error: Unsupported benchmark type: '{args.command}'. Valid options are: 'point-select', 'select-update', 'read-large-result-set', 'read-narrow-result-set', 'tpcc', 'ycsb', 'ycsb-init'.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -534,7 +747,8 @@ def main():
         )
 
         # Tell workload generator to stop spawning new executor tasks
-        benchmark.stop()
+        if benchmark is not None:
+            benchmark.stop()
 
         # Shutdown metrics PeriodicExportingMetricReader
         shutdown_metrics()
@@ -544,9 +758,29 @@ def main():
     signal.signal(signal.SIGINT, graceful_termination_handler)
     signal.signal(signal.SIGTERM, graceful_termination_handler)
 
-    # 5. Run workload scheduler loop
+    # 5. Run workload scheduler loop or initialization command
     try:
-        benchmark.run()
+        if args.command == "ycsb-init":
+            from src.benchmarks.ycsb import init_schema, populate_data
+
+            table_name = getattr(args, "table", "usertable")
+            if not args.skip_schema and not args.mock:
+                init_schema(
+                    database, table_name=table_name, field_count=args.field_count
+                )
+            if not args.skip_data:
+                populate_data(
+                    database=database,
+                    table_name=table_name,
+                    record_count=args.record_count,
+                    zero_padding=args.zero_padding,
+                    field_count=args.field_count,
+                    field_length=args.field_length,
+                    threads=args.threads,
+                    batch_size=args.batch_size,
+                )
+        else:
+            benchmark.run()
     except Exception as err:
         print(
             f"Fatal exception encountered during benchmark execution: {err}",

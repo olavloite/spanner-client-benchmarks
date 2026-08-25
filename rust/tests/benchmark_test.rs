@@ -4,7 +4,7 @@ use spanner_grpc_mock::{MockSpanner, start};
 use spanner_rust_benchmark::{Args, TEST_METER_PROVIDER, run_benchmark};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_benchmark_workloads() -> anyhow::Result<()> {
+async fn benchmark_workloads() -> anyhow::Result<()> {
     // Setup Mock Spanner Server
     let mut mock = MockSpanner::new();
 
@@ -199,6 +199,184 @@ async fn test_benchmark_workloads() -> anyhow::Result<()> {
             "2",
             "--extended",
             "true",
+        ])?;
+
+        run_benchmark(args).await?;
+    }
+
+    // Test YCSB Init
+    {
+        let args = Args::try_parse_from(vec![
+            "benchmark",
+            "--project",
+            "test-project",
+            "--instance",
+            "test-instance",
+            "--database",
+            "test-database",
+            "--table",
+            "usertable",
+            "--host",
+            &address,
+            "--mock",
+            "ycsb-init",
+            "--record-count",
+            "100",
+            "--threads",
+            "2",
+            "--batch-size",
+            "10",
+        ])?;
+
+        run_benchmark(args).await?;
+    }
+
+    // Test YCSB Workloads A through F
+    let ycsb_workloads = vec![
+        ("a", false),
+        ("b", false),
+        ("b", true), // Test Workload B with --use-read-row
+        ("c", false),
+        ("d", false),
+        ("e", false),
+        ("f", false),
+    ];
+
+    for (workload_str, use_read_row) in ycsb_workloads {
+        let mut cli_args = vec![
+            "benchmark",
+            "--project",
+            "test-project",
+            "--instance",
+            "test-instance",
+            "--database",
+            "test-database",
+            "--table",
+            "usertable",
+            "--duration",
+            "1s",
+            "--host",
+            &address,
+            "--threads",
+            "2",
+            "--resource-probe-interval",
+            "10ms",
+            "--mock",
+            "ycsb",
+            "--workload",
+            workload_str,
+            "--record-count",
+            "100",
+            "--tps",
+            "10",
+        ];
+
+        if use_read_row {
+            cli_args.push("--use-read-row");
+        }
+
+        let args = Args::try_parse_from(cli_args)?;
+        run_benchmark(args).await?;
+    }
+
+    // Test Spiky Load Type with PointSelect
+    {
+        let args = Args::try_parse_from(vec![
+            "benchmark",
+            "--project",
+            "test-project",
+            "--instance",
+            "test-instance",
+            "--database",
+            "test-database",
+            "--table",
+            "test",
+            "--duration",
+            "1s",
+            "--host",
+            &address,
+            "--threads",
+            "2",
+            "--resource-probe-interval",
+            "10ms",
+            "--load-type",
+            "spiky",
+            "--burst-factor",
+            "2.0",
+            "--burst-duration",
+            "0.1",
+            "--burst-fraction",
+            "0.5",
+            "point-select",
+            "--tps",
+            "10",
+        ])?;
+
+        run_benchmark(args).await?;
+    }
+
+    // Test Gradual Load Type with SelectUpdate
+    {
+        let args = Args::try_parse_from(vec![
+            "benchmark",
+            "--project",
+            "test-project",
+            "--instance",
+            "test-instance",
+            "--database",
+            "test-database",
+            "--table",
+            "test",
+            "--duration",
+            "1s",
+            "--host",
+            &address,
+            "--threads",
+            "2",
+            "--resource-probe-interval",
+            "10ms",
+            "--load-type",
+            "gradual",
+            "--cycle-duration",
+            "500ms",
+            "--peak-factor",
+            "1.5",
+            "select-update",
+            "--tps",
+            "10",
+        ])?;
+
+        run_benchmark(args).await?;
+    }
+
+    // Test ClosedLoop Load Type with YCSB Workload A
+    {
+        let args = Args::try_parse_from(vec![
+            "benchmark",
+            "--project",
+            "test-project",
+            "--instance",
+            "test-instance",
+            "--database",
+            "test-database",
+            "--table",
+            "usertable",
+            "--duration",
+            "1s",
+            "--host",
+            &address,
+            "--threads",
+            "2",
+            "--resource-probe-interval",
+            "10ms",
+            "--load-type",
+            "closed-loop",
+            "--mock",
+            "ycsb",
+            "--workload",
+            "a",
+            "--record-count",
+            "100",
         ])?;
 
         run_benchmark(args).await?;

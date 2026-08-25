@@ -60,6 +60,45 @@ def register_all_mock_results(mock, table_name="test"):
         make_result_set([], [], stats=types.ResultSetStats(row_count_exact=1)),
     )
 
+    # YCSB Workload queries
+    for tbl in set([table_name, "usertable"]):
+        field_cols = [(f"field{i}", types.TypeCode.STRING) for i in range(10)]
+        field_values = ["val" for _ in range(10)]
+        ycsb_result_set = make_result_set(field_cols, [field_values])
+        ycsb_scan_result_set = make_result_set(field_cols, [field_values] * 10)
+
+        fields_str = ", ".join(f"field{i}" for i in range(10))
+        read_sql = f"SELECT {fields_str} FROM {tbl} WHERE id = @id"
+        scan_sql = f"SELECT {fields_str} FROM {tbl} WHERE id >= @startKey ORDER BY id LIMIT @scanLength"
+        mock.add_result(read_sql, ycsb_result_set)
+        mock.add_result(read_sql.lower(), ycsb_result_set)
+        mock.add_result(scan_sql, ycsb_scan_result_set)
+        mock.add_result(scan_sql.lower(), ycsb_scan_result_set)
+        mock.add_result(f"read:{tbl}", ycsb_result_set)
+
+    # Empty table mock results for missing row error test validation
+    empty_field_cols = [(f"field{i}", types.TypeCode.STRING) for i in range(10)]
+    empty_result_set = make_result_set(empty_field_cols, [])
+    empty_fields_str = ", ".join(f"field{i}" for i in range(10))
+    mock.add_result(
+        f"SELECT {empty_fields_str} FROM empty_table WHERE id = @id", empty_result_set
+    )
+    mock.add_result(
+        f"SELECT {empty_fields_str} FROM empty_table WHERE id = @id".lower(),
+        empty_result_set,
+    )
+    mock.add_result("read:empty_table", empty_result_set)
+
+    # Information schema table check query
+    mock.add_result(
+        "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '' AND TABLE_NAME = @tableName",
+        make_result_set([("1", types.TypeCode.INT64)], [["1"]]),
+    )
+    mock.add_result(
+        "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '' AND TABLE_NAME = @table_name",
+        make_result_set([("1", types.TypeCode.INT64)], [["1"]]),
+    )
+
     # Read Large Result Set workload
     cols_large = [
         ("random_bool", types.TypeCode.BOOL),

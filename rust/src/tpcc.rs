@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -385,12 +385,13 @@ async fn execute_stock_level(
             .set_request_tag("stock_level")
             .build();
         let mut stock_result_set: ResultSet = transaction.execute_query(stock_query).await?;
-        while let Some(_) = stock_result_set.next().await.transpose()? {}
+        while stock_result_set.next().await.transpose()?.is_some() {}
     }
 
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_tpcc_benchmark(
     client: DatabaseClient,
     warehouses: i64,
@@ -531,6 +532,7 @@ pub(crate) async fn run_tpcc_benchmark(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_tpcc_worker_loop(
     db_client: DatabaseClient,
     warehouses: i64,

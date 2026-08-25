@@ -1,5 +1,9 @@
 use crate::BenchmarkMetrics;
 use opentelemetry::KeyValue;
+use std::env;
+use std::sync::OnceLock;
+use std::thread;
+use std::time::Duration;
 use tokio::task::JoinHandle;
 
 pub struct ResourceMonitor {
@@ -30,37 +34,37 @@ fn start_resource_monitoring(
     metrics: BenchmarkMetrics,
     attributes: Vec<KeyValue>,
 ) -> Option<JoinHandle<()>> {
-    if probe_interval_str != "0" && probe_interval_str != "0s" && !probe_interval_str.is_empty() {
-        if let Some(probe_duration) = crate::load_type::parse_duration(probe_interval_str) {
-            if probe_duration.as_millis() > 0 {
-                let handle = tokio::spawn(async move {
-                    run_resource_monitor_loop(probe_duration, metrics, attributes).await;
-                });
-                return Some(handle);
-            }
-        }
+    if probe_interval_str != "0"
+        && probe_interval_str != "0s"
+        && !probe_interval_str.is_empty()
+        && let Some(probe_duration) = crate::load_type::parse_duration(probe_interval_str)
+        && probe_duration.as_millis() > 0
+    {
+        let handle = tokio::spawn(async move {
+            run_resource_monitor_loop(probe_duration, metrics, attributes).await;
+        });
+        return Some(handle);
     }
     None
 }
 
 fn get_cpu_limit() -> f64 {
-    static CPU_LIMIT: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    static CPU_LIMIT: OnceLock<f64> = OnceLock::new();
     *CPU_LIMIT.get_or_init(|| {
-        if let Ok(limit_str) = std::env::var("BENCHMARK_CPU_LIMIT") {
-            if let Ok(limit) = limit_str.parse::<f64>() {
-                if limit > 0.0 {
-                    return limit;
-                }
-            }
+        if let Ok(limit_str) = env::var("BENCHMARK_CPU_LIMIT")
+            && let Ok(limit) = limit_str.parse::<f64>()
+            && limit > 0.0
+        {
+            return limit;
         }
-        std::thread::available_parallelism()
+        thread::available_parallelism()
             .map(|n| n.get() as f64)
             .unwrap_or(1.0)
     })
 }
 
 async fn run_resource_monitor_loop(
-    probe_duration: std::time::Duration,
+    probe_duration: Duration,
     metrics: BenchmarkMetrics,
     attributes: Vec<KeyValue>,
 ) {

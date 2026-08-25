@@ -6,6 +6,8 @@ publish = false
 
 [dependencies]
 google-cloud-spanner = { git = "https://github.com/googleapis/google-cloud-rust", package = "google-cloud-spanner" }
+google-cloud-spanner-admin-database-v1 = { git = "https://github.com/googleapis/google-cloud-rust", package = "google-cloud-spanner-admin-database-v1" }
+google-cloud-lro = { git = "https://github.com/googleapis/google-cloud-rust", package = "google-cloud-lro" }
 google-cloud-auth = { git = "https://github.com/googleapis/google-cloud-rust", package = "google-cloud-auth" }
 
 tokio = { version = "1.52", features = ["full"] }
@@ -26,4 +28,5 @@ sysinfo = "0.39"
 uuid = { version = "1.11", features = ["v4"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+arc-swap = "1.7"
 spanner-grpc-mock = { git = "https://github.com/googleapis/google-cloud-rust", package = "spanner-grpc-mock" }

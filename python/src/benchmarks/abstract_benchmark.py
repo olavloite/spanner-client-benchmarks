@@ -111,7 +111,9 @@ class AbstractBenchmark(abc.ABC):
         self.threads = threads
         self.duration_sec = duration_sec
         self.for_alerting = for_alerting
-        self.load_type = load_type
+        self.load_type = (
+            LoadType(load_type) if isinstance(load_type, str) else load_type
+        )
         self.cycle_duration_sec = cycle_duration_sec
         self.peak_factor = peak_factor
         self.burst_factor = burst_factor
@@ -274,6 +276,9 @@ class AbstractBenchmark(abc.ABC):
         else:
             print("No latency statistics collected.")
         print("=" * 60 + "\n")
+
+        if hasattr(self, "print_operation_summary"):
+            self.print_operation_summary()
 
         # For Cloud Run deployment, call os._exit(0) directly unless mocked in tests.
         import sys

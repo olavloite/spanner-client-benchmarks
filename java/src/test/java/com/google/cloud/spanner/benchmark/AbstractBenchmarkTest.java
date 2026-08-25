@@ -79,12 +79,15 @@ public abstract class AbstractBenchmarkTest {
   protected void waitForRequest(
       Predicate<com.google.spanner.v1.ExecuteSqlRequest> predicate, Thread appThread)
       throws InterruptedException {
+    waitForRequestOfType(com.google.spanner.v1.ExecuteSqlRequest.class, predicate, appThread);
+  }
+
+  protected <T extends com.google.protobuf.AbstractMessage> void waitForRequestOfType(
+      Class<T> requestType, Predicate<T> predicate, Thread appThread) throws InterruptedException {
     Stopwatch stopwatch = Stopwatch.createStarted();
     boolean received = false;
     while (stopwatch.elapsed(TimeUnit.MILLISECONDS) < 30000) {
-      boolean hasRequest =
-          mockSpanner.getRequestsOfType(com.google.spanner.v1.ExecuteSqlRequest.class).stream()
-              .anyMatch(predicate);
+      boolean hasRequest = mockSpanner.getRequestsOfType(requestType).stream().anyMatch(predicate);
       if (hasRequest) {
         received = true;
         break;
@@ -95,11 +98,24 @@ public abstract class AbstractBenchmarkTest {
       Thread.sleep(5);
     }
     assertTrue(
-        "Should have received the expected request"
+        "Should have received the expected "
+            + requestType.getSimpleName()
             + (appThread != null && !appThread.isAlive()
                 ? " (application thread terminated prematurely)"
                 : ""),
         received);
+  }
+
+  protected void waitForCommit(
+      Predicate<com.google.spanner.v1.CommitRequest> predicate, Thread appThread)
+      throws InterruptedException {
+    waitForRequestOfType(com.google.spanner.v1.CommitRequest.class, predicate, appThread);
+  }
+
+  protected void waitForRead(
+      Predicate<com.google.spanner.v1.ReadRequest> predicate, Thread appThread)
+      throws InterruptedException {
+    waitForRequestOfType(com.google.spanner.v1.ReadRequest.class, predicate, appThread);
   }
 
   private static void registerMockResults() {
@@ -579,6 +595,54 @@ public abstract class AbstractBenchmarkTest {
             Statement.of(
                 "UPDATE order_line SET delivery_date = @dt WHERE warehouse_id = @w AND district_id = @d AND order_id = @o"),
             1L));
+
+    // YCSB mock result set
+    StructType.Builder ycsbRowTypeBuilder =
+        StructType.newBuilder()
+            .addFields(
+                Field.newBuilder()
+                    .setType(Type.newBuilder().setCode(TypeCode.STRING).build())
+                    .setName("id")
+                    .build());
+    ListValue.Builder ycsbRowValuesBuilder =
+        ListValue.newBuilder()
+            .addValues(Value.newBuilder().setStringValue("user000000000001").build());
+    for (int i = 0; i < 10; i++) {
+      ycsbRowTypeBuilder.addFields(
+          Field.newBuilder()
+              .setType(Type.newBuilder().setCode(TypeCode.STRING).build())
+              .setName("field" + i)
+              .build());
+      ycsbRowValuesBuilder.addValues(Value.newBuilder().setStringValue("testvalue" + i).build());
+    }
+    com.google.spanner.v1.ResultSet ycsbResultSet =
+        com.google.spanner.v1.ResultSet.newBuilder()
+            .setMetadata(
+                ResultSetMetadata.newBuilder().setRowType(ycsbRowTypeBuilder.build()).build())
+            .addRows(ycsbRowValuesBuilder.build())
+            .build();
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT * FROM usertable WHERE id = @id"), ycsbResultSet));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of(
+                "SELECT * FROM usertable WHERE id >= @startKey ORDER BY id LIMIT @scanLength"),
+            ycsbResultSet));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT * FROM usertable WHERE id >= @startKey LIMIT @scanLength"),
+            ycsbResultSet));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of(
+                "SELECT field0, field1, field2, field3, field4, field5, field6, field7, field8, field9 FROM usertable"),
+            ycsbResultSet));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of(
+                "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '' AND TABLE_NAME = @tableName"),
+            ycsbResultSet));
   }
 
   protected static class SimpleMetricReader

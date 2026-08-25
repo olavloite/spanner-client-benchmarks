@@ -4,6 +4,8 @@ import com.google.cloud.opentelemetry.metric.GoogleCloudMetricExporter;
 import com.google.cloud.opentelemetry.metric.MetricConfiguration;
 import com.google.cloud.spanner.benchmark.tpcc.TpccCommand;
 import com.google.cloud.spanner.benchmark.tpcc.TpccInitCommand;
+import com.google.cloud.spanner.benchmark.ycsb.YcsbCommand;
+import com.google.cloud.spanner.benchmark.ycsb.YcsbInitCommand;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.metrics.Meter;
@@ -29,7 +31,9 @@ import picocli.CommandLine.Option;
       ReadLargeResultSetCommand.class,
       ReadNarrowResultSetCommand.class,
       TpccInitCommand.class,
-      TpccCommand.class
+      TpccCommand.class,
+      YcsbInitCommand.class,
+      YcsbCommand.class
     })
 public class BenchmarkApp implements Runnable {
 

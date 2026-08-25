@@ -21,6 +21,8 @@ SUPPORTED_BENCHMARKS = {
     "read-narrow-result-set",
     "tpcc",
     "tpcc-init",
+    "ycsb",
+    "ycsb-init",
 }
 
 # Regex patterns for strict sanitization
@@ -32,6 +34,9 @@ NAME_PATTERN = re.compile(r"^[a-zA-Z0-9/._-]+$")
 FLOAT_PATTERN = re.compile(r"^[0-9]+(\.[0-9]+)?$")
 INT_PATTERN = re.compile(r"^[0-9]+$")
 REPO_PATTERN = re.compile(r"^https://github\.com/[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+(\.git)?$")
+WORKLOAD_PATTERN = re.compile(r"^[a-fA-F]$")
+DISTRIBUTION_PATTERN = re.compile(r"^[a-zA-Z_-]+$")
+DATABASE_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 LOAD_TYPE_SUPPORTED = {"steady", "spiky", "gradual"}
 
@@ -75,6 +80,10 @@ RESPONSE_SCHEMA = {
                     "warehouses": {"type": "STRING"},
                     "items": {"type": "STRING"},
                     "clients": {"type": "STRING"},
+                    "workload": {"type": "STRING"},
+                    "distribution": {"type": "STRING"},
+                    "record_count": {"type": "STRING"},
+                    "database_id": {"type": "STRING"},
                 },
                 "required": ["client_type", "client_branch", "benchmark_type"],
             },
@@ -127,6 +136,10 @@ def sanitize_run(run):
     warehouses = sanitize_value(run.get("warehouses"), INT_PATTERN, "")
     items = sanitize_value(run.get("items"), INT_PATTERN, "")
     clients = sanitize_value(run.get("clients"), INT_PATTERN, "")
+    workload = sanitize_value(run.get("workload"), WORKLOAD_PATTERN, "")
+    distribution = sanitize_value(run.get("distribution"), DISTRIBUTION_PATTERN, "")
+    record_count = sanitize_value(run.get("record_count"), INT_PATTERN, "")
+    database_id = sanitize_value(run.get("database_id"), DATABASE_PATTERN, "")
 
     return {
         "client_type": client,
@@ -147,6 +160,10 @@ def sanitize_run(run):
         "warehouses": warehouses,
         "items": items,
         "clients": clients,
+        "workload": workload,
+        "distribution": distribution,
+        "record_count": record_count,
+        "database_id": database_id,
         "for_alerting": "false",
     }
 
