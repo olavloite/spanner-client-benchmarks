@@ -1,5 +1,5 @@
 # Stage 0: Build the Go sidecar generator
-FROM golang:1.26-alpine AS generator-build
+FROM golang:1.27-alpine AS generator-build
 WORKDIR /build
 COPY generator/ .
 RUN CGO_ENABLED=0 go build -o workload-generator .
