@@ -18,12 +18,10 @@ if [ "$USE_RELEASED_VERSION" = "false" ]; then
   if [ "$CLIENT_BRANCH" != "main" ]; then
     if [[ "$CLIENT_BRANCH" =~ ^[0-9a-f]{7,40}$ ]]; then
       echo "Updating Cargo.toml to use commit hash $CLIENT_BRANCH..."
-      sed -i.bak "s|git = \"$CLIENT_REPO\", package = \"google-cloud-spanner\"|git = \"$CLIENT_REPO\", rev = \"$CLIENT_BRANCH\", package = \"google-cloud-spanner\"|g" Cargo.toml
-      sed -i.bak "s|git = \"$CLIENT_REPO\", package = \"spanner-grpc-mock\"|git = \"$CLIENT_REPO\", rev = \"$CLIENT_BRANCH\", package = \"spanner-grpc-mock\"|g" Cargo.toml
+      sed -i.bak -E "s|git = \"[^\"]+\"(, )package =|git = \"$CLIENT_REPO\", rev = \"$CLIENT_BRANCH\"\1package =|g" Cargo.toml
     else
       echo "Updating Cargo.toml to use branch $CLIENT_BRANCH..."
-      sed -i.bak "s|git = \"$CLIENT_REPO\", package = \"google-cloud-spanner\"|git = \"$CLIENT_REPO\", branch = \"$CLIENT_BRANCH\", package = \"google-cloud-spanner\"|g" Cargo.toml
-      sed -i.bak "s|git = \"$CLIENT_REPO\", package = \"spanner-grpc-mock\"|git = \"$CLIENT_REPO\", branch = \"$CLIENT_BRANCH\", package = \"spanner-grpc-mock\"|g" Cargo.toml
+      sed -i.bak -E "s|git = \"[^\"]+\"(, )package =|git = \"$CLIENT_REPO\", branch = \"$CLIENT_BRANCH\"\1package =|g" Cargo.toml
     fi
   fi
   rm -f Cargo.toml.bak
