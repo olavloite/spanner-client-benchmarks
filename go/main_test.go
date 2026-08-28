@@ -49,6 +49,42 @@ func TestAllBenchmarksExecution(t *testing.T) {
 			name: "tpcc",
 			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--duration=1s", "tpcc", "--warehouses=1", "--clients=2", "--items=100"},
 		},
+		{
+			name: "ycsb-a",
+			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--duration=1s", "ycsb", "--workload=A", "--tps=100"},
+		},
+		{
+			name: "ycsb-b",
+			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--duration=1s", "ycsb", "--workload=B", "--tps=100"},
+		},
+		{
+			name: "ycsb-c",
+			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--duration=1s", "ycsb", "--workload=C", "--tps=100"},
+		},
+		{
+			name: "ycsb-d",
+			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--duration=1s", "ycsb", "--workload=D", "--tps=100"},
+		},
+		{
+			name: "ycsb-e",
+			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--duration=1s", "ycsb", "--workload=E", "--tps=100"},
+		},
+		{
+			name: "ycsb-f",
+			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--duration=1s", "ycsb", "--workload=F", "--tps=100"},
+		},
+		{
+			name: "ycsb-read-row",
+			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--duration=1s", "ycsb", "--workload=B", "--use-read-row", "--tps=100"},
+		},
+		{
+			name: "ycsb-closed-loop",
+			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--duration=1s", "--load-type=closed-loop", "--threads=2", "ycsb", "--workload=B"},
+		},
+		{
+			name: "ycsb-init",
+			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "ycsb-init", "--skip-schema", "--record-count=10", "--threads=2"},
+		},
 	}
 
 	for _, tc := range tests {
@@ -62,17 +98,18 @@ func TestAllBenchmarksExecution(t *testing.T) {
 				t.Fatalf("run benchmark %s failed: %v", tc.name, err)
 			}
 
-			// Verify at least one execute sql request was received
+			// Verify at least one request was received
 			requests := mockSrv.getRequests()
-			receivedExecuteSql := false
+			receivedValidRequest := false
 			for _, req := range requests {
-				if _, ok := req.(*spannerpb.ExecuteSqlRequest); ok {
-					receivedExecuteSql = true
+				switch req.(type) {
+				case *spannerpb.ExecuteSqlRequest, *spannerpb.ReadRequest, *spannerpb.CommitRequest:
+					receivedValidRequest = true
 					break
 				}
 			}
-			if !receivedExecuteSql {
-				t.Errorf("benchmark %s did not trigger any ExecuteSqlRequest", tc.name)
+			if !receivedValidRequest {
+				t.Errorf("benchmark %s did not trigger any expected Spanner request", tc.name)
 			}
 		})
 	}
@@ -110,6 +147,10 @@ func TestMetricsCollection(t *testing.T) {
 		{
 			name: "tpcc",
 			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--duration=1s", "--resource-probe-interval=10ms", "tpcc", "--warehouses=1", "--clients=2", "--items=100"},
+		},
+		{
+			name: "ycsb",
+			args: []string{"benchmark-app", "--project=fake-project", "--instance=fake-instance", "--database=fake-database", "--duration=1s", "--resource-probe-interval=10ms", "ycsb", "--workload=B", "--tps=100"},
 		},
 	}
 

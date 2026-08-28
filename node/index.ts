@@ -24,6 +24,13 @@ import {PointSelectBenchmark} from './src/benchmarks/point-select';
 import {SelectAndUpdateBenchmark} from './src/benchmarks/select-update';
 import {ReadLargeResultSetBenchmark} from './src/benchmarks/read-large-result-set';
 import {ReadNarrowResultSetBenchmark} from './src/benchmarks/read-narrow-result-set';
+import {
+  YcsbBenchmark,
+  initSchema,
+  populateData,
+  parseWorkload,
+  parseDistribution,
+} from './src/benchmarks/ycsb';
 import {parseDuration} from './src/utils/duration';
 import {AbstractBenchmark, LoadType} from './src/benchmarks/abstract-benchmark';
 
@@ -229,6 +236,79 @@ async function main() {
       await runBenchmarkAction('tpcc', globalOptions, subCommandOptions);
     });
 
+  // YCSB Workload Subcommand
+  program
+    .command('ycsb')
+    .description('Execute standard YCSB benchmark workloads (A, B, C, D, E, F)')
+    .option(
+      '-w, --workload <workload>',
+      'YCSB workload scenario: A, B, C, D, E, or F',
+      'B',
+    )
+    .option(
+      '--distribution <distribution>',
+      'Key distribution: scrambled-zipfian, zipfian, uniform',
+      'scrambled-zipfian',
+    )
+    .option(
+      '-t, --table <tableName>',
+      'Target database table name',
+      'usertable',
+    )
+    .option(
+      '--record-count <recordCount>',
+      'Number of records in dataset',
+      '100000',
+    )
+    .option('--zero-padding <zeroPadding>', 'Key zero-padding width', '12')
+    .option('--field-count <fieldCount>', 'Number of fields per record', '10')
+    .option(
+      '--field-length <fieldLength>',
+      'Length of each field in bytes',
+      '100',
+    )
+    .option('--use-read-row', 'Use ReadRow API instead of SQL queries', false)
+    .option('--tps <tps>', 'Target transactions per second throughput', '10')
+    .option(
+      '--threads <threads>',
+      'Parallel async worker pool concurrency limit',
+      '10',
+    )
+    .action(async subCommandOptions => {
+      const globalOptions = program.opts();
+      await runBenchmarkAction('ycsb', globalOptions, subCommandOptions);
+    });
+
+  // YCSB Init Subcommand
+  program
+    .command('ycsb-init')
+    .description('Initialize schema and pre-populate data for YCSB benchmarks')
+    .option(
+      '-t, --table <tableName>',
+      'Target database table name',
+      'usertable',
+    )
+    .option(
+      '--record-count <recordCount>',
+      'Number of records to populate',
+      '100000',
+    )
+    .option('--batch-size <batchSize>', 'Mutation batch size', '500')
+    .option('--threads <threads>', 'Number of parallel loader threads', '16')
+    .option('--field-count <fieldCount>', 'Number of fields per record', '10')
+    .option(
+      '--field-length <fieldLength>',
+      'Length of each field in bytes',
+      '100',
+    )
+    .option('--zero-padding <zeroPadding>', 'Key zero-padding width', '12')
+    .option('--skip-schema', 'Skip table DDL schema creation', false)
+    .option('--skip-data', 'Skip data pre-population', false)
+    .action(async subCommandOptions => {
+      const globalOptions = program.opts();
+      await runYcsbInitAction(globalOptions, subCommandOptions);
+    });
+
   await program.parseAsync(process.argv);
 }
 
@@ -318,7 +398,8 @@ async function runBenchmarkAction(
     | 'select-update'
     | 'read-large-result-set'
     | 'read-narrow-result-set'
-    | 'tpcc',
+    | 'tpcc'
+    | 'ycsb',
   globalOpts: any,
   subOpts: any,
 ) {
@@ -533,9 +614,57 @@ async function runBenchmarkAction(
       benchmarkName,
       extended,
     );
+  } else if (type === 'ycsb') {
+    const workload = parseWorkload(subOpts.workload || 'B');
+    const distribution = parseDistribution(
+      subOpts.distribution || 'scrambled-zipfian',
+    );
+    const recordCount = subOpts.recordCount
+      ? parseInt(subOpts.recordCount, 10)
+      : 100000;
+    const zeroPadding = subOpts.zeroPadding
+      ? parseInt(subOpts.zeroPadding, 10)
+      : 12;
+    const fieldCount = subOpts.fieldCount
+      ? parseInt(subOpts.fieldCount, 10)
+      : 10;
+    const fieldLength = subOpts.fieldLength
+      ? parseInt(subOpts.fieldLength, 10)
+      : 100;
+    const useReadRow = !!subOpts.useReadRow;
+
+    benchmark = new YcsbBenchmark(
+      database,
+      latencyHistogram,
+      operationCounter,
+      errorCounter,
+      memoryUsageHistogram,
+      cpuUtilizationHistogram,
+      globalOpts.resourceProbeInterval,
+      tableName || 'usertable',
+      tps,
+      threads,
+      parsedDurationMs,
+      forAlerting,
+      benchmarkName,
+      loadType,
+      cycleDurationMs,
+      peakFactor,
+      burstFactor,
+      burstDuration,
+      burstFraction,
+      globalOpts.mock,
+      workload,
+      distribution,
+      recordCount,
+      zeroPadding,
+      fieldCount,
+      fieldLength,
+      useReadRow,
+    );
   } else {
     console.error(
-      `Error: Unsupported benchmark type: '${type}'. Valid options are: 'point-select', 'select-update', 'read-large-result-set', 'tpcc'.`,
+      `Error: Unsupported benchmark type: '${type}'. Valid options are: 'point-select', 'select-update', 'read-large-result-set', 'read-narrow-result-set', 'tpcc', 'ycsb'.`,
     );
     process.exit(1);
   }
@@ -600,6 +729,69 @@ async function runBenchmarkAction(
         ]);
       } catch (e) {}
       process.exit(0);
+    }
+  }
+}
+
+async function runYcsbInitAction(globalOpts: any, subOpts: any) {
+  const projectId = globalOpts.project;
+  const instanceId = globalOpts.instance;
+  const databaseId = globalOpts.database;
+  let host = globalOpts.host;
+  const tableName = subOpts.table || 'usertable';
+  const recordCount = subOpts.recordCount
+    ? parseInt(subOpts.recordCount, 10)
+    : 100000;
+  const batchSize = subOpts.batchSize ? parseInt(subOpts.batchSize, 10) : 500;
+  const threads = subOpts.threads ? parseInt(subOpts.threads, 10) : 16;
+  const fieldCount = subOpts.fieldCount ? parseInt(subOpts.fieldCount, 10) : 10;
+  const fieldLength = subOpts.fieldLength
+    ? parseInt(subOpts.fieldLength, 10)
+    : 100;
+  const zeroPadding = subOpts.zeroPadding
+    ? parseInt(subOpts.zeroPadding, 10)
+    : 12;
+  const skipSchema = !!subOpts.skipSchema;
+  const skipData = !!subOpts.skipData;
+
+  let mockServer: MockSpannerServer | undefined;
+  if (globalOpts.mock) {
+    const setup = await startMockSpannerServer(tableName);
+    mockServer = setup.mockServer;
+    host = setup.host;
+  }
+
+  const spanner = createSpannerClient(projectId, host);
+  const instance = spanner.instance(instanceId);
+  const database = instance.database(databaseId);
+
+  try {
+    await initSchema(database, tableName, fieldCount, skipSchema);
+    await populateData(
+      database,
+      tableName,
+      recordCount,
+      zeroPadding,
+      fieldCount,
+      fieldLength,
+      batchSize,
+      threads,
+      skipData,
+    );
+  } catch (err) {
+    console.error('Fatal error during YCSB initialization:', err);
+    process.exit(1);
+  } finally {
+    try {
+      await database.close();
+    } catch (e) {}
+    try {
+      await spanner.close();
+    } catch (e) {}
+    if (mockServer) {
+      try {
+        await mockServer.stop();
+      } catch (e) {}
     }
   }
 }

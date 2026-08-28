@@ -130,6 +130,10 @@ jobs:
             warehouses=$(echo "$run" | jq -r '.warehouses')
             items=$(echo "$run" | jq -r '.items')
             clients=$(echo "$run" | jq -r '.clients')
+            workload=$(echo "$run" | jq -r '.workload // ""')
+            distribution=$(echo "$run" | jq -r '.distribution // ""')
+            record_count=$(echo "$run" | jq -r '.record_count // ""')
+            database_id=$(echo "$run" | jq -r '.database_id // ""')
 
             label="$client_type-$client_branch"
             echo "Starting deployment for $client_type benchmark (branch: $client_branch)..."
@@ -151,6 +155,10 @@ jobs:
             WAREHOUSES="$warehouses" \
             ITEMS="$items" \
             CLIENTS="$clients" \
+            WORKLOAD="$workload" \
+            DISTRIBUTION="$distribution" \
+            RECORD_COUNT="$record_count" \
+            DATABASE_ID="$database_id" \
             FOR_ALERTING="false" \
             SKIP_CLEANUP="true" \
             ./run_benchmark.sh "$client_type" 2>&1 | sed "s/^/[$label] /" &

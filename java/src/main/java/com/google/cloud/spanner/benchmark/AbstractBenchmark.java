@@ -10,12 +10,17 @@ import java.net.UnixDomainSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.LongAdder;
 import javax.annotation.Nonnull;
 
 public abstract class AbstractBenchmark {
+
+  protected final LongAdder localOperationCounter = new LongAdder();
+  protected final LongAdder localErrorCounter = new LongAdder();
 
   protected final DatabaseClient client;
   protected final LongHistogram latencyHistogram;
@@ -123,6 +128,7 @@ public abstract class AbstractBenchmark {
 
     startResourceMonitoring();
 
+    long startTimeNs = System.nanoTime();
     String socketPath = System.getenv("SPANNER_BENCHMARK_SOCKET");
     Thread generatorThread;
     if (socketPath != null && !socketPath.isEmpty()) {
@@ -156,6 +162,10 @@ public abstract class AbstractBenchmark {
         resourceMonitor.stop();
       }
       executor.shutdownNow();
+      try {
+        executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
+      } catch (InterruptedException ignored) {
+      }
     } catch (InterruptedException e) {
       System.out.println("Benchmark interrupted.");
       generatorThread.interrupt();
@@ -164,8 +174,28 @@ public abstract class AbstractBenchmark {
         resourceMonitor.stop();
       }
       executor.shutdownNow();
+      try {
+        executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS);
+      } catch (InterruptedException ignored) {
+      }
+    } finally {
+      long elapsedNs = System.nanoTime() - startTimeNs;
+      double elapsedSeconds = elapsedNs / 1_000_000_000.0;
+      long totalOps = localOperationCounter.sum();
+      long totalErrors = localErrorCounter.sum();
+      double throughput = elapsedSeconds > 0 ? (totalOps / elapsedSeconds) : 0.0;
+      System.out.printf(
+          Locale.US,
+          "Benchmark completed: %,d operations in %.2fs (%.1f ops/sec). Errors: %,d%n",
+          totalOps,
+          elapsedSeconds,
+          throughput,
+          totalErrors);
+      printSummary();
     }
   }
+
+  protected void printSummary() {}
 
   private final java.util.concurrent.atomic.AtomicLong lastQueueLogTime =
       new java.util.concurrent.atomic.AtomicLong(0);
@@ -195,6 +225,7 @@ public abstract class AbstractBenchmark {
             if (!Thread.currentThread().isInterrupted() && !isCancellationOrInterruption(e)) {
               System.err.println("Operation failed: " + e.getMessage());
               errorCounter.add(1, getAttributes());
+              localErrorCounter.increment();
             }
           } finally {
             if (shouldMeasureEntireMethod()) {
@@ -204,6 +235,7 @@ public abstract class AbstractBenchmark {
               latencyHistogram.record(latencyUs, getAttributes());
             }
             operationCounter.add(1, getAttributes());
+            localOperationCounter.increment();
           }
         });
   }
@@ -271,6 +303,7 @@ public abstract class AbstractBenchmark {
     if (message != null
         && (message.contains("Interrupted")
             || message.contains("CANCELLED")
+            || message.contains("This client has been closed")
             || message.contains("InterruptedIOException"))) {
       return true;
     }

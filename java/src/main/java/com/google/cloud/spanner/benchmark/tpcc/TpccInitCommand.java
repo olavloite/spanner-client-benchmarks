@@ -1,11 +1,11 @@
 package com.google.cloud.spanner.benchmark.tpcc;
 
-import com.google.cloud.NoCredentials;
 import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.DatabaseId;
 import com.google.cloud.spanner.Spanner;
 import com.google.cloud.spanner.SpannerOptions;
 import com.google.cloud.spanner.benchmark.BenchmarkApp;
+import com.google.cloud.spanner.benchmark.SpannerClientHelper;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParentCommand;
@@ -30,14 +30,8 @@ public class TpccInitCommand implements Runnable {
   @Override
   public void run() {
     try {
-      SpannerOptions.Builder spannerOptionsBuilder =
-          SpannerOptions.newBuilder().setProjectId(parent.getProjectId());
-      if (parent.getHost() != null) {
-        spannerOptionsBuilder.setHost(parent.getHost());
-        spannerOptionsBuilder.setChannelConfigurator(builder -> builder.usePlaintext());
-        spannerOptionsBuilder.setCredentials(NoCredentials.getInstance());
-      }
-      SpannerOptions spannerOptions = spannerOptionsBuilder.build();
+      SpannerOptions spannerOptions =
+          SpannerClientHelper.createSpannerOptions(parent.getProjectId(), parent.getHost());
       try (Spanner spanner = spannerOptions.getService()) {
         DatabaseClient client =
             spanner.getDatabaseClient(

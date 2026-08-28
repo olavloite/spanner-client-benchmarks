@@ -8,6 +8,68 @@ import {LoadType} from './load-type';
 import {ResourceMonitor} from '../utils/resource-monitor';
 export {LoadType};
 
+export interface LatencyStats {
+  min: number;
+  max: number;
+  avg: number;
+  p50: number;
+  p90: number;
+  p95: number;
+  p99: number;
+  count: number;
+}
+
+/**
+ * Thread-safe Reservoir Sampler for tracking in-memory latency statistics and percentiles.
+ */
+export class ReservoirSampler {
+  private limit: number;
+  private samples: number[] = [];
+  private count = 0;
+
+  constructor(limit = 20000) {
+    this.limit = limit;
+  }
+
+  public add(val: number): void {
+    this.count++;
+    if (this.samples.length < this.limit) {
+      this.samples.push(val);
+    } else {
+      const idx = Math.floor(Math.random() * this.count);
+      if (idx < this.limit) {
+        this.samples[idx] = val;
+      }
+    }
+  }
+
+  public getStats(): LatencyStats | null {
+    if (this.samples.length === 0) {
+      return null;
+    }
+    const sorted = [...this.samples].sort((a, b) => a - b);
+    const n = sorted.length;
+    const total = sorted.reduce((sum, val) => sum + val, 0);
+    const avg = total / n;
+
+    const getPercentile = (p: number): number => {
+      const idx = Math.max(0, Math.min(n - 1, Math.ceil((p / 100.0) * n) - 1));
+      return sorted[idx];
+    };
+
+    return {
+      min: sorted[0],
+      max: sorted[n - 1],
+      avg: avg,
+      p50: getPercentile(50.0),
+      p90: getPercentile(90.0),
+      p95: getPercentile(95.0),
+      p99: getPercentile(99.0),
+      count: this.count,
+    };
+  }
+}
+
 export interface IBenchmark {
   execute(
     database: Database,
@@ -42,7 +104,11 @@ export abstract class AbstractBenchmark implements IBenchmark {
   protected cycleDurationMs: number | null;
   protected peakFactor: number;
 
-  private attributes: Record<string, any>;
+  protected attributes: Record<string, any>;
+  protected latencySampler = new ReservoirSampler(20000);
+  private successCount = 0;
+  private errorCount = 0;
+
   private activeTasks = 0;
   private taskQueue: number[] = [];
   private lastQueueLogTime = 0;
@@ -143,6 +209,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
     );
 
     this.startResourceMonitoring();
+    const startWait = Date.now();
 
     let timeoutId: NodeJS.Timeout | null = null;
     const durationMs = this.durationMs;
@@ -161,7 +228,7 @@ export abstract class AbstractBenchmark implements IBenchmark {
       }
 
       // Block and wait until the benchmark is stopped and all tasks are finished or cancelled
-      return new Promise<void>(resolve => {
+      await new Promise<void>(resolve => {
         const waiter = setInterval(() => {
           if (this.isStopped) {
             clearInterval(waiter);
@@ -169,67 +236,108 @@ export abstract class AbstractBenchmark implements IBenchmark {
           }
         }, 100);
       });
-    }
-
-    const socketPath = process.env.SPANNER_BENCHMARK_SOCKET;
-    if (socketPath) {
-      this.runSocketTriggeredGenerator(socketPath);
     } else {
-      const sab = new SharedArrayBuffer(4);
-      const int32Array = new Int32Array(sab);
+      const socketPath = process.env.SPANNER_BENCHMARK_SOCKET;
+      if (socketPath) {
+        this.runSocketTriggeredGenerator(socketPath);
+      } else {
+        const sab = new SharedArrayBuffer(4);
+        const int32Array = new Int32Array(sab);
 
-      const workerPath = path.join(__dirname, 'scheduler-worker.js');
-      this.worker = new Worker(workerPath, {
-        workerData: {
-          tps: this.tps,
-          loadType: this.loadType,
-          burstFactor: this.burstFactor,
-          burstDuration: this.burstDuration,
-          burstFraction: this.burstFraction,
-          cycleDurationMs: this.cycleDurationMs,
-          peakFactor: this.peakFactor,
-          rBurst: this.rBurst,
-          rNormal: this.rNormal,
-          sab: sab,
-        },
-      });
+        const workerPath = path.join(__dirname, 'scheduler-worker.js');
+        this.worker = new Worker(workerPath, {
+          workerData: {
+            tps: this.tps,
+            loadType: this.loadType,
+            burstFactor: this.burstFactor,
+            burstDuration: this.burstDuration,
+            burstFraction: this.burstFraction,
+            cycleDurationMs: this.cycleDurationMs,
+            peakFactor: this.peakFactor,
+            rBurst: this.rBurst,
+            rNormal: this.rNormal,
+            sab: sab,
+          },
+        });
 
-      this.worker.on('message', msg => {
-        if (msg.type === 'spawn') {
-          for (let i = 0; i < msg.count; i++) {
-            this.submitTask();
+        this.worker.on('message', msg => {
+          if (msg.type === 'spawn') {
+            for (let i = 0; i < msg.count; i++) {
+              this.submitTask();
+            }
           }
-        }
-      });
+        });
 
-      this.worker.on('error', err => {
-        console.error('Worker error:', err);
-      });
+        this.worker.on('error', err => {
+          console.error('Worker error:', err);
+        });
 
-      this.worker.on('exit', code => {
-        if (code !== 0) {
-          console.error(`Worker stopped with exit code ${code}`);
-        }
+        this.worker.on('exit', code => {
+          if (code !== 0) {
+            console.error(`Worker stopped with exit code ${code}`);
+          }
+        });
+      }
+
+      // Block and wait until the benchmark is stopped and all tasks are finished or cancelled
+      await new Promise<void>(resolve => {
+        const waiter = setInterval(() => {
+          if (
+            this.isStopped &&
+            this.activeTasks === 0 &&
+            this.taskQueue.length === 0
+          ) {
+            clearInterval(waiter);
+            if (timeoutId) clearTimeout(timeoutId);
+            console.log(
+              'All outstanding active tasks completed. Benchmark run finished.',
+            );
+            resolve();
+          }
+        }, 100);
       });
     }
 
-    // Block and wait until the benchmark is stopped and all tasks are finished or cancelled
-    return new Promise<void>(resolve => {
-      const waiter = setInterval(() => {
-        if (
-          this.isStopped &&
-          this.activeTasks === 0 &&
-          this.taskQueue.length === 0
-        ) {
-          clearInterval(waiter);
-          if (timeoutId) clearTimeout(timeoutId);
-          console.log(
-            'All outstanding active tasks completed. Benchmark run finished.',
-          );
-          resolve();
-        }
-      }, 100);
-    });
+    this.printBenchmarkSummary(startWait);
+  }
+
+  protected printBenchmarkSummary(startTimeMs: number): void {
+    const totalOps = this.successCount + this.errorCount;
+    const elapsedSec = Math.max(0.001, (Date.now() - startTimeMs) / 1000);
+    const actualTps = totalOps / elapsedSec;
+    const stats = this.latencySampler.getStats();
+
+    console.log('\n' + '='.repeat(60));
+    console.log('                  BENCHMARK RUN SUMMARY');
+    console.log('='.repeat(60));
+    console.log(`Benchmark:       ${this.getName()}`);
+    console.log(`Total Ops:       ${totalOps}`);
+    console.log(
+      totalOps > 0
+        ? `Success Ops:     ${this.successCount} (${((100.0 * this.successCount) / totalOps).toFixed(1)}%)`
+        : `Success Ops:     ${this.successCount}`,
+    );
+    console.log(
+      totalOps > 0
+        ? `Error Ops:       ${this.errorCount} (${((100.0 * this.errorCount) / totalOps).toFixed(1)}%)`
+        : `Error Ops:       ${this.errorCount}`,
+    );
+    console.log(`Duration:        ${elapsedSec.toFixed(2)} s`);
+    console.log(`Actual TPS:      ${actualTps.toFixed(2)} tps`);
+    console.log('-'.repeat(60));
+    if (stats) {
+      console.log('Latency (microseconds):');
+      console.log(`  Average:       ${stats.avg.toFixed(2)} us`);
+      console.log(`  Min:           ${stats.min.toFixed(2)} us`);
+      console.log(`  P50 (Median):  ${stats.p50.toFixed(2)} us`);
+      console.log(`  P90:           ${stats.p90.toFixed(2)} us`);
+      console.log(`  P95:           ${stats.p95.toFixed(2)} us`);
+      console.log(`  P99:           ${stats.p99.toFixed(2)} us`);
+      console.log(`  Max:           ${stats.max.toFixed(2)} us`);
+    } else {
+      console.log('No latency statistics collected.');
+    }
+    console.log('='.repeat(60) + '\n');
   }
 
   /**
@@ -323,14 +431,17 @@ export abstract class AbstractBenchmark implements IBenchmark {
 
     try {
       await this.execute(this.database, this.tableName, this.minId, this.maxId);
+      this.successCount++;
     } catch (err: any) {
       console.error(`Operation failed: ${err?.message || err}`);
       this.errorCounter.add(1, this.attributes);
+      this.errorCount++;
     } finally {
       const endTimeNs = process.hrtime.bigint();
       if (this.shouldMeasureEntireMethod()) {
         const latencyUs = Number(endTimeNs - startTimeNs) / 1000;
         this.latencyHistogram.record(latencyUs, this.attributes);
+        this.latencySampler.add(latencyUs);
       }
       this.operationCounter.add(1, this.attributes);
       this.activeTasks--;
@@ -390,14 +501,17 @@ export abstract class AbstractBenchmark implements IBenchmark {
     const startTimeNs = process.hrtime.bigint();
     try {
       await this.execute(this.database, this.tableName, this.minId, this.maxId);
+      this.successCount++;
     } catch (err: any) {
       console.error(`Operation failed: ${err?.message || err}`);
       this.errorCounter.add(1, this.attributes);
+      this.errorCount++;
     } finally {
       const endTimeNs = process.hrtime.bigint();
       if (this.shouldMeasureEntireMethod()) {
         const latencyUs = Number(endTimeNs - startTimeNs) / 1000;
         this.latencyHistogram.record(latencyUs, this.attributes);
+        this.latencySampler.add(latencyUs);
       }
       this.operationCounter.add(1, this.attributes);
     }

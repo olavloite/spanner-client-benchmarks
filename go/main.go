@@ -26,6 +26,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 const (
@@ -133,6 +134,40 @@ func run(ctx context.Context, args []string) error {
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					return executeTPCCBenchmark(ctx, cmd)
+				},
+			},
+			{
+				Name:  "ycsb",
+				Usage: "Runs YCSB benchmark workloads (A through F)",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "workload", Aliases: []string{"w"}, Value: "B", Usage: "YCSB workload: A, B, C, D, E, or F"},
+					&cli.StringFlag{Name: "distribution", Value: "scrambled-zipfian", Usage: "Key distribution: scrambled-zipfian, zipfian, uniform"},
+					&cli.IntFlag{Name: "record-count", Value: 100000, Usage: "Total number of records in user table"},
+					&cli.IntFlag{Name: "zero-padding", Value: 12, Usage: "Zero-padding width for primary keys"},
+					&cli.IntFlag{Name: "field-count", Value: 10, Usage: "Number of fields per record"},
+					&cli.IntFlag{Name: "field-length", Value: 100, Usage: "Byte length of each field value"},
+					&cli.BoolFlag{Name: "use-read-row", Value: false, Usage: "Use Spanner Read/ReadRow API instead of SQL query for point lookups"},
+					&cli.FloatFlag{Name: "tps", Value: 10.0, Usage: "Target transactions per second"},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					return executeYCSBBenchmark(ctx, cmd)
+				},
+			},
+			{
+				Name:  "ycsb-init",
+				Usage: "Initializes schema and populates data for YCSB",
+				Flags: []cli.Flag{
+					&cli.IntFlag{Name: "record-count", Value: 100000, Usage: "Total number of records to populate"},
+					&cli.IntFlag{Name: "zero-padding", Value: 12, Usage: "Zero-padding width for primary keys"},
+					&cli.IntFlag{Name: "field-count", Value: 10, Usage: "Number of fields per record"},
+					&cli.IntFlag{Name: "field-length", Value: 100, Usage: "Byte length of each field value"},
+					&cli.IntFlag{Name: "batch-size", Value: 500, Usage: "Number of records per mutation batch"},
+					&cli.IntFlag{Name: "threads", Value: 16, Usage: "Number of concurrent population workers"},
+					&cli.BoolFlag{Name: "skip-schema", Value: false, Usage: "Skip creating DDL table schema"},
+					&cli.BoolFlag{Name: "skip-data", Value: false, Usage: "Skip data population"},
+				},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					return executeYCSBInit(ctx, cmd)
 				},
 			},
 		},
@@ -419,7 +454,7 @@ func createSpannerClient(ctx context.Context, project, instance, database, host 
 	databaseName := fmt.Sprintf("projects/%s/instances/%s/databases/%s", project, instance, database)
 	var clientOpts []option.ClientOption
 	if host != "" {
-		clientOpts = append(clientOpts, option.WithEndpoint(host), option.WithGRPCDialOption(grpc.WithInsecure()), option.WithoutAuthentication())
+		clientOpts = append(clientOpts, option.WithEndpoint(host), option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())), option.WithoutAuthentication())
 	}
 	numChannelsStr := os.Getenv("SPANNER_NUM_CHANNELS")
 	if numChannelsStr != "" {

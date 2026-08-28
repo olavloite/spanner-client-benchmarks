@@ -88,6 +88,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "arc-swap"
+version = "1.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c049c0be4daef0b145cb3555416b3b8ef5b7888a38aea1a3a155801fe7b0810b"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.7.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2877,10 +2886,13 @@ name = "spanner-rust-benchmark"
 version = "1.0.0"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "clap",
  "futures",
  "google-cloud-auth 1.13.0 (git+https://github.com/googleapis/google-cloud-rust)",
+ "google-cloud-lro",
  "google-cloud-spanner",
+ "google-cloud-spanner-admin-database-v1",
  "opentelemetry 0.31.0",
  "opentelemetry-otlp",
  "opentelemetry_gcloud_monitoring_exporter",

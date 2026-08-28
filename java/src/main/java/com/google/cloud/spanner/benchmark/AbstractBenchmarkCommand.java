@@ -4,7 +4,6 @@ import static com.google.cloud.spanner.benchmark.BenchmarkApp.LATENCY_NAME;
 import static com.google.cloud.spanner.benchmark.BenchmarkApp.METER_NAME;
 import static com.google.cloud.spanner.benchmark.BenchmarkApp.initializeOpenTelemetry;
 
-import com.google.cloud.NoCredentials;
 import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.DatabaseId;
 import com.google.cloud.spanner.Spanner;
@@ -24,8 +23,7 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
 
   @Option(
       names = {"-t", "--table"},
-      description = "Table name",
-      required = true)
+      description = "Table name")
   protected String tableName;
 
   @Option(
@@ -119,6 +117,10 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
     if (cycleDuration == null) cycleDuration = "1h";
     if (peakFactor == null) peakFactor = 2.0;
 
+    if (tableName == null || tableName.trim().isEmpty()) {
+      throw new IllegalArgumentException("Missing required option: --table");
+    }
+
     Server server = null;
     if (parent.isMock()) {
       server = MockServerUtil.startMockSpannerServer(parent, tableName);
@@ -136,24 +138,8 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
       BenchmarkMetrics metrics = BenchmarkApp.createBenchmarkMetrics(meter, getMetricName());
 
       // Initialize Spanner
-      SpannerOptions.Builder spannerOptionsBuilder =
-          SpannerOptions.newBuilder().setProjectId(parent.getProjectId());
-      if (parent.getHost() != null) {
-        spannerOptionsBuilder.setHost(parent.getHost());
-        spannerOptionsBuilder.setChannelConfigurator(builder -> builder.usePlaintext());
-        spannerOptionsBuilder.setCredentials(NoCredentials.getInstance());
-      }
-      String numChannelsStr = System.getenv("SPANNER_NUM_CHANNELS");
-      if (numChannelsStr != null && !numChannelsStr.isEmpty()) {
-        try {
-          int numChannels = Integer.parseInt(numChannelsStr);
-          spannerOptionsBuilder.setNumChannels(numChannels);
-          System.out.println("Configured Spanner Java client with " + numChannels + " channels.");
-        } catch (NumberFormatException e) {
-          System.err.println("Invalid SPANNER_NUM_CHANNELS value: " + numChannelsStr);
-        }
-      }
-      SpannerOptions spannerOptions = spannerOptionsBuilder.build();
+      SpannerOptions spannerOptions =
+          SpannerClientHelper.createSpannerOptions(parent.getProjectId(), parent.getHost());
       try (Spanner spanner = spannerOptions.getService()) {
         DatabaseClient client =
             spanner.getDatabaseClient(

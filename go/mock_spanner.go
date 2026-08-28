@@ -94,16 +94,6 @@ func (m *mockSpannerServer) Rollback(ctx context.Context, req *spannerpb.Rollbac
 
 func (m *mockSpannerServer) ExecuteSql(ctx context.Context, req *spannerpb.ExecuteSqlRequest) (*spannerpb.ResultSet, error) {
 	m.addRequest(req)
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	for sql, res := range m.statementResults {
-		if strings.Contains(req.Sql, sql) {
-			return res, nil
-		}
-	}
-
-	// If DML statement (UPDATE/INSERT/DELETE), return successful ResultSet with row count stats
 	sqlUpper := strings.ToUpper(strings.TrimSpace(req.Sql))
 	if strings.HasPrefix(sqlUpper, "UPDATE") || strings.HasPrefix(sqlUpper, "INSERT") || strings.HasPrefix(sqlUpper, "DELETE") {
 		return &spannerpb.ResultSet{
@@ -113,6 +103,15 @@ func (m *mockSpannerServer) ExecuteSql(ctx context.Context, req *spannerpb.Execu
 				},
 			},
 		}, nil
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for sql, res := range m.statementResults {
+		if strings.Contains(req.Sql, sql) {
+			return res, nil
+		}
 	}
 
 	return &spannerpb.ResultSet{}, nil
@@ -137,6 +136,18 @@ func (m *mockSpannerServer) ExecuteBatchDml(ctx context.Context, req *spannerpb.
 
 func (m *mockSpannerServer) ExecuteStreamingSql(req *spannerpb.ExecuteSqlRequest, stream spannerpb.Spanner_ExecuteStreamingSqlServer) error {
 	m.addRequest(req)
+	sqlUpper := strings.ToUpper(strings.TrimSpace(req.Sql))
+	if strings.HasPrefix(sqlUpper, "UPDATE") || strings.HasPrefix(sqlUpper, "INSERT") || strings.HasPrefix(sqlUpper, "DELETE") {
+		part := &spannerpb.PartialResultSet{
+			Stats: &spannerpb.ResultSetStats{
+				RowCount: &spannerpb.ResultSetStats_RowCountExact{
+					RowCountExact: 1,
+				},
+			},
+		}
+		return stream.Send(part)
+	}
+
 	m.mu.Lock()
 	var matchedRes *spannerpb.ResultSet
 	for sql, res := range m.statementResults {
@@ -173,6 +184,18 @@ func (m *mockSpannerServer) ExecuteStreamingSql(req *spannerpb.ExecuteSqlRequest
 		}
 	}
 	return nil
+}
+
+func (m *mockSpannerServer) StreamingRead(req *spannerpb.ReadRequest, stream spannerpb.Spanner_StreamingReadServer) error {
+	m.addRequest(req)
+	res := buildYcsbMockResultSet(10)
+	part := &spannerpb.PartialResultSet{
+		Metadata: res.Metadata,
+	}
+	if len(res.Rows) > 0 {
+		part.Values = res.Rows[0].Values
+	}
+	return stream.Send(part)
 }
 
 func startMockServer() (*mockSpannerServer, string, func()) {
@@ -278,11 +301,36 @@ func buildNarrowMockResultSet() *spannerpb.ResultSet {
 	}
 }
 
+func buildYcsbMockResultSet(fieldCount int) *spannerpb.ResultSet {
+	fields := make([]*spannerpb.StructType_Field, fieldCount)
+	values := make([]*structpb.Value, fieldCount)
+	for i := 0; i < fieldCount; i++ {
+		fields[i] = &spannerpb.StructType_Field{
+			Name: fmt.Sprintf("field%d", i),
+			Type: &spannerpb.Type{Code: spannerpb.TypeCode_STRING},
+		}
+		values[i] = &structpb.Value{Kind: &structpb.Value_StringValue{StringValue: fmt.Sprintf("value-%d", i)}}
+	}
+
+	return &spannerpb.ResultSet{
+		Metadata: &spannerpb.ResultSetMetadata{
+			RowType: &spannerpb.StructType{
+				Fields: fields,
+			},
+		},
+		Rows: []*structpb.ListValue{
+			{Values: values},
+		},
+	}
+}
+
 func registerMockResults(m *mockSpannerServer) {
 	m.putStatementResult("SELECT * FROM test WHERE id = @id", buildMockResultSet())
 	m.putStatementResult("SELECT id FROM test WHERE id = @id", buildMockResultSet())
 	m.putStatementResult("AS random_bool", buildLargeMockResultSet())
 	m.putStatementResult("AS random_int64_1", buildNarrowMockResultSet())
+	m.putStatementResult("FROM usertable WHERE id = @id", buildYcsbMockResultSet(10))
+	m.putStatementResult("FROM usertable WHERE id >= @startKey", buildYcsbMockResultSet(10))
 
 	warehouseResult := &spannerpb.ResultSet{
 		Metadata: &spannerpb.ResultSetMetadata{

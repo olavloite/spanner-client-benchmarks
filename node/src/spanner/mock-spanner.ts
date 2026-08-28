@@ -94,6 +94,7 @@ export class MockSpannerServer {
       DeleteSession: this.deleteSession.bind(this),
       ExecuteSql: this.executeSql.bind(this),
       ExecuteStreamingSql: this.executeStreamingSql.bind(this),
+      StreamingRead: this.streamingRead.bind(this),
       ExecuteBatchDml: this.executeBatchDml.bind(this),
       BeginTransaction: this.beginTransaction.bind(this),
       Commit: this.commit.bind(this),
@@ -277,6 +278,37 @@ export class MockSpannerServer {
         stats: result.stats,
       });
     }
+
+    call.end();
+  }
+
+  private streamingRead(call: any) {
+    this.requests.push(call.request);
+    const columns = call.request.columns || ['id'];
+    const fields = columns.map((col: string) => ({
+      name: col,
+      type: {code: 'STRING'},
+    }));
+    const firstPart: any = {
+      metadata: {
+        row_type: {fields},
+      },
+    };
+
+    if (call.request.transaction?.begin) {
+      this.transactionCounter++;
+      const txId = Buffer.from(`tx-${this.transactionCounter}`).toString(
+        'base64',
+      );
+      firstPart.metadata.transaction = {id: txId};
+    }
+
+    call.write(firstPart);
+
+    const rowValues = columns.map((_: string, idx: number) => `val_${idx}`);
+    call.write({
+      values: this.makeRow(rowValues),
+    });
 
     call.end();
   }
@@ -577,6 +609,69 @@ FROM UNNEST(GENERATE_ARRAY(1, @num_rows)) AS n`;
           },
         },
         rows: [this.makeRow(['0'])],
+      },
+    );
+
+    // YCSB
+    const fieldNames = [
+      'field0',
+      'field1',
+      'field2',
+      'field3',
+      'field4',
+      'field5',
+      'field6',
+      'field7',
+      'field8',
+      'field9',
+    ];
+    const ycsbFields = fieldNames.map(f => ({name: f, type: {code: 'STRING'}}));
+    const ycsbRowValues = fieldNames.map(f => `value_${f}`);
+
+    const registerYcsbForTable = (tbl: string) => {
+      this.addResult(
+        `SELECT ${fieldNames.join(', ')} FROM ${tbl} WHERE id = @id`,
+        {
+          metadata: {
+            row_type: {fields: ycsbFields},
+          },
+          rows: [this.makeRow(ycsbRowValues)],
+        },
+      );
+      this.addResult(
+        `SELECT ${fieldNames.join(', ')} FROM ${tbl} WHERE id >= @startKey ORDER BY id LIMIT @scanLength`,
+        {
+          metadata: {
+            row_type: {fields: ycsbFields},
+          },
+          rows: [this.makeRow(ycsbRowValues), this.makeRow(ycsbRowValues)],
+        },
+      );
+      this.addResult(`UPDATE ${tbl} SET`, {
+        stats: {row_count_exact: '1'},
+      });
+      this.addResult(`INSERT INTO ${tbl}`, {
+        stats: {row_count_exact: '1'},
+      });
+    };
+
+    registerYcsbForTable(tableName);
+    if (tableName !== 'usertable') {
+      registerYcsbForTable('usertable');
+    }
+    if (tableName !== 'test') {
+      registerYcsbForTable('test');
+    }
+
+    this.addResult(
+      "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '' AND TABLE_NAME = @tableName",
+      {
+        metadata: {
+          row_type: {
+            fields: [{name: '1', type: {code: 'INT64'}}],
+          },
+        },
+        rows: [this.makeRow(['1'])],
       },
     );
   }

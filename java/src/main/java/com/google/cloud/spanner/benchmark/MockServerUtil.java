@@ -61,6 +61,66 @@ public class MockServerUtil {
         StatementResult.update(
             Statement.of("INSERT INTO " + tableName + " (id, value) VALUES (@id, @value)"), 1L));
 
+    // YCSB Queries mock
+    StructType.Builder ycsbRowTypeBuilder =
+        StructType.newBuilder()
+            .addFields(
+                Field.newBuilder()
+                    .setType(Type.newBuilder().setCode(TypeCode.STRING))
+                    .setName("id"));
+    ListValue.Builder ycsbRowValuesBuilder =
+        ListValue.newBuilder()
+            .addValues(com.google.protobuf.Value.newBuilder().setStringValue("user000000000001"));
+    for (int i = 0; i < 10; i++) {
+      ycsbRowTypeBuilder.addFields(
+          Field.newBuilder()
+              .setType(Type.newBuilder().setCode(TypeCode.STRING))
+              .setName("field" + i));
+      ycsbRowValuesBuilder.addValues(
+          com.google.protobuf.Value.newBuilder().setStringValue("testvalue" + i));
+    }
+    ResultSet ycsbResultSet =
+        ResultSet.newBuilder()
+            .setMetadata(ResultSetMetadata.newBuilder().setRowType(ycsbRowTypeBuilder))
+            .addRows(ycsbRowValuesBuilder)
+            .build();
+    String ycsbFields =
+        "id, field0, field1, field2, field3, field4, field5, field6, field7, field8, field9";
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT " + ycsbFields + " FROM " + tableName + " WHERE id = @id"),
+            ycsbResultSet));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT " + ycsbFields + " FROM usertable WHERE id = @id"),
+            ycsbResultSet));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of(
+                "SELECT "
+                    + ycsbFields
+                    + " FROM "
+                    + tableName
+                    + " WHERE id >= @startKey ORDER BY id LIMIT @scanLength"),
+            ycsbResultSet));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of(
+                "SELECT "
+                    + ycsbFields
+                    + " FROM usertable WHERE id >= @startKey ORDER BY id LIMIT @scanLength"),
+            ycsbResultSet));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of(
+                "SELECT field0, field1, field2, field3, field4, field5, field6, field7, field8, field9 FROM usertable"),
+            ycsbResultSet));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of(
+                "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '' AND TABLE_NAME = @tableName"),
+            ycsbResultSet));
+
     // Large result set mock
     ResultSet largeResultSet =
         ResultSet.newBuilder()
@@ -95,7 +155,7 @@ public class MockServerUtil {
                             .addFields(
                                 Field.newBuilder()
                                     .setName("random_json")
-                                    .setType(Type.newBuilder().setCode(TypeCode.STRING).build()))
+                                    .setType(Type.newBuilder().setCode(TypeCode.JSON).build()))
                             .addFields(
                                 Field.newBuilder()
                                     .setName("random_int64")

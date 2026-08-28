@@ -1,11 +1,21 @@
-use crate::{BenchmarkMetrics, Commands, run_task, run_task_closed_loop};
+use crate::BenchmarkMetrics;
+use futures::FutureExt;
+use futures::future::BoxFuture;
 use google_cloud_spanner::client::DatabaseClient;
 use opentelemetry::KeyValue;
+use std::f64::consts::PI;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
+
+pub trait BenchmarkTask: Send + Sync + 'static {
+    fn execute(&self, client: DatabaseClient) -> BoxFuture<'static, anyhow::Result<()>>;
+    fn records_custom_read_latency(&self) -> bool {
+        false
+    }
+}
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 pub enum LoadType {
@@ -16,9 +26,8 @@ pub enum LoadType {
 }
 
 pub struct RunConfig {
-    pub db_client: DatabaseClient,
-    pub table: String,
-    pub command: Commands,
+    pub database_client: DatabaseClient,
+    pub task: Arc<dyn BenchmarkTask>,
     pub semaphore: Arc<Semaphore>,
     pub threads: usize,
     pub metrics: BenchmarkMetrics,
@@ -31,6 +40,60 @@ pub struct RunConfig {
     pub burst_fraction: f64,
     pub cycle_duration: Duration,
     pub peak_factor: f64,
+}
+
+pub fn run_task(
+    database_client: DatabaseClient,
+    task: Arc<dyn BenchmarkTask>,
+    permit: OwnedSemaphorePermit,
+    metrics: BenchmarkMetrics,
+    attributes: Vec<KeyValue>,
+) -> BoxFuture<'static, ()> {
+    async move {
+        let _permit = permit;
+        let start = Instant::now();
+        let records_custom_read_latency = task.records_custom_read_latency();
+        let result = task.execute(database_client).await;
+        let duration_us = start.elapsed().as_micros() as f64;
+
+        metrics.operation_count.add(1, &attributes);
+
+        if let Err(error) = &result {
+            metrics.error_count.add(1, &attributes);
+            eprintln!("Operation failed: {:?}", error);
+        }
+
+        if !records_custom_read_latency {
+            metrics.latency.record(duration_us, &attributes);
+        }
+    }
+    .boxed()
+}
+
+pub fn run_task_closed_loop(
+    database_client: DatabaseClient,
+    task: Arc<dyn BenchmarkTask>,
+    metrics: BenchmarkMetrics,
+    attributes: Vec<KeyValue>,
+) -> BoxFuture<'static, ()> {
+    async move {
+        let start = Instant::now();
+        let records_custom_read_latency = task.records_custom_read_latency();
+        let result = task.execute(database_client).await;
+        let duration_us = start.elapsed().as_micros() as f64;
+
+        metrics.operation_count.add(1, &attributes);
+
+        if let Err(error) = &result {
+            metrics.error_count.add(1, &attributes);
+            eprintln!("Operation failed: {:?}", error);
+        }
+
+        if !records_custom_read_latency {
+            metrics.latency.record(duration_us, &attributes);
+        }
+    }
+    .boxed()
 }
 
 impl LoadType {
@@ -54,10 +117,8 @@ impl LoadType {
         let last_log = Arc::new(Mutex::new(Instant::now()));
 
         loop {
-            if let Some(dur) = duration {
-                if start_time.elapsed() >= dur {
-                    break;
-                }
+            if duration.is_some_and(|limit| start_time.elapsed() >= limit) {
+                break;
             }
 
             let now = Instant::now();
@@ -80,14 +141,13 @@ impl LoadType {
             }
 
             for _ in 0..count {
-                let db_client = config.db_client.clone();
-                let table = config.table.clone();
-                let command = config.command.clone();
+                let database_client = config.database_client.clone();
+                let task = Arc::clone(&config.task);
                 let metrics = config.metrics.clone();
                 let attributes = config.attributes.clone();
-                let semaphore = config.semaphore.clone();
-                let waiters = waiters.clone();
-                let last_log = last_log.clone();
+                let semaphore = Arc::clone(&config.semaphore);
+                let waiters = Arc::clone(&waiters);
+                let last_log = Arc::clone(&last_log);
 
                 tokio::spawn(async move {
                     let permit =
@@ -95,7 +155,7 @@ impl LoadType {
                             Some(p) => p,
                             None => return,
                         };
-                    run_task(db_client, table, command, permit, metrics, attributes).await;
+                    run_task(database_client, task, permit, metrics, attributes).await;
                 });
             }
 
@@ -127,10 +187,8 @@ impl LoadType {
         let last_log = Arc::new(Mutex::new(Instant::now()));
 
         loop {
-            if let Some(dur) = duration {
-                if start_time.elapsed() >= dur {
-                    break;
-                }
+            if duration.is_some_and(|limit| start_time.elapsed() >= limit) {
+                break;
             }
 
             let now = Instant::now();
@@ -169,14 +227,13 @@ impl LoadType {
             }
 
             for _ in 0..count {
-                let db_client = config.db_client.clone();
-                let table = config.table.clone();
-                let command = config.command.clone();
+                let database_client = config.database_client.clone();
+                let task = Arc::clone(&config.task);
                 let metrics = config.metrics.clone();
                 let attributes = config.attributes.clone();
-                let semaphore = config.semaphore.clone();
-                let waiters = waiters.clone();
-                let last_log = last_log.clone();
+                let semaphore = Arc::clone(&config.semaphore);
+                let waiters = Arc::clone(&waiters);
+                let last_log = Arc::clone(&last_log);
 
                 tokio::spawn(async move {
                     let permit =
@@ -184,7 +241,7 @@ impl LoadType {
                             Some(p) => p,
                             None => return,
                         };
-                    run_task(db_client, table, command, permit, metrics, attributes).await;
+                    run_task(database_client, task, permit, metrics, attributes).await;
                 });
             }
 
@@ -210,10 +267,8 @@ impl LoadType {
         let last_log = Arc::new(Mutex::new(Instant::now()));
 
         loop {
-            if let Some(dur) = duration {
-                if start_time.elapsed() >= dur {
-                    break;
-                }
+            if duration.is_some_and(|limit| start_time.elapsed() >= limit) {
+                break;
             }
 
             let now = Instant::now();
@@ -229,9 +284,8 @@ impl LoadType {
 
             let elapsed_ns = now.duration_since(start_instant).as_nanos() as u64;
             let angle =
-                (2.0 * std::f64::consts::PI * (elapsed_ns % cycle_duration_ns as u64) as f64)
-                    / cycle_duration_ns;
-            let current_rate = tps + amplitude * (angle - std::f64::consts::PI).cos();
+                (2.0 * PI * (elapsed_ns % cycle_duration_ns as u64) as f64) / cycle_duration_ns;
+            let current_rate = tps + amplitude * (angle - PI).cos();
 
             // Calculate number of tasks for this 1ms tick
             let mut count = 0;
@@ -246,14 +300,13 @@ impl LoadType {
             }
 
             for _ in 0..count {
-                let db_client = config.db_client.clone();
-                let table = config.table.clone();
-                let command = config.command.clone();
+                let database_client = config.database_client.clone();
+                let task = Arc::clone(&config.task);
                 let metrics = config.metrics.clone();
                 let attributes = config.attributes.clone();
-                let semaphore = config.semaphore.clone();
-                let waiters = waiters.clone();
-                let last_log = last_log.clone();
+                let semaphore = Arc::clone(&config.semaphore);
+                let waiters = Arc::clone(&waiters);
+                let last_log = Arc::clone(&last_log);
 
                 tokio::spawn(async move {
                     let permit =
@@ -261,7 +314,7 @@ impl LoadType {
                             Some(p) => p,
                             None => return,
                         };
-                    run_task(db_client, table, command, permit, metrics, attributes).await;
+                    run_task(database_client, task, permit, metrics, attributes).await;
                 });
             }
 
@@ -277,30 +330,26 @@ impl LoadType {
         let mut tasks = Vec::new();
 
         for _ in 0..config.threads {
-            let db_client = config.db_client.clone();
-            let table = config.table.clone();
-            let command = config.command.clone();
+            let database_client = config.database_client.clone();
+            let task = Arc::clone(&config.task);
             let metrics = config.metrics.clone();
             let attributes = config.attributes.clone();
 
-            let task = tokio::spawn(async move {
+            let handle = tokio::spawn(async move {
                 loop {
-                    if let Some(dur) = duration {
-                        if start_time.elapsed() >= dur {
-                            break;
-                        }
+                    if duration.is_some_and(|limit| start_time.elapsed() >= limit) {
+                        break;
                     }
                     run_task_closed_loop(
-                        db_client.clone(),
-                        table.clone(),
-                        command.clone(),
+                        database_client.clone(),
+                        Arc::clone(&task),
                         metrics.clone(),
                         attributes.clone(),
                     )
                     .await;
                 }
             });
-            tasks.push(task);
+            tasks.push(handle);
         }
 
         for task in tasks {
@@ -313,17 +362,17 @@ pub fn parse_duration(duration_str: &str) -> Option<Duration> {
     if duration_str == "inf" || duration_str == "infinite" {
         return None;
     }
-    if duration_str.ends_with("ms") {
-        let millis = duration_str[..duration_str.len() - 2].parse::<u64>().ok()?;
+    if let Some(stripped) = duration_str.strip_suffix("ms") {
+        let millis = stripped.parse::<u64>().ok()?;
         Some(Duration::from_millis(millis))
-    } else if duration_str.ends_with('s') {
-        let secs = duration_str[..duration_str.len() - 1].parse::<u64>().ok()?;
+    } else if let Some(stripped) = duration_str.strip_suffix('s') {
+        let secs = stripped.parse::<u64>().ok()?;
         Some(Duration::from_secs(secs))
-    } else if duration_str.ends_with('m') {
-        let mins = duration_str[..duration_str.len() - 1].parse::<u64>().ok()?;
+    } else if let Some(stripped) = duration_str.strip_suffix('m') {
+        let mins = stripped.parse::<u64>().ok()?;
         Some(Duration::from_secs(mins * 60))
-    } else if duration_str.ends_with('h') {
-        let hours = duration_str[..duration_str.len() - 1].parse::<u64>().ok()?;
+    } else if let Some(stripped) = duration_str.strip_suffix('h') {
+        let hours = stripped.parse::<u64>().ok()?;
         Some(Duration::from_secs(hours * 3600))
     } else {
         let secs = duration_str.parse::<u64>().ok()?;
@@ -348,7 +397,7 @@ pub(crate) async fn acquire_permit_with_logging(
     // Only lock the Mutex and log if queue_size > 1 (meaning tasks are actually queueing).
     // This avoids mutex contention overhead on the hot path when we are under the concurrency limit.
     if queue_size > 1 {
-        let mut last_log_guard = last_log.lock().unwrap();
+        let mut last_log_guard = last_log.lock().expect("Failed to lock last_log mutex");
         if last_log_guard.elapsed() > Duration::from_secs(1) {
             println!(
                 "Queue size: {} (concurrency limit reached, tasks are queueing)",
@@ -381,6 +430,67 @@ async fn sleep_hybrid(target_time: Instant) {
         }
         while Instant::now() < target_time {
             tokio::task::yield_now().await;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_duration() {
+        assert_eq!(
+            super::parse_duration("inf"),
+            None,
+            "'inf' should parse to None (infinite)"
+        );
+        assert_eq!(
+            super::parse_duration("infinite"),
+            None,
+            "'infinite' should parse to None (infinite)"
+        );
+        assert_eq!(
+            super::parse_duration("500ms"),
+            Some(Duration::from_millis(500)),
+            "'500ms' should parse to 500 milliseconds"
+        );
+        assert_eq!(
+            super::parse_duration("10s"),
+            Some(Duration::from_secs(10)),
+            "'10s' should parse to 10 seconds"
+        );
+        assert_eq!(
+            super::parse_duration("5m"),
+            Some(Duration::from_secs(300)),
+            "'5m' should parse to 300 seconds"
+        );
+        assert_eq!(
+            super::parse_duration("2h"),
+            Some(Duration::from_secs(7200)),
+            "'2h' should parse to 7200 seconds"
+        );
+        assert_eq!(
+            super::parse_duration("15"),
+            Some(Duration::from_secs(15)),
+            "'15' should parse to 15 seconds"
+        );
+        assert_eq!(
+            super::parse_duration("invalid"),
+            None,
+            "'invalid' should parse to None"
+        );
+    }
+
+    #[test]
+    fn calculate_poisson_delay() {
+        for _ in 0..100 {
+            let delay = super::calculate_poisson_delay(100.0);
+            assert!(
+                delay.as_secs_f64() > 0.0,
+                "Poisson delay should be positive: {:?}",
+                delay
+            );
         }
     }
 }
