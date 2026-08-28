@@ -1,5 +1,6 @@
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
+import * as fs from 'fs';
 import * as path from 'path';
 
 export class MockSpannerServer {
@@ -14,24 +15,74 @@ export class MockSpannerServer {
     this.server = new grpc.Server();
   }
 
+  private getProtoConfig(): {protoPath: string; includeDirs: string[]} {
+    const candidateBaseDirs = [
+      path.resolve(__dirname, '../../node_modules'),
+      path.resolve(__dirname, '../../../node_modules'),
+      path.resolve(process.cwd(), 'node_modules'),
+      path.resolve(process.cwd(), 'node/node_modules'),
+    ];
+
+    const protoSubPaths = [
+      '@google-cloud/spanner-api/build/protos/google/spanner/v1/spanner.proto',
+      '@google-cloud/spanner/build/protos/google/spanner/v1/spanner.proto',
+    ];
+
+    let protoPath: string | null = null;
+    const includeDirs = new Set<string>();
+
+    for (const base of candidateBaseDirs) {
+      if (!fs.existsSync(base)) {
+        continue;
+      }
+
+      for (const sub of protoSubPaths) {
+        const full = path.join(base, sub);
+        if (!protoPath && fs.existsSync(full)) {
+          protoPath = full;
+        }
+      }
+
+      const spannerApiProtos = path.join(
+        base,
+        '@google-cloud/spanner-api/build/protos',
+      );
+      if (fs.existsSync(spannerApiProtos)) {
+        includeDirs.add(spannerApiProtos);
+      }
+
+      const spannerProtos = path.join(
+        base,
+        '@google-cloud/spanner/build/protos',
+      );
+      if (fs.existsSync(spannerProtos)) {
+        includeDirs.add(spannerProtos);
+      }
+
+      const gaxProtos = path.join(base, 'google-gax/build/protos');
+      if (fs.existsSync(gaxProtos)) {
+        includeDirs.add(gaxProtos);
+      }
+    }
+
+    if (!protoPath) {
+      throw new Error(
+        'Could not locate spanner.proto in @google-cloud/spanner-api or @google-cloud/spanner node_modules.',
+      );
+    }
+
+    return {protoPath, includeDirs: Array.from(includeDirs)};
+  }
+
   public start(): Promise<number> {
-    const PROTO_PATH = path.resolve(
-      process.cwd(),
-      'node_modules/@google-cloud/spanner/build/protos/google/spanner/v1/spanner.proto',
-    );
-    const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
+    const {protoPath, includeDirs} = this.getProtoConfig();
+    const packageDefinition = protoLoader.loadSync(protoPath, {
       keepCase: true,
       longs: String,
       enums: String,
       defaults: true,
       oneofs: true,
-      includeDirs: [
-        path.resolve(
-          process.cwd(),
-          'node_modules/@google-cloud/spanner/build/protos',
-        ),
-        path.resolve(process.cwd(), 'node_modules/google-gax/build/protos'),
-      ],
+      includeDirs,
     });
     const spannerProto = (grpc.loadPackageDefinition(packageDefinition) as any)
       .google.spanner.v1;
