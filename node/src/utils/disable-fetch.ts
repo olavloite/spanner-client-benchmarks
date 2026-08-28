@@ -1,5 +1,4 @@
 // Disable global fetch to force standard HTTPS socket fallback in GCP exporters
-// @ts-ignore
 delete (globalThis as any).fetch;
 console.log('Disabled global fetch API successfully.');
 
