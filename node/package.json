@@ -10,7 +10,7 @@
     "format": "gts fix"
   },
   "dependencies": {
-    "@google-cloud/opentelemetry-cloud-monitoring-exporter": "^0.21.0",
+    "@google-cloud/opentelemetry-cloud-monitoring-exporter": "^0.22.0",
     "@google-cloud/spanner": "^8.11.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/core": "^2.7.1",
@@ -20,9 +20,9 @@
     "commander": "^15.0.0"
   },
   "devDependencies": {
-    "@types/node": "^25.9.1",
+    "@types/node": "^26.4.0",
     "gts": "^7.0.0",
     "ts-node": "^10.9.2",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   }
 }
