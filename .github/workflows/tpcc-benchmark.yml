@@ -42,6 +42,11 @@ on:
         required: false
         type: string
         default: 'manual-tpcc'
+      client_branch:
+        description: 'Client repository branch'
+        required: false
+        type: string
+        default: 'main'
       for_alerting:
         description: 'Mark metrics for alerting'
         required: false
@@ -59,6 +64,7 @@ jobs:
       benchmark_name: ${{ steps.set-params.outputs.benchmark_name }}
       warehouses: ${{ steps.set-params.outputs.warehouses }}
       items: ${{ steps.set-params.outputs.items }}
+      client_branch: ${{ steps.set-params.outputs.client_branch }}
       for_alerting: ${{ steps.set-params.outputs.for_alerting }}
     steps:
       - id: set-params
@@ -81,6 +87,7 @@ jobs:
             BENCHMARK_TYPES_JSON='["tpcc"]'
             DURATION="1h"
             BENCHMARK_NAME="scheduled-tpcc-$CLIENT"
+            CLIENT_BRANCH="main"
             WAREHOUSES=""
             ITEMS=""
             FOR_ALERTING="true"
@@ -90,6 +97,7 @@ jobs:
             ITEMS="${{ inputs.items }}"
             DURATION="${{ inputs.duration }}"
             BENCHMARK_NAME="${{ inputs.benchmark_name }}"
+            CLIENT_BRANCH="${{ inputs.client_branch || 'main' }}"
             FOR_ALERTING="${{ inputs.for_alerting }}"
             
             if [ "$ACTION" = "tpcc-init (schema and data populator)" ]; then
@@ -107,10 +115,11 @@ jobs:
 
           echo "clients_json=$CLIENTS_JSON" >> $GITHUB_OUTPUT
           echo "benchmark_types_json=$BENCHMARK_TYPES_JSON" >> $GITHUB_OUTPUT
-          echo "duration=$duration" >> $GITHUB_OUTPUT
+          echo "duration=$DURATION" >> $GITHUB_OUTPUT
           echo "benchmark_name=$BENCHMARK_NAME" >> $GITHUB_OUTPUT
           echo "warehouses=$WAREHOUSES" >> $GITHUB_OUTPUT
           echo "items=$ITEMS" >> $GITHUB_OUTPUT
+          echo "client_branch=$CLIENT_BRANCH" >> $GITHUB_OUTPUT
           echo "for_alerting=$FOR_ALERTING" >> $GITHUB_OUTPUT
 
   run-benchmarks:
@@ -125,6 +134,7 @@ jobs:
       benchmark_name: ${{ needs.prepare.outputs.benchmark_name }}
       warehouses: ${{ needs.prepare.outputs.warehouses }}
       items: ${{ needs.prepare.outputs.items }}
+      client_branch: ${{ needs.prepare.outputs.client_branch }}
       for_alerting: ${{ needs.prepare.outputs.for_alerting }}
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
