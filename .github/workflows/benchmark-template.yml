@@ -100,6 +100,11 @@ on:
         required: false
         type: string
         default: ''
+      client_branch:
+        description: 'Client branch to test (optional)'
+        required: false
+        type: string
+        default: 'main'
     secrets:
       GCP_SA_KEY:
         required: true
@@ -154,4 +159,5 @@ jobs:
           CYCLE_DURATION: ${{ inputs.cycle_duration }}
           PEAK_FACTOR: ${{ inputs.peak_factor }}
           SPANNER_NUM_CHANNELS: ${{ inputs.spanner_num_channels }}
+          CLIENT_BRANCH: ${{ inputs.client_branch }}
         run: ./run_benchmark.sh ${{ matrix.client }}
