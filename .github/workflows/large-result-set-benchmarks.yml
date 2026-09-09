@@ -5,6 +5,26 @@ on:
     - cron: "47 17 * * *"
   workflow_dispatch:
     inputs:
+      clients:
+        description: "JSON array of client languages to run"
+        required: false
+        type: string
+        default: '["java", "go", "node", "python", "rust"]'
+      client_branch:
+        description: "Client branch to benchmark (optional)"
+        required: false
+        type: string
+        default: "main"
+      benchmark_name:
+        description: "Custom benchmark name identifier (optional)"
+        required: false
+        type: string
+        default: "scheduled-main"
+      duration:
+        description: "Benchmark execution duration"
+        required: false
+        type: string
+        default: "1h"
       for_alerting:
         description: "Mark metrics for alerting"
         required: false
@@ -16,10 +36,13 @@ jobs:
     uses: ./.github/workflows/benchmark-template.yml
     with:
       benchmark_types: '["read-large-result-set", "read-narrow-result-set"]'
-      duration: "1h"
+      duration: "${{ inputs.duration || '1h' }}"
       load_type: "closed-loop"
       threads: "1"
       cpu: "2"
+      clients: "${{ inputs.clients || '[\"java\", \"go\", \"node\", \"python\", \"rust\"]' }}"
+      client_branch: "${{ inputs.client_branch || 'main' }}"
+      benchmark_name: "${{ inputs.benchmark_name || 'scheduled-main' }}"
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
