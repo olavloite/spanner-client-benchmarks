@@ -6,6 +6,37 @@ on:
     - cron: '30 8 * * *'
   workflow_dispatch:
     inputs:
+      action:
+        description: 'Benchmark workload to run'
+        required: false
+        type: choice
+        options:
+          - all
+          - point-select-multi-core
+          - point-select-single-core
+          - select-update-multi-core
+          - select-update-single-core
+        default: 'all'
+      clients:
+        description: 'JSON array of client languages to run'
+        required: false
+        type: string
+        default: ''
+      client_branch:
+        description: 'Client branch to benchmark (optional)'
+        required: false
+        type: string
+        default: 'main'
+      benchmark_name:
+        description: 'Custom benchmark name identifier (optional)'
+        required: false
+        type: string
+        default: ''
+      duration:
+        description: 'Benchmark execution duration'
+        required: false
+        type: string
+        default: '1h'
       for_alerting:
         description: 'Mark metrics for alerting'
         required: false
@@ -14,11 +45,12 @@ on:
 
 jobs:
   run-point-select-multi-core:
+    if: ${{ github.event_name == 'schedule' || inputs.action == 'all' || inputs.action == 'point-select-multi-core' || inputs.action == '' }}
     uses: ./.github/workflows/benchmark-template.yml
     with:
-      clients: '["java", "go", "rust"]'
+      clients: "${{ inputs.clients != '' && inputs.clients || '[\"java\", \"go\", \"rust\"]' }}"
       benchmark_types: '["point-select"]'
-      duration: '1h'
+      duration: "${{ inputs.duration || '1h' }}"
       load_type: 'spiky'
       tps: '2000'
       threads: '500'
@@ -29,17 +61,19 @@ jobs:
       memory: '4Gi'
       use_sidecar: 'true'
       spanner_num_channels: '16'
-      benchmark_name: 'channel-scaling-bursty-point-select'
+      client_branch: "${{ inputs.client_branch || 'main' }}"
+      benchmark_name: "${{ inputs.benchmark_name || 'channel-scaling-bursty-point-select' }}"
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
 
   run-point-select-single-core:
+    if: ${{ github.event_name == 'schedule' || inputs.action == 'all' || inputs.action == 'point-select-single-core' }}
     uses: ./.github/workflows/benchmark-template.yml
     with:
-      clients: '["node", "python"]'
+      clients: "${{ inputs.clients != '' && inputs.clients || '[\"node\", \"python\"]' }}"
       benchmark_types: '["point-select"]'
-      duration: '1h'
+      duration: "${{ inputs.duration || '1h' }}"
       load_type: 'spiky'
       tps: '600'
       threads: '100'
@@ -49,17 +83,19 @@ jobs:
       cpu: '4'
       memory: '4Gi'
       use_sidecar: 'true'
-      benchmark_name: 'channel-scaling-bursty-point-select'
+      client_branch: "${{ inputs.client_branch || 'main' }}"
+      benchmark_name: "${{ inputs.benchmark_name || 'channel-scaling-bursty-point-select' }}"
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
 
   run-select-update-multi-core:
+    if: ${{ github.event_name == 'schedule' || inputs.action == 'all' || inputs.action == 'select-update-multi-core' }}
     uses: ./.github/workflows/benchmark-template.yml
     with:
-      clients: '["java", "go", "rust"]'
+      clients: "${{ inputs.clients != '' && inputs.clients || '[\"java\", \"go\", \"rust\"]' }}"
       benchmark_types: '["select-update"]'
-      duration: '1h'
+      duration: "${{ inputs.duration || '1h' }}"
       load_type: 'spiky'
       tps: '2000'
       threads: '500'
@@ -70,17 +106,19 @@ jobs:
       memory: '4Gi'
       use_sidecar: 'true'
       spanner_num_channels: '16'
-      benchmark_name: 'channel-scaling-bursty-select-update'
+      client_branch: "${{ inputs.client_branch || 'main' }}"
+      benchmark_name: "${{ inputs.benchmark_name || 'channel-scaling-bursty-select-update' }}"
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
 
   run-select-update-single-core:
+    if: ${{ github.event_name == 'schedule' || inputs.action == 'all' || inputs.action == 'select-update-single-core' }}
     uses: ./.github/workflows/benchmark-template.yml
     with:
-      clients: '["node", "python"]'
+      clients: "${{ inputs.clients != '' && inputs.clients || '[\"node\", \"python\"]' }}"
       benchmark_types: '["select-update"]'
-      duration: '1h'
+      duration: "${{ inputs.duration || '1h' }}"
       load_type: 'spiky'
       tps: '100'
       threads: '80'
@@ -90,7 +128,8 @@ jobs:
       cpu: '4'
       memory: '4Gi'
       use_sidecar: 'true'
-      benchmark_name: 'channel-scaling-bursty-select-update'
+      client_branch: "${{ inputs.client_branch || 'main' }}"
+      benchmark_name: "${{ inputs.benchmark_name || 'channel-scaling-bursty-select-update' }}"
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
