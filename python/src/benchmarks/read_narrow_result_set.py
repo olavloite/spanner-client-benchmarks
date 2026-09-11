@@ -38,6 +38,7 @@ class ReadNarrowResultSetBenchmark(AbstractBenchmark):
         burst_factor: float = 1.0,
         burst_duration: float = 1.0,
         burst_fraction: float = 0.1,
+        lazy_decode: bool = False,
     ):
         super().__init__(
             database,
@@ -63,6 +64,7 @@ class ReadNarrowResultSetBenchmark(AbstractBenchmark):
             burst_fraction,
         )
         self.num_rows = num_rows
+        self.lazy_decode = lazy_decode
 
     def get_benchmark_name(self) -> str:
         return "Read Narrow Result Set Benchmark"
@@ -79,6 +81,7 @@ class ReadNarrowResultSetBenchmark(AbstractBenchmark):
     def get_attributes(self) -> dict:
         attrs = super().get_attributes()
         attrs["num_rows"] = self.num_rows
+        attrs["lazy_decode"] = str(self.lazy_decode).lower()
         return attrs
 
     def execute_operation(
@@ -89,6 +92,7 @@ class ReadNarrowResultSetBenchmark(AbstractBenchmark):
                 SQL,
                 params={"num_rows": self.num_rows},
                 param_types={"num_rows": spanner.param_types.INT64},
+                lazy_decode=self.lazy_decode,
             )
 
             row_iterator = iter(results)
@@ -110,3 +114,4 @@ class ReadNarrowResultSetBenchmark(AbstractBenchmark):
             latency_us = (end_time - start_time) * 1000000.0
 
             self.latency_histogram.record(latency_us, self.get_attributes())
+            self._latency_sampler.add(latency_us)
