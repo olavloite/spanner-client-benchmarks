@@ -197,6 +197,12 @@ def main():
         type=float,
         help="Fraction of total time spent in the burst state",
     )
+    workload_parser.add_argument(
+        "--lazy-decode",
+        action="store_true",
+        default=os.environ.get("LAZY_DECODE", "false").lower() in ("true", "1", "yes"),
+        help="Enable lazy decoding of query results in StreamedResultSet",
+    )
 
     # Workload Scenario Subcommands routing
     subparsers = parser.add_subparsers(
@@ -471,6 +477,7 @@ def main():
             burst_factor=burst_factor,
             burst_duration=burst_duration,
             burst_fraction=burst_fraction,
+            lazy_decode=args.lazy_decode,
         )
     elif args.command == "read-narrow-result-set":
         benchmark = ReadNarrowResultSetBenchmark(
@@ -496,6 +503,7 @@ def main():
             burst_factor=burst_factor,
             burst_duration=burst_duration,
             burst_fraction=burst_fraction,
+            lazy_decode=args.lazy_decode,
         )
     elif args.command == "tpcc":
         benchmark = TpccBenchmarkRunner(

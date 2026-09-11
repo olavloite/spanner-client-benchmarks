@@ -105,6 +105,11 @@ on:
         required: false
         type: string
         default: 'main'
+      lazy_decode:
+        description: 'Enable lazy decoding for result sets (true/false)'
+        required: false
+        type: string
+        default: 'false'
     secrets:
       GCP_SA_KEY:
         required: true
@@ -160,4 +165,5 @@ jobs:
           PEAK_FACTOR: ${{ inputs.peak_factor }}
           SPANNER_NUM_CHANNELS: ${{ inputs.spanner_num_channels }}
           CLIENT_BRANCH: ${{ inputs.client_branch }}
+          LAZY_DECODE: ${{ inputs.lazy_decode }}
         run: ./run_benchmark.sh ${{ matrix.client }}

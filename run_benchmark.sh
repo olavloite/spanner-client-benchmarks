@@ -134,6 +134,11 @@ if [ -n "$BURST_FACTOR" ]; then ENV_FLAGS="${ENV_FLAGS},BURST_FACTOR=$BURST_FACT
 if [ -n "$BURST_DURATION" ]; then ENV_FLAGS="${ENV_FLAGS},BURST_DURATION=$BURST_DURATION"; fi
 if [ -n "$BURST_FRACTION" ]; then ENV_FLAGS="${ENV_FLAGS},BURST_FRACTION=$BURST_FRACTION"; fi
 
+if [ "$LAZY_DECODE" = "true" ]; then
+  ARGS="${ARGS},--lazy-decode"
+  ENV_FLAGS="${ENV_FLAGS},LAZY_DECODE=true"
+fi
+
 if [ "$BENCHMARK_TARGET" = "gce" ]; then
   # Determine machine type based on requested CPU if not explicitly provided
   if [ -z "$MACHINE_TYPE" ]; then
