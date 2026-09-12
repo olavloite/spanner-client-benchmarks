@@ -42,6 +42,11 @@ on:
         required: false
         type: string
         default: '1h'
+      tps:
+        description: 'Custom target TPS (optional, overrides preset default if set)'
+        required: false
+        type: string
+        default: ''
       for_alerting:
         description: 'Mark metrics for alerting'
         required: false
@@ -57,7 +62,7 @@ jobs:
       benchmark_types: '["point-select"]'
       duration: "${{ inputs.duration || '1h' }}"
       load_type: 'spiky'
-      tps: '2000'
+      tps: "${{ inputs.tps != '' && inputs.tps || '2000' }}"
       threads: '500'
       burst_factor: '3.8'
       burst_duration: '5.0'
@@ -81,7 +86,7 @@ jobs:
       benchmark_types: '["point-select"]'
       duration: "${{ inputs.duration || '1h' }}"
       load_type: 'spiky'
-      tps: '600'
+      tps: "${{ inputs.tps != '' && inputs.tps || '600' }}"
       threads: '100'
       burst_factor: '3.0'
       burst_duration: '5.0'
@@ -104,7 +109,7 @@ jobs:
       benchmark_types: '["select-update"]'
       duration: "${{ inputs.duration || '1h' }}"
       load_type: 'spiky'
-      tps: '2000'
+      tps: "${{ inputs.tps != '' && inputs.tps || '2000' }}"
       threads: '500'
       burst_factor: '3.8'
       burst_duration: '5.0'
@@ -128,7 +133,7 @@ jobs:
       benchmark_types: '["select-update"]'
       duration: "${{ inputs.duration || '1h' }}"
       load_type: 'spiky'
-      tps: '100'
+      tps: "${{ inputs.tps != '' && inputs.tps || '100' }}"
       threads: '80'
       burst_factor: '3.0'
       burst_duration: '5.0'
