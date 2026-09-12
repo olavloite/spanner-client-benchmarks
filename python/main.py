@@ -160,6 +160,13 @@ def main():
         default=False,
         help="Disable metrics exporting (for testing purposes).",
     )
+    parser.add_argument(
+        "--spanner-enable-channel-pool",
+        action="store_true",
+        default=os.environ.get("SPANNER_ENABLE_CHANNEL_POOL", "false").lower()
+        in ("true", "1", "yes"),
+        help="Enable dynamic gRPC channel pool in the Spanner client",
+    )
 
     # Common workload flags for all subparsers
     workload_parser = argparse.ArgumentParser(add_help=False)
@@ -306,6 +313,8 @@ def main():
     )
 
     args = parser.parse_args()
+    if args.spanner_enable_channel_pool:
+        os.environ["SPANNER_ENABLE_CHANNEL_POOL"] = "true"
 
     # Validation and filling defaults
     burst_factor, burst_duration, burst_fraction, cycle_duration_str, peak_factor = (
@@ -567,6 +576,13 @@ def main():
             shutdown_metrics()
 
         # Close all Spanner client transports and pool cleanly to release threads
+        _safe_call(
+            lambda: (
+                database.channel_pool.close()
+                if getattr(database, "channel_pool", None)
+                else None
+            )
+        )
         _safe_call(lambda: database.pool.close())
         _safe_call(lambda: database.spanner_api.transport.close())
         _safe_call(lambda: spanner_client.database_admin_api.transport.close())

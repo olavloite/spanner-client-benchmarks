@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -26,6 +27,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 )
 
 const (
@@ -474,7 +476,7 @@ func runBenchmark(ctx context.Context, b Benchmark, client *spanner.Client, late
 					}
 					operationCounter.Add(ctx, 1, attributes)
 					if err != nil {
-						if ctx.Err() == nil {
+						if !isContextDone(ctx, err) {
 							log.Printf("Operation failed: %v", err)
 							errorCounter.Add(ctx, 1, attributes)
 						}
@@ -531,7 +533,7 @@ func runClosedLoopBenchmark(ctx context.Context, b Benchmark, client *spanner.Cl
 					}
 					operationCounter.Add(ctx, 1, attributes)
 					if err != nil {
-						if ctx.Err() == nil {
+						if !isContextDone(ctx, err) {
 							log.Printf("Operation failed: %v", err)
 							errorCounter.Add(ctx, 1, attributes)
 						}
@@ -577,4 +579,15 @@ func runSocketTriggeredGenerator(ctx context.Context, socketPath string, tasks c
 			}
 		}
 	}
+}
+
+func isContextDone(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	code := spanner.ErrCode(err)
+	return code == codes.Canceled || code == codes.DeadlineExceeded
 }

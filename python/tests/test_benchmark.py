@@ -445,3 +445,41 @@ class TestBenchmarkWorkloads(BaseBenchmarkTest):
         self.assert_metric_attributes(cpu_metric, expected_attrs)
 
         self.assert_error_count_is_zero(metrics_data, "tpcc", extended="true")
+
+    def test_spanner_channel_pool_flag(self):
+        import os
+
+        args = [
+            "main.py",
+            "-p",
+            "fake-project",
+            "-i",
+            "fake-instance",
+            "-d",
+            "fake-database",
+            "--host",
+            f"localhost:{self.port}",
+            "--duration",
+            "1s",
+            "--resource-probe-interval",
+            "10ms",
+            "--spanner-enable-channel-pool",
+            "point-select",
+            "--table",
+            "test",
+            "--tps",
+            "10",
+        ]
+
+        old_env = os.environ.get("SPANNER_ENABLE_CHANNEL_POOL")
+        try:
+            if "SPANNER_ENABLE_CHANNEL_POOL" in os.environ:
+                del os.environ["SPANNER_ENABLE_CHANNEL_POOL"]
+            with patch("sys.argv", args), patch("os._exit"):
+                main()
+            self.assertEqual(os.environ.get("SPANNER_ENABLE_CHANNEL_POOL"), "true")
+        finally:
+            if old_env is not None:
+                os.environ["SPANNER_ENABLE_CHANNEL_POOL"] = old_env
+            elif "SPANNER_ENABLE_CHANNEL_POOL" in os.environ:
+                del os.environ["SPANNER_ENABLE_CHANNEL_POOL"]
