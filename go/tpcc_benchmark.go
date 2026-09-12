@@ -196,7 +196,7 @@ func executeTPCCBenchmark(ctx context.Context, cmd *cli.Command) error {
 					}
 
 					if err != nil {
-						if durationCtx.Err() == nil {
+						if !isContextDone(durationCtx, err) {
 							log.Printf("TPC-C transaction %s failed: %v", txType, err)
 							errorCounter.Add(runCtx, 1, attr)
 						}

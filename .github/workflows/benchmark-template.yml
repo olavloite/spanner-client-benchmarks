@@ -110,6 +110,11 @@ on:
         required: false
         type: string
         default: 'false'
+      spanner_enable_channel_pool:
+        description: 'Enable dynamic channel pool (true/false)'
+        required: false
+        type: string
+        default: 'false'
     secrets:
       GCP_SA_KEY:
         required: true
@@ -166,4 +171,5 @@ jobs:
           SPANNER_NUM_CHANNELS: ${{ inputs.spanner_num_channels }}
           CLIENT_BRANCH: ${{ inputs.client_branch }}
           LAZY_DECODE: ${{ inputs.lazy_decode }}
+          SPANNER_ENABLE_CHANNEL_POOL: ${{ inputs.spanner_enable_channel_pool }}
         run: ./run_benchmark.sh ${{ matrix.client }}
