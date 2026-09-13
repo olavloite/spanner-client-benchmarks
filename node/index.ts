@@ -1,5 +1,6 @@
 import './src/utils/disable-fetch';
 
+import * as os from 'os';
 import {Command} from 'commander';
 import {
   diag,
@@ -98,7 +99,18 @@ async function main() {
       '--no-metrics',
       'Disable metrics exporting (for testing purposes)',
       false,
-    );
+    )
+    .option(
+      '--workers <workers>',
+      'Number of parallel worker threads to execute the workload across. Defaults to auto (CPU cores - 1) if USE_SIDECAR=true, otherwise 1.',
+    )
+    .option('-t, --table <tableName>', 'Target database table name', 'test')
+    .option('--tps <tps>', 'Target transactions per second throughput')
+    .option(
+      '--threads <threads>',
+      'Parallel async worker pool concurrency limit',
+    )
+    .option('--num-rows <numRows>', 'Number of rows in target database table');
 
   // Point Select Workload Subcommand
   program
@@ -106,17 +118,16 @@ async function main() {
     .description(
       'Execute the single point select workload (implicitly read-only single-use snapshot)',
     )
-    .requiredOption('-t, --table <tableName>', 'Target database table name')
-    .option('--tps <tps>', 'Target transactions per second throughput', '10')
+    .option('-t, --table <tableName>', 'Target database table name')
+    .option('--tps <tps>', 'Target transactions per second throughput')
     .option(
       '--threads <threads>',
       'Parallel async worker pool concurrency limit',
-      '100',
     )
+    .option('--num-rows <numRows>', 'Number of rows in target database table')
     .option(
-      '--num-rows <numRows>',
-      'Number of rows in target database table',
-      '1000000',
+      '--workers <workers>',
+      'Number of parallel worker threads to execute the workload across',
     )
     .action(async subCommandOptions => {
       const globalOptions = program.opts();
@@ -133,17 +144,16 @@ async function main() {
     .description(
       'Execute the read-modify-write select and update workload inside Read-Write Transactions',
     )
-    .requiredOption('-t, --table <tableName>', 'Target database table name')
-    .option('--tps <tps>', 'Target transactions per second throughput', '10')
+    .option('-t, --table <tableName>', 'Target database table name')
+    .option('--tps <tps>', 'Target transactions per second throughput')
     .option(
       '--threads <threads>',
       'Parallel async worker pool concurrency limit',
-      '100',
     )
+    .option('--num-rows <numRows>', 'Number of rows in target database table')
     .option(
-      '--num-rows <numRows>',
-      'Number of rows in target database table',
-      '1000000',
+      '--workers <workers>',
+      'Number of parallel worker threads to execute the workload across',
     )
     .action(async subCommandOptions => {
       const globalOptions = program.opts();
@@ -160,17 +170,16 @@ async function main() {
     .description(
       'Execute the dynamic large result set iteration and client-side decoding workload scenario',
     )
-    .requiredOption('-t, --table <tableName>', 'Target database table name')
-    .option('--tps <tps>', 'Target transactions per second throughput', '0.05')
+    .option('-t, --table <tableName>', 'Target database table name')
+    .option('--tps <tps>', 'Target transactions per second throughput')
     .option(
       '--threads <threads>',
       'Parallel async worker pool concurrency limit',
-      '100',
     )
+    .option('--num-rows <numRows>', 'Number of rows to dynamically generate')
     .option(
-      '--num-rows <numRows>',
-      'Number of rows to dynamically generate',
-      '100000',
+      '--workers <workers>',
+      'Number of parallel worker threads to execute the workload across',
     )
     .action(async subCommandOptions => {
       const globalOptions = program.opts();
@@ -187,17 +196,16 @@ async function main() {
     .description(
       'Execute the dynamic narrow result set iteration and client-side decoding workload scenario',
     )
-    .requiredOption('-t, --table <tableName>', 'Target database table name')
-    .option('--tps <tps>', 'Target transactions per second throughput', '0.05')
+    .option('-t, --table <tableName>', 'Target database table name')
+    .option('--tps <tps>', 'Target transactions per second throughput')
     .option(
       '--threads <threads>',
       'Parallel async worker pool concurrency limit',
-      '100',
     )
+    .option('--num-rows <numRows>', 'Number of rows to dynamically generate')
     .option(
-      '--num-rows <numRows>',
-      'Number of rows to dynamically generate',
-      '200000',
+      '--workers <workers>',
+      'Number of parallel worker threads to execute the workload across',
     )
     .action(async subCommandOptions => {
       const globalOptions = program.opts();
@@ -340,12 +348,51 @@ async function runBenchmarkAction(
 
   const cycleDurationMs = parseDuration(cycleDurationStr);
 
-  const tableName = subOpts.table || '';
-  const numRows = subOpts.numRows ? parseInt(subOpts.numRows, 10) : 1000000;
+  const defaultTps =
+    type === 'read-large-result-set' || type === 'read-narrow-result-set'
+      ? 0.05
+      : 10.0;
+  const defaultNumRows =
+    type === 'read-large-result-set'
+      ? 100000
+      : type === 'read-narrow-result-set'
+        ? 200000
+        : 1000000;
+  const defaultThreads = 100;
+
+  const tableName = subOpts.table || globalOpts.table || 'test';
+  // numRows defaults to 1,000,000 (or 100,000 / 200,000 for large/narrow result set).
+  // Note: the second argument to parseInt is radix 10 (decimal).
+  const numRows = subOpts.numRows
+    ? parseInt(subOpts.numRows, 10)
+    : globalOpts.numRows
+      ? parseInt(globalOpts.numRows, 10)
+      : defaultNumRows;
   const minId = 1;
   const maxId = numRows;
-  const tps = subOpts.tps ? parseFloat(subOpts.tps) : 10.0;
-  const threads = subOpts.threads ? parseInt(subOpts.threads, 10) : 10;
+  const tps = subOpts.tps
+    ? parseFloat(subOpts.tps)
+    : globalOpts.tps
+      ? parseFloat(globalOpts.tps)
+      : defaultTps;
+  const threads = subOpts.threads
+    ? parseInt(subOpts.threads, 10)
+    : globalOpts.threads
+      ? parseInt(globalOpts.threads, 10)
+      : defaultThreads;
+
+  const cpuCount = process.env.BENCHMARK_CPU_LIMIT
+    ? parseFloat(process.env.BENCHMARK_CPU_LIMIT)
+    : os.availableParallelism
+      ? os.availableParallelism()
+      : os.cpus().length;
+  const defaultWorkers =
+    process.env.USE_SIDECAR === 'true'
+      ? Math.max(1, Math.floor(cpuCount) - 1)
+      : 1;
+  const workersStr =
+    subOpts.workers ?? globalOpts.workers ?? process.env.WORKERS;
+  const workers = workersStr ? parseInt(workersStr, 10) : defaultWorkers;
 
   let mockServer: MockSpannerServer | undefined;
   if (globalOpts.mock) {
@@ -437,6 +484,8 @@ async function runBenchmarkAction(
       burstDuration,
       burstFraction,
       globalOpts.mock,
+      workers,
+      host,
     );
   } else if (type === 'select-update') {
     benchmark = new SelectAndUpdateBenchmark(
@@ -461,6 +510,9 @@ async function runBenchmarkAction(
       burstFactor,
       burstDuration,
       burstFraction,
+      globalOpts.mock,
+      workers,
+      host,
     );
   } else if (type === 'read-large-result-set') {
     benchmark = new ReadLargeResultSetBenchmark(
@@ -479,13 +531,16 @@ async function runBenchmarkAction(
       parsedDurationMs,
       forAlerting,
       benchmarkName,
-      maxId,
+      numRows,
       loadType,
       cycleDurationMs,
       peakFactor,
       burstFactor,
       burstDuration,
       burstFraction,
+      globalOpts.mock,
+      workers,
+      host,
     );
   } else if (type === 'read-narrow-result-set') {
     benchmark = new ReadNarrowResultSetBenchmark(
@@ -504,13 +559,16 @@ async function runBenchmarkAction(
       parsedDurationMs,
       forAlerting,
       benchmarkName,
-      maxId,
+      numRows,
       loadType,
       cycleDurationMs,
       peakFactor,
       burstFactor,
       burstDuration,
       burstFraction,
+      globalOpts.mock,
+      workers,
+      host,
     );
   } else if (type === 'tpcc') {
     const warehouses = parseInt(subOpts.warehouses, 10);

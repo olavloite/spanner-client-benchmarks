@@ -58,7 +58,7 @@ jobs:
     if: ${{ github.event_name == 'schedule' || inputs.action == 'all' || inputs.action == 'point-select-multi-core' || inputs.action == '' }}
     uses: ./.github/workflows/benchmark-template.yml
     with:
-      clients: "${{ inputs.clients != '' && inputs.clients || '[\"java\", \"go\", \"rust\"]' }}"
+      clients: "${{ inputs.clients != '' && inputs.clients || '[\"java\", \"go\", \"rust\", \"node\"]' }}"
       benchmark_types: '["point-select"]'
       duration: "${{ inputs.duration || '1h' }}"
       load_type: 'spiky'
@@ -94,6 +94,7 @@ jobs:
       cpu: '4'
       memory: '4Gi'
       use_sidecar: 'true'
+      workers: '1'
       client_branch: "${{ inputs.client_branch || 'main' }}"
       spanner_enable_channel_pool: "${{ inputs.spanner_enable_channel_pool || 'false' }}"
       benchmark_name: "${{ inputs.benchmark_name || 'channel-scaling-bursty-point-select' }}"
@@ -105,7 +106,7 @@ jobs:
     if: ${{ github.event_name == 'schedule' || inputs.action == 'all' || inputs.action == 'select-update-multi-core' }}
     uses: ./.github/workflows/benchmark-template.yml
     with:
-      clients: "${{ inputs.clients != '' && inputs.clients || '[\"java\", \"go\", \"rust\"]' }}"
+      clients: "${{ inputs.clients != '' && inputs.clients || '[\"java\", \"go\", \"rust\", \"node\"]' }}"
       benchmark_types: '["select-update"]'
       duration: "${{ inputs.duration || '1h' }}"
       load_type: 'spiky'
@@ -141,6 +142,7 @@ jobs:
       cpu: '4'
       memory: '4Gi'
       use_sidecar: 'true'
+      workers: '1'
       client_branch: "${{ inputs.client_branch || 'main' }}"
       spanner_enable_channel_pool: "${{ inputs.spanner_enable_channel_pool || 'false' }}"
       benchmark_name: "${{ inputs.benchmark_name || 'channel-scaling-bursty-select-update' }}"
