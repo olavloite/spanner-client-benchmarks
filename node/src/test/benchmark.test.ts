@@ -64,7 +64,7 @@ describe('Node.js Benchmark Integration Tests', () => {
   });
 
   after(async () => {
-    console.log('Teardown: closing database session pool...');
+    console.log('Teardown: closing database client...');
     await database.close();
     console.log('Teardown: stopping mockServer...');
     await mockServer.stop();
@@ -860,5 +860,271 @@ describe('Node.js Benchmark Integration Tests', () => {
     });
 
     assertErrorCountIsZero(metricsData, 'tpcc');
+  });
+
+  it('should execute Point Select workload cleanly with multiple worker threads (workers=3)', async () => {
+    const meter = provider.getMeter('spanner-benchmark');
+    const latHist = meter.createHistogram('spanner_client_benchmarks/latency');
+    const opCount = meter.createCounter(
+      'spanner_client_benchmarks/operation_count',
+    );
+    const errCount = meter.createCounter(
+      'spanner_client_benchmarks/error_count',
+    );
+    const memHist = meter.createHistogram(
+      'spanner_client_benchmarks/memory_usage',
+    );
+    const cpuHist = meter.createHistogram(
+      'spanner_client_benchmarks/cpu_utilization',
+    );
+
+    const benchmark = new PointSelectBenchmark(
+      database,
+      latHist,
+      opCount,
+      errCount,
+      memHist,
+      cpuHist,
+      '10ms',
+      'test',
+      1,
+      100,
+      10,
+      5,
+      1000,
+      false,
+      'multi-worker-point-select',
+      LoadType.Steady,
+      null,
+      2.0,
+      1.0,
+      1.0,
+      0.1,
+      false,
+      3,
+      `127.0.0.1:${port}`,
+    );
+
+    await benchmark.run();
+
+    const reqs = await waitForRequests(1);
+    assert.ok(reqs.length > 0, 'Should have received at least one request');
+    const sqlReq = reqs.find(
+      r => r.sql === 'SELECT * FROM test WHERE id = @id',
+    );
+    assert.ok(sqlReq, 'Should have executed the Point Select query');
+
+    await reader.forceFlush();
+    const metricsData = exporter.getMetrics();
+    assertResourceMetrics(metricsData);
+
+    const countMetric = findMetric(
+      metricsData,
+      'spanner_client_benchmarks/operation_count',
+    );
+    assertMetricAttributes(countMetric, {
+      client: 'node-client',
+      benchmark_type: 'point-select',
+    });
+
+    assertErrorCountIsZero(metricsData, 'point-select');
+  });
+
+  it('should execute Select and Update workload cleanly with multiple worker threads (workers=3)', async () => {
+    const meter = provider.getMeter('spanner-benchmark');
+    const latHist = meter.createHistogram('spanner_client_benchmarks/latency');
+    const opCount = meter.createCounter(
+      'spanner_client_benchmarks/operation_count',
+    );
+    const errCount = meter.createCounter(
+      'spanner_client_benchmarks/error_count',
+    );
+    const memHist = meter.createHistogram(
+      'spanner_client_benchmarks/memory_usage',
+    );
+    const cpuHist = meter.createHistogram(
+      'spanner_client_benchmarks/cpu_utilization',
+    );
+
+    const benchmark = new SelectAndUpdateBenchmark(
+      database,
+      latHist,
+      opCount,
+      errCount,
+      memHist,
+      cpuHist,
+      '10ms',
+      'test',
+      1,
+      100,
+      10,
+      5,
+      1000,
+      false,
+      'multi-worker-select-update',
+      LoadType.Steady,
+      null,
+      2.0,
+      1.0,
+      1.0,
+      0.1,
+      false,
+      3,
+      `127.0.0.1:${port}`,
+    );
+
+    await benchmark.run();
+
+    const reqs = await waitForRequests(2);
+    assert.ok(reqs.length >= 2);
+
+    await reader.forceFlush();
+    const metricsData = exporter.getMetrics();
+    assertResourceMetrics(metricsData);
+
+    const countMetric = findMetric(
+      metricsData,
+      'spanner_client_benchmarks/operation_count',
+    );
+    assertMetricAttributes(countMetric, {
+      client: 'node-client',
+      benchmark_type: 'select-update',
+    });
+
+    assertErrorCountIsZero(metricsData, 'select-update');
+  });
+
+  it('should execute Read Large Result Set workload cleanly with multiple worker threads (workers=3)', async () => {
+    const meter = provider.getMeter('spanner-benchmark');
+    const latHist = meter.createHistogram(
+      'spanner_client_benchmarks/read_latency',
+    );
+    const opCount = meter.createCounter(
+      'spanner_client_benchmarks/operation_count',
+    );
+    const errCount = meter.createCounter(
+      'spanner_client_benchmarks/error_count',
+    );
+    const memHist = meter.createHistogram(
+      'spanner_client_benchmarks/memory_usage',
+    );
+    const cpuHist = meter.createHistogram(
+      'spanner_client_benchmarks/cpu_utilization',
+    );
+
+    const benchmark = new ReadLargeResultSetBenchmark(
+      database,
+      latHist,
+      opCount,
+      errCount,
+      memHist,
+      cpuHist,
+      '10ms',
+      'test',
+      1,
+      100,
+      10,
+      5,
+      1000,
+      false,
+      'multi-worker-large-result',
+      10,
+      LoadType.Steady,
+      null,
+      2.0,
+      1.0,
+      1.0,
+      0.1,
+      false,
+      3,
+      `127.0.0.1:${port}`,
+    );
+
+    await benchmark.run();
+
+    const reqs = await waitForRequests(1);
+    assert.ok(reqs.length >= 1);
+
+    await reader.forceFlush();
+    const metricsData = exporter.getMetrics();
+    assertResourceMetrics(metricsData);
+
+    const countMetric = findMetric(
+      metricsData,
+      'spanner_client_benchmarks/operation_count',
+    );
+    assertMetricAttributes(countMetric, {
+      client: 'node-client',
+      benchmark_type: 'read-large-result-set',
+    });
+
+    assertErrorCountIsZero(metricsData, 'read-large-result-set');
+  });
+
+  it('should execute Read Narrow Result Set workload cleanly with multiple worker threads (workers=3)', async () => {
+    const meter = provider.getMeter('spanner-benchmark');
+    const latHist = meter.createHistogram(
+      'spanner_client_benchmarks/read_latency',
+    );
+    const opCount = meter.createCounter(
+      'spanner_client_benchmarks/operation_count',
+    );
+    const errCount = meter.createCounter(
+      'spanner_client_benchmarks/error_count',
+    );
+    const memHist = meter.createHistogram(
+      'spanner_client_benchmarks/memory_usage',
+    );
+    const cpuHist = meter.createHistogram(
+      'spanner_client_benchmarks/cpu_utilization',
+    );
+
+    const benchmark = new ReadNarrowResultSetBenchmark(
+      database,
+      latHist,
+      opCount,
+      errCount,
+      memHist,
+      cpuHist,
+      '10ms',
+      'test',
+      1,
+      100,
+      10,
+      5,
+      1000,
+      false,
+      'multi-worker-narrow-result',
+      10,
+      LoadType.Steady,
+      null,
+      2.0,
+      1.0,
+      1.0,
+      0.1,
+      false,
+      3,
+      `127.0.0.1:${port}`,
+    );
+
+    await benchmark.run();
+
+    const reqs = await waitForRequests(1);
+    assert.ok(reqs.length >= 1);
+
+    await reader.forceFlush();
+    const metricsData = exporter.getMetrics();
+    assertResourceMetrics(metricsData);
+
+    const countMetric = findMetric(
+      metricsData,
+      'spanner_client_benchmarks/operation_count',
+    );
+    assertMetricAttributes(countMetric, {
+      client: 'node-client',
+      benchmark_type: 'read-narrow-result-set',
+    });
+
+    assertErrorCountIsZero(metricsData, 'read-narrow-result-set');
   });
 });

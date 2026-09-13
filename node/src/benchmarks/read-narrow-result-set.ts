@@ -7,8 +7,53 @@ const SQL = `SELECT
   FARM_FINGERPRINT(GENERATE_UUID()) AS random_int64_2
 FROM UNNEST(GENERATE_ARRAY(1, @num_rows)) AS n`;
 
+export async function executeReadNarrowResultSet(
+  database: Database,
+  numRows: number,
+): Promise<number> {
+  const query = {
+    sql: SQL,
+    params: {
+      num_rows: numRows,
+    },
+    types: {
+      num_rows: 'int64',
+    },
+  };
+
+  const stream = database.runStream(query);
+
+  let firstRowDecoded = false;
+  let startTimeNs = 0n;
+  let durationUs = 0;
+
+  await new Promise<void>((resolve, reject) => {
+    stream
+      .on('data', row => {
+        row.toJSON({wrapNumbers: true});
+
+        if (!firstRowDecoded) {
+          firstRowDecoded = true;
+          startTimeNs = process.hrtime.bigint();
+        }
+      })
+      .on('end', () => {
+        if (firstRowDecoded) {
+          const endTimeNs = process.hrtime.bigint();
+          durationUs = Number(endTimeNs - startTimeNs) / 1000;
+        }
+        resolve();
+      })
+      .on('error', err => {
+        reject(err);
+      });
+  });
+
+  return durationUs;
+}
+
 export class ReadNarrowResultSetBenchmark extends AbstractBenchmark {
-  private numRows: number;
+  public numRows: number;
 
   constructor(
     database: Database,
@@ -34,6 +79,8 @@ export class ReadNarrowResultSetBenchmark extends AbstractBenchmark {
     burstDuration = 1.0,
     burstFraction = 0.1,
     isMock = false,
+    workers = 1,
+    host?: string,
   ) {
     super(
       database,
@@ -58,6 +105,8 @@ export class ReadNarrowResultSetBenchmark extends AbstractBenchmark {
       burstDuration,
       burstFraction,
       isMock,
+      workers,
+      host,
     );
     this.numRows = numRows;
   }
@@ -91,42 +140,9 @@ export class ReadNarrowResultSetBenchmark extends AbstractBenchmark {
     minId: number,
     maxId: number,
   ): Promise<void> {
-    const query = {
-      sql: SQL,
-      params: {
-        num_rows: this.numRows,
-      },
-      types: {
-        num_rows: 'int64',
-      },
-    };
-
-    const stream = database.runStream(query);
-
-    let firstRowDecoded = false;
-    let startTimeNs = 0n;
-
-    await new Promise<void>((resolve, reject) => {
-      stream
-        .on('data', row => {
-          row.toJSON({wrapNumbers: true});
-
-          if (!firstRowDecoded) {
-            firstRowDecoded = true;
-            startTimeNs = process.hrtime.bigint();
-          }
-        })
-        .on('end', () => {
-          if (firstRowDecoded) {
-            const endTimeNs = process.hrtime.bigint();
-            const durationUs = Number(endTimeNs - startTimeNs) / 1000;
-            this.latencyHistogram.record(durationUs, this.getAttributes());
-          }
-          resolve();
-        })
-        .on('error', err => {
-          reject(err);
-        });
-    });
+    const durationUs = await executeReadNarrowResultSet(database, this.numRows);
+    if (this.latencyHistogram && durationUs > 0) {
+      this.latencyHistogram.record(durationUs, this.getAttributes());
+    }
   }
 }

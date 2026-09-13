@@ -115,6 +115,11 @@ on:
         required: false
         type: string
         default: 'false'
+      workers:
+        description: 'Number of worker threads (optional)'
+        required: false
+        type: string
+        default: ''
     secrets:
       GCP_SA_KEY:
         required: true
@@ -172,4 +177,5 @@ jobs:
           CLIENT_BRANCH: ${{ inputs.client_branch }}
           LAZY_DECODE: ${{ inputs.lazy_decode }}
           SPANNER_ENABLE_CHANNEL_POOL: ${{ inputs.spanner_enable_channel_pool }}
+          WORKERS: ${{ inputs.workers }}
         run: ./run_benchmark.sh ${{ matrix.client }}

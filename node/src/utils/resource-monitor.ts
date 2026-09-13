@@ -70,7 +70,8 @@ export class ResourceMonitor {
     try {
       const mem = process.memoryUsage();
       if (this.memoryUsageHistogram) {
-        this.memoryUsageHistogram.record(mem.heapUsed, this.attributes);
+        // Record total Resident Set Size (RSS) across all worker threads and V8 isolates
+        this.memoryUsageHistogram.record(mem.rss, this.attributes);
       }
 
       if (this.lastCpuUsage && this.lastWallTime > 0n) {

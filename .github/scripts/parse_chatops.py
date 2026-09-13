@@ -75,6 +75,7 @@ RESPONSE_SCHEMA = {
                     "warehouses": {"type": "STRING"},
                     "items": {"type": "STRING"},
                     "clients": {"type": "STRING"},
+                    "workers": {"type": "STRING"},
                 },
                 "required": ["client_type", "client_branch", "benchmark_type"],
             },
@@ -127,6 +128,7 @@ def sanitize_run(run):
     warehouses = sanitize_value(run.get("warehouses"), INT_PATTERN, "")
     items = sanitize_value(run.get("items"), INT_PATTERN, "")
     clients = sanitize_value(run.get("clients"), INT_PATTERN, "")
+    workers = sanitize_value(run.get("workers"), INT_PATTERN, "")
 
     return {
         "client_type": client,
@@ -147,6 +149,7 @@ def sanitize_run(run):
         "warehouses": warehouses,
         "items": items,
         "clients": clients,
+        "workers": workers,
         "for_alerting": "false",
     }
 
