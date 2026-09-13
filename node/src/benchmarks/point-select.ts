@@ -2,6 +2,38 @@ import {Database} from '@google-cloud/spanner';
 import {AbstractBenchmark} from './abstract-benchmark';
 
 /**
+ * Executes a single point-select query.
+ */
+export async function executePointSelect(
+  database: Database,
+  tableName: string,
+  minId: number,
+  maxId: number,
+): Promise<void> {
+  // Pick random ID in range [minId, maxId] (inclusive)
+  const randomId = Math.floor(Math.random() * (maxId - minId + 1)) + minId;
+
+  const query = {
+    sql: `SELECT * FROM ${tableName} WHERE id = @id`,
+    params: {
+      id: randomId,
+    },
+    types: {
+      id: 'int64',
+    },
+  };
+
+  // Execute statement on the database using a single-use read-only context implicitly
+  const [rows] = await database.run(query);
+
+  // Consume all rows and call toJSON to simulate complete object allocation/decoding
+  // and prevent modern JS engines from optimizing out unused variables.
+  for (const row of rows) {
+    row.toJSON();
+  }
+}
+
+/**
  * Implements a 1-to-1 parity Point Select benchmark workload.
  * Picks a random ID between minId and maxId and executes an optimized point-select query.
  */
@@ -23,26 +55,6 @@ export class PointSelectBenchmark extends AbstractBenchmark {
     minId: number,
     maxId: number,
   ): Promise<void> {
-    // Pick random ID in range [minId, maxId] (inclusive)
-    const randomId = Math.floor(Math.random() * (maxId - minId + 1)) + minId;
-
-    const query = {
-      sql: `SELECT * FROM ${tableName} WHERE id = @id`,
-      params: {
-        id: randomId,
-      },
-      types: {
-        id: 'int64',
-      },
-    };
-
-    // Execute statement on the database using a single-use read-only context implicitly
-    const [rows] = await database.run(query);
-
-    // Consume all rows and call toJSON to simulate complete object allocation/decoding
-    // and prevent modern JS engines from optimizing out unused variables.
-    for (const row of rows) {
-      row.toJSON();
-    }
+    return executePointSelect(database, tableName, minId, maxId);
   }
 }

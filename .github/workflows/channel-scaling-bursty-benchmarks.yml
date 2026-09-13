@@ -58,7 +58,7 @@ jobs:
     if: ${{ github.event_name == 'schedule' || inputs.action == 'all' || inputs.action == 'point-select-multi-core' || inputs.action == '' }}
     uses: ./.github/workflows/benchmark-template.yml
     with:
-      clients: "${{ inputs.clients != '' && inputs.clients || '[\"java\", \"go\", \"rust\"]' }}"
+      clients: "${{ inputs.clients != '' && inputs.clients || '[\"java\", \"go\", \"rust\", \"node\"]' }}"
       benchmark_types: '["point-select"]'
       duration: "${{ inputs.duration || '1h' }}"
       load_type: 'spiky'
@@ -105,7 +105,7 @@ jobs:
     if: ${{ github.event_name == 'schedule' || inputs.action == 'all' || inputs.action == 'select-update-multi-core' }}
     uses: ./.github/workflows/benchmark-template.yml
     with:
-      clients: "${{ inputs.clients != '' && inputs.clients || '[\"java\", \"go\", \"rust\"]' }}"
+      clients: "${{ inputs.clients != '' && inputs.clients || '[\"java\", \"go\", \"rust\", \"node\"]' }}"
       benchmark_types: '["select-update"]'
       duration: "${{ inputs.duration || '1h' }}"
       load_type: 'spiky'
