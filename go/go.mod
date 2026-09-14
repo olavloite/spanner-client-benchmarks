@@ -3,8 +3,8 @@ module spanner-go-benchmark
 go 1.26.0
 
 require (
-	cloud.google.com/go/spanner v1.95.0
-	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.61.0
+	cloud.google.com/go/spanner v1.95.1
+	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.62.0
 	github.com/google/uuid v1.6.0
 	github.com/urfave/cli/v3 v3.11.0
 	go.opentelemetry.io/otel v1.46.0
@@ -26,7 +26,7 @@ require (
 	cloud.google.com/go/monitoring v1.30.0 // indirect
 	github.com/GoogleCloudPlatform/grpc-gcp-go/grpcgcp v1.6.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.33.0 // indirect
-	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.61.0 // indirect
+	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.62.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0 // indirect
