@@ -21,7 +21,7 @@ The benchmarks are built and run against the **most recent source code** of thei
 All benchmarks support the following workload scenarios:
 
 ### Point Query (`point-select`)
-Executes a single row read based on a randomly selected primary key value using a query parameter. Measures raw read latency.
+Executes a single row read based on a randomly selected primary key value using a query parameter within a single-use read-only transaction with an exact staleness of 15 seconds. Measures raw client-side read latency.
 
 ### Select and Update (`select-update`)
 A read-modify-write scenario executed inside a Read-Write Transaction. Reads a row and updates its payload with a random string.

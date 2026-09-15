@@ -1,3 +1,4 @@
+import datetime
 import random
 
 from google.cloud import spanner
@@ -27,8 +28,10 @@ class PointSelectBenchmark(AbstractBenchmark):
 
         sql = f"SELECT * FROM {table_name} WHERE id = @id"
 
-        # Allocate a single-use read-only snapshot context (parity with other languages)
-        with database.snapshot() as snapshot:
+        # Allocate a single-use read-only snapshot context with exact staleness of 15 seconds
+        with database.snapshot(
+            exact_staleness=datetime.timedelta(seconds=15), multi_use=False
+        ) as snapshot:
             results = snapshot.execute_sql(
                 sql,
                 params={"id": random_id},

@@ -3,7 +3,9 @@ use futures::future::BoxFuture;
 use google_cloud_spanner::client::DatabaseClient;
 use google_cloud_spanner::result::ResultSet;
 use google_cloud_spanner::statement::Statement;
+use google_cloud_spanner::transaction::TimestampBound;
 use std::hint::black_box;
+use std::time::Duration;
 
 pub fn execute_point_select(
     client: DatabaseClient,
@@ -16,7 +18,10 @@ pub fn execute_point_select(
         let sql = format!("SELECT id, value FROM {} WHERE id = @id", table);
         let statement = Statement::builder(&sql).add_param("id", &random_id).build();
 
-        let transaction = client.single_use().build();
+        let transaction = client
+            .single_use()
+            .set_timestamp_bound(TimestampBound::exact_staleness(Duration::from_secs(15)))
+            .build();
         let mut result_set: ResultSet = transaction.execute_query(statement).await?;
         while let Some(row) = result_set.next().await.transpose()? {
             let _: i64 = black_box(row.get(0_usize));
