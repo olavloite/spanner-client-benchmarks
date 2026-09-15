@@ -3,11 +3,14 @@ package com.google.cloud.spanner.benchmark;
 import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.ResultSet;
 import com.google.cloud.spanner.Statement;
+import com.google.cloud.spanner.TimestampBound;
 import io.opentelemetry.api.metrics.DoubleHistogram;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.LongHistogram;
 import java.time.Duration;
+import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 public class PointSelectBenchmark extends AbstractBenchmark {
 
@@ -69,9 +72,12 @@ public class PointSelectBenchmark extends AbstractBenchmark {
     Statement statement = Statement.newBuilder(sql).bind("id").to(id).build();
 
     int dummy = 0;
-    try (ResultSet resultSet = client.singleUse().executeQuery(statement)) {
+    try (ResultSet resultSet =
+        client
+            .singleUse(TimestampBound.ofExactStaleness(15, TimeUnit.SECONDS))
+            .executeQuery(statement)) {
       while (resultSet.next()) {
-        dummy += java.util.Objects.hashCode(resultSet.getValue(0));
+        dummy += Objects.hashCode(resultSet.getValue(0));
       }
     }
     if (dummy == 0xDEADBEEF) {

@@ -91,8 +91,8 @@ A read-only scenario that selects a single random row based on a randomly genera
 ```sql
 SELECT * FROM {table_name} WHERE id = @id
 ```
-- Executed under a **single-use read-only snapshot** context.
-- Measures the raw read latency of the client library and connection pools.
+- Executed under a **single-use read-only transaction with an exact staleness of 15 seconds**.
+- Measures the raw client-side read latency of the client library and connection pools, avoiding backend latency variations introduced by strong reads.
 
 ### 2. Select and Update (`select-update`)
 A read-modify-write scenario executed inside a **Read-Write Transaction**:

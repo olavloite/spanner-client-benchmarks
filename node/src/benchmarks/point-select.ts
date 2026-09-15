@@ -23,8 +23,8 @@ export async function executePointSelect(
     },
   };
 
-  // Execute statement on the database using a single-use read-only context implicitly
-  const [rows] = await database.run(query);
+  // Execute statement on the database using a single-use read-only context with exact staleness of 15s
+  const [rows] = await database.run(query, {exactStaleness: 15000});
 
   // Consume all rows and call toJSON to simulate complete object allocation/decoding
   // and prevent modern JS engines from optimizing out unused variables.

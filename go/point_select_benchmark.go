@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
@@ -18,7 +19,7 @@ func (b *PointSelectBenchmark) Execute(ctx context.Context, client *spanner.Clie
 	randomId := rand.Int63n(maxId-minId+1) + minId
 	sql := fmt.Sprintf("SELECT * FROM %s WHERE id = @id", tableName)
 
-	iter := client.Single().Query(ctx, spanner.Statement{
+	iter := client.Single().WithTimestampBound(spanner.ExactStaleness(15*time.Second)).Query(ctx, spanner.Statement{
 		SQL:    sql,
 		Params: map[string]interface{}{"id": randomId},
 	})
