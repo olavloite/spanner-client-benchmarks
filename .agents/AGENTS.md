@@ -101,6 +101,7 @@ Before you state that a task is complete, you **MUST** run the code formatters, 
 * **Manage File Size**: Do not create excessively large source files unless strictly necessary. Separate distinct business concerns and logic into distinct, modular files. Ensure code that naturally belongs together resides in the same file.
 * **Idiomatic Code**: Always write clean, idiomatic code that aligns with the established standards and best practices of the target language.
 * **Use Imports**: Add explicit imports instead of using fully qualified type names in source code across all languages (e.g., use `import com.google.cloud.spanner.Options;` instead of writing `com.google.cloud.spanner.Options.tag(...)` inline).
+* **Cloud Spanner Sessions (Multiplexed Sessions)**: Do NOT add comments or references to 'session pool'. ALL Spanner clients use a single multiplexed session for ALL operations. While some client implementations still retain a legacy session pool implementation as a potential fallback, it is disabled by default in ALL Spanner clients.
 
 
 ### 2. Rust-Specific Guidelines

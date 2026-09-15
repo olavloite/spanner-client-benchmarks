@@ -1,43 +1,35 @@
 import {Database} from '@google-cloud/spanner';
 import {Histogram, Counter} from '@opentelemetry/api';
-import {
-  executeNewOrder,
-  executePayment,
-  executeOrderStatus,
-  executeDelivery,
-  executeStockLevel,
-  executeNewOrderMutations,
-  executePaymentMutationsDirect,
-  executeOrderStatusReads,
-  executeStockLevelPartitioned,
-} from './transactions';
-import {ResourceMonitor} from '../../utils/resource-monitor';
+import {AbstractBenchmark, LoadType} from '../abstract-benchmark';
+import {BenchmarkWorkerData} from '../benchmark-worker';
+import {executeTpccTransaction} from './transactions';
 
-export class TpccBenchmarkRunner {
-  private database: Database;
-  private latencyHistogram: Histogram;
-  private operationCounter: Counter;
-  private errorCounter: Counter;
-  private memoryUsageHistogram: Histogram | null;
-  private cpuUtilizationHistogram: Histogram | null;
-  private resourceProbeIntervalStr: string;
-  private resourceMonitor: ResourceMonitor | null = null;
+/**
+ * TPC-C Benchmark Runner for Node.js Cloud Spanner Client.
+ *
+ * Architecture & Execution Model:
+ * --------------------------------
+ * TPC-C is a standard closed-loop online transaction processing (OLTP) benchmark simulating
+ * a wholesale supplier environment across multiple warehouses, districts, and customers.
+ *
+ * Integration with AbstractBenchmark:
+ * - Load Model: Runs with `LoadType.ClosedLoop`, where transactions are continuously issued
+ *   to maintain a target concurrency of `clients` in-flight requests.
+ * - Multi-Worker Scaling: When `workers > 1`, `AbstractBenchmark` creates a pool of Node.js
+ *   `worker_threads` (each with an isolated V8 heap, libuv event loop, and dedicated Spanner client).
+ *   The main coordinator thread seeds `clients` tasks across the worker pool and immediately
+ *   dispatches a replacement task whenever a worker finishes a transaction.
+ * - Dynamic Transaction Attributes: Unlike synthetic benchmarks with static query shapes,
+ *   TPC-C transactions execute different business operations (`new_order`, `payment`, etc.).
+ *   Workers execute each transaction and return its `txType` string to the coordinator,
+ *   which records the execution latency into the corresponding OpenTelemetry metric attributes.
+ */
+export class TpccBenchmarkRunner extends AbstractBenchmark {
   private scaleFactor: number;
-  private clients: number;
   private items: number;
-  private durationMs: number | null;
   private extended: boolean;
-  private attrNewOrder: Record<string, any>;
-  private attrNewOrderMutations: Record<string, any>;
-  private attrPayment: Record<string, any>;
-  private attrPaymentMutationsDirect: Record<string, any>;
-  private attrOrderStatus: Record<string, any>;
-  private attrOrderStatusReads: Record<string, any>;
-  private attrDelivery: Record<string, any>;
-  private attrStockLevel: Record<string, any>;
-  private attrStockLevelPartitioned: Record<string, any>;
+  private txAttributes: Record<string, Record<string, any>>;
   private baseAttributes: Record<string, any>;
-  private isStopped = false;
 
   constructor(
     database: Database,
@@ -54,19 +46,48 @@ export class TpccBenchmarkRunner {
     forAlerting: boolean,
     benchmarkName: string,
     extended = false,
+    workers = 1,
+    host?: string,
   ) {
-    this.database = database;
-    this.latencyHistogram = latencyHistogram;
-    this.operationCounter = operationCounter;
-    this.errorCounter = errorCounter;
-    this.memoryUsageHistogram = memoryUsageHistogram;
-    this.cpuUtilizationHistogram = cpuUtilizationHistogram;
-    this.resourceProbeIntervalStr = resourceProbeIntervalStr;
+    // AbstractBenchmark constructor parameters explanation:
+    // - tableName: 'warehouse' is passed as a nominal placeholder table name because TPC-C
+    //   operates across 9 distinct relational tables (warehouse, district, customer, orders, etc.).
+    // - minId / maxId: (1, 1) are unused placeholder values because TPC-C key ranges are
+    //   dynamically generated per transaction according to warehouse and item distributions.
+    // - tps: 0 is passed because arrival rates are self-paced by concurrency in closed-loop mode.
+    // - threads: `clients` represents the closed-loop concurrency limit (number of in-flight requests).
+    // - loadType: LoadType.ClosedLoop keeps `clients` tasks in flight without Poisson rate-limiting.
+    // - Poisson/burst parameters (cycleDurationMs, peakFactor, burstFactor, etc.) are unused placeholders.
+    super(
+      database,
+      latencyHistogram,
+      operationCounter,
+      errorCounter,
+      memoryUsageHistogram,
+      cpuUtilizationHistogram,
+      resourceProbeIntervalStr,
+      'warehouse', // tableName: nominal placeholder table name
+      1, // minId: unused placeholder
+      1, // maxId: unused placeholder
+      0, // tps: unused in closed-loop mode
+      clients, // threads: target in-flight concurrency (number of parallel clients)
+      durationMs,
+      forAlerting,
+      benchmarkName,
+      LoadType.ClosedLoop,
+      null, // cycleDurationMs: unused in closed-loop mode
+      2.0, // peakFactor: unused in closed-loop mode
+      1.0, // burstFactor: unused in closed-loop mode
+      1.0, // burstDuration: unused in closed-loop mode
+      0.1, // burstFraction: unused in closed-loop mode
+      false, // isMock
+      workers, // workers: number of worker threads to distribute load across
+      host,
+    );
     this.scaleFactor = scaleFactor;
-    this.clients = clients;
     this.items = items;
-    this.durationMs = durationMs;
     this.extended = extended;
+
     this.baseAttributes = {
       benchmark_type: 'tpcc',
       for_alerting: forAlerting,
@@ -77,41 +98,114 @@ export class TpccBenchmarkRunner {
     if (extended) {
       this.baseAttributes.extended = true;
     }
-    this.attrNewOrder = {...this.baseAttributes, transaction_type: 'new_order'};
-    this.attrNewOrderMutations = {
-      ...this.baseAttributes,
-      transaction_type: 'new_order_mutations',
-    };
-    this.attrPayment = {...this.baseAttributes, transaction_type: 'payment'};
-    this.attrPaymentMutationsDirect = {
-      ...this.baseAttributes,
-      transaction_type: 'payment_mutations_direct',
-    };
-    this.attrOrderStatus = {
-      ...this.baseAttributes,
-      transaction_type: 'order_status',
-    };
-    this.attrOrderStatusReads = {
-      ...this.baseAttributes,
-      transaction_type: 'order_status_reads',
-    };
-    this.attrDelivery = {...this.baseAttributes, transaction_type: 'delivery'};
-    this.attrStockLevel = {
-      ...this.baseAttributes,
-      transaction_type: 'stock_level',
-    };
-    this.attrStockLevelPartitioned = {
-      ...this.baseAttributes,
-      transaction_type: 'stock_level_partitioned',
+    this.attributes = this.baseAttributes;
+
+    this.txAttributes = {
+      new_order: {...this.baseAttributes, transaction_type: 'new_order'},
+      new_order_mutations: {
+        ...this.baseAttributes,
+        transaction_type: 'new_order_mutations',
+      },
+      payment: {...this.baseAttributes, transaction_type: 'payment'},
+      payment_mutations_direct: {
+        ...this.baseAttributes,
+        transaction_type: 'payment_mutations_direct',
+      },
+      order_status: {...this.baseAttributes, transaction_type: 'order_status'},
+      order_status_reads: {
+        ...this.baseAttributes,
+        transaction_type: 'order_status_reads',
+      },
+      delivery: {...this.baseAttributes, transaction_type: 'delivery'},
+      stock_level: {...this.baseAttributes, transaction_type: 'stock_level'},
+      stock_level_partitioned: {
+        ...this.baseAttributes,
+        transaction_type: 'stock_level_partitioned',
+      },
     };
   }
 
-  public async run(): Promise<void> {
-    console.log(
-      `Starting TPC-C Benchmark with Scale Factor (Warehouses): ${this.scaleFactor}, Parallel Clients: ${this.clients}, Items: ${this.items}${this.extended ? ' [EXTENDED MODE]' : ''}`,
-    );
+  public getName(): string {
+    return 'TPC-C Benchmark';
+  }
 
-    this.startResourceMonitoring();
+  public getType(): string {
+    return 'tpcc';
+  }
+
+  /**
+   * Resolves OpenTelemetry metric attributes for a completed TPC-C task.
+   * If the worker reported a specific transaction type (e.g. 'new_order', 'payment'),
+   * returns the corresponding pre-computed attribute map; otherwise falls back to baseAttributes.
+   */
+  protected override getAttributesForTask(msg?: any): Record<string, any> {
+    if (msg?.txType && this.txAttributes[msg.txType]) {
+      return this.txAttributes[msg.txType];
+    }
+    return this.baseAttributes;
+  }
+
+  /**
+   * Extends the base worker initialization payload with TPC-C specific parameters
+   * (scaleFactor, items, and extended mode) transferred via structured cloning.
+   */
+  protected override getWorkerData(
+    workerId: number,
+    config: {
+      projectId: string;
+      instanceId: string;
+      databaseId: string;
+      host?: string;
+      databaseOptions?: Record<string, any>;
+    },
+  ): BenchmarkWorkerData {
+    return {
+      ...super.getWorkerData(workerId, config),
+      scaleFactor: this.scaleFactor,
+      items: this.items,
+      extended: this.extended,
+    };
+  }
+
+  /**
+   * Executes a single TPC-C transaction on the main thread (used when running with workers = 1).
+   * In multi-worker mode (workers > 1), transactions are executed inside worker threads.
+   */
+  protected override async executeTask(
+    database: Database,
+    _tableName: string,
+    _minId: number,
+    _maxId: number,
+  ): Promise<{txType: string}> {
+    const txType = await executeTpccTransaction(
+      database,
+      this.scaleFactor,
+      this.items,
+      this.extended,
+    );
+    return {txType};
+  }
+
+  /**
+   * Implements IBenchmark interface by delegating to executeTask.
+   */
+  public async execute(
+    database: Database,
+    tableName: string,
+    minId: number,
+    maxId: number,
+  ): Promise<void> {
+    await this.executeTask(database, tableName, minId, maxId);
+  }
+
+  /**
+   * Verifies database capacity (checking that warehouse count >= scaleFactor)
+   * before starting the benchmark execution loop.
+   */
+  public override async run(): Promise<void> {
+    console.log(
+      `Starting TPC-C Benchmark with Scale Factor (Warehouses): ${this.scaleFactor}, Parallel Clients: ${this.threads}, Items: ${this.items}${this.extended ? ' [EXTENDED MODE]' : ''}`,
+    );
 
     // Assert database capacity
     const query = {sql: 'SELECT COUNT(*) AS cnt FROM warehouse'};
@@ -127,155 +221,8 @@ export class TpccBenchmarkRunner {
       }
     }
 
-    const startTime = Date.now();
-    let timeoutId: NodeJS.Timeout | null = null;
-    if (this.durationMs !== null) {
-      timeoutId = setTimeout(() => {
-        console.log('TPC-C duration complete. Shutting down pool...');
-        this.stop();
-      }, this.durationMs);
-    }
-
-    const promises: Promise<void>[] = [];
-    for (let i = 0; i < this.clients; i++) {
-      promises.push(this.workerLoop(startTime));
-    }
-
-    await Promise.all(promises);
-    if (timeoutId) clearTimeout(timeoutId);
-    console.log('TPC-C benchmark execution complete.');
-  }
-
-  private async workerLoop(startTime: number): Promise<void> {
-    while (!this.isStopped) {
-      if (
-        this.durationMs !== null &&
-        Date.now() - startTime >= this.durationMs
-      ) {
-        break;
-      }
-
-      const prob = Math.floor(Math.random() * 100);
-      let txType = 'new_order';
-      let attr = this.attrNewOrder;
-      const opStartNs = process.hrtime.bigint();
-      let success = false;
-
-      try {
-        if (this.extended) {
-          if (prob < 25) {
-            txType = 'new_order';
-            attr = this.attrNewOrder;
-            await executeNewOrder(
-              this.database,
-              this.scaleFactor,
-              this.items,
-              true,
-            );
-          } else if (prob < 45) {
-            txType = 'new_order_mutations';
-            attr = this.attrNewOrderMutations;
-            await executeNewOrderMutations(
-              this.database,
-              this.scaleFactor,
-              this.items,
-              true,
-            );
-          } else if (prob < 78) {
-            txType = 'payment';
-            attr = this.attrPayment;
-            await executePayment(this.database, this.scaleFactor, true);
-          } else if (prob < 88) {
-            txType = 'payment_mutations_direct';
-            attr = this.attrPaymentMutationsDirect;
-            await executePaymentMutationsDirect(
-              this.database,
-              this.scaleFactor,
-              true,
-            );
-          } else if (prob < 90) {
-            txType = 'order_status';
-            attr = this.attrOrderStatus;
-            await executeOrderStatus(this.database, this.scaleFactor, true);
-          } else if (prob < 92) {
-            txType = 'order_status_reads';
-            attr = this.attrOrderStatusReads;
-            await executeOrderStatusReads(
-              this.database,
-              this.scaleFactor,
-              true,
-            );
-          } else if (prob < 96) {
-            txType = 'delivery';
-            attr = this.attrDelivery;
-            await executeDelivery(this.database, this.scaleFactor, true);
-          } else if (prob < 98) {
-            txType = 'stock_level';
-            attr = this.attrStockLevel;
-            await executeStockLevel(this.database, this.scaleFactor, true);
-          } else {
-            txType = 'stock_level_partitioned';
-            attr = this.attrStockLevelPartitioned;
-            await executeStockLevelPartitioned(
-              this.database,
-              this.scaleFactor,
-              true,
-            );
-          }
-        } else {
-          if (prob < 45) {
-            txType = 'new_order';
-            attr = this.attrNewOrder;
-            await executeNewOrder(this.database, this.scaleFactor, this.items);
-          } else if (prob < 88) {
-            txType = 'payment';
-            attr = this.attrPayment;
-            await executePayment(this.database, this.scaleFactor);
-          } else if (prob < 92) {
-            txType = 'order_status';
-            attr = this.attrOrderStatus;
-            await executeOrderStatus(this.database, this.scaleFactor);
-          } else if (prob < 96) {
-            txType = 'delivery';
-            attr = this.attrDelivery;
-            await executeDelivery(this.database, this.scaleFactor);
-          } else {
-            txType = 'stock_level';
-            attr = this.attrStockLevel;
-            await executeStockLevel(this.database, this.scaleFactor);
-          }
-        }
-        success = true;
-      } catch (err: any) {
-        console.error(
-          `TPC-C transaction ${txType} failed: ${err?.message || err}`,
-        );
-        this.errorCounter.add(1, attr);
-      } finally {
-        if (success) {
-          const latencyUs = Number(process.hrtime.bigint() - opStartNs) / 1000;
-          this.latencyHistogram.record(latencyUs, attr);
-        }
-        this.operationCounter.add(1, attr);
-      }
-    }
-  }
-
-  private startResourceMonitoring(): void {
-    this.resourceMonitor = new ResourceMonitor(
-      this.resourceProbeIntervalStr,
-      this.memoryUsageHistogram,
-      this.cpuUtilizationHistogram,
-      this.baseAttributes,
-      () => this.isStopped,
-    );
-    this.resourceMonitor.start();
-  }
-
-  public stop(): void {
-    this.isStopped = true;
-    if (this.resourceMonitor) {
-      this.resourceMonitor.stop();
-    }
+    await super.run();
   }
 }
+
+export {TpccBenchmarkRunner as TpccBenchmark};

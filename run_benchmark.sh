@@ -113,6 +113,7 @@ else
   if [ -n "$BURST_FACTOR" ]; then ARGS="${ARGS},--burst-factor=$BURST_FACTOR"; fi
   if [ -n "$BURST_DURATION" ]; then ARGS="${ARGS},--burst-duration=$BURST_DURATION"; fi
   if [ -n "$BURST_FRACTION" ]; then ARGS="${ARGS},--burst-fraction=$BURST_FRACTION"; fi
+  if [ -n "$WORKERS" ] && [ "$CLIENT_TYPE" = "node" ]; then ARGS="${ARGS},--workers=$WORKERS"; fi
 fi
 
 ENV_FLAGS="--set-env-vars=BENCHMARK_CPU_LIMIT=$CPU"
@@ -136,6 +137,7 @@ if [ -n "$PEAK_FACTOR" ]; then ENV_FLAGS="${ENV_FLAGS},PEAK_FACTOR=$PEAK_FACTOR"
 if [ -n "$BURST_FACTOR" ]; then ENV_FLAGS="${ENV_FLAGS},BURST_FACTOR=$BURST_FACTOR"; fi
 if [ -n "$BURST_DURATION" ]; then ENV_FLAGS="${ENV_FLAGS},BURST_DURATION=$BURST_DURATION"; fi
 if [ -n "$BURST_FRACTION" ]; then ENV_FLAGS="${ENV_FLAGS},BURST_FRACTION=$BURST_FRACTION"; fi
+if [ -n "$WORKERS" ]; then ENV_FLAGS="${ENV_FLAGS},WORKERS=$WORKERS"; fi
 
 if [ "$LAZY_DECODE" = "true" ]; then
   ARGS="${ARGS},--lazy-decode"

@@ -655,3 +655,97 @@ export async function executeStockLevelPartitioned(
     await batchTransaction.close();
   }
 }
+
+/**
+ * Executes a single random TPC-C transaction according to standard or extended mode probabilities,
+ * returning the executed transaction type identifier.
+ *
+ * Transaction Mix Distributions:
+ * ------------------------------
+ * Standard Mode (TPC-C specification):
+ *   - 45% New-Order (read-write transaction with DML)
+ *   - 43% Payment (read-write transaction with DML)
+ *   -  4% Order-Status (read-only query)
+ *   -  4% Delivery (read-write transaction updating batch of orders)
+ *   -  4% Stock-Level (read-only aggregation query)
+ *
+ * Extended Mode (benchmarks additional client library and database capabilities):
+ *   - 25% New-Order (DML)
+ *   - 20% New-Order Mutations (using Spanner Mutations instead of DML)
+ *   - 33% Payment (DML)
+ *   - 10% Payment Mutations Direct (direct client-level mutations)
+ *   -  2% Order-Status (DML)
+ *   -  2% Order-Status Reads (direct table read API)
+ *   -  4% Delivery
+ *   -  2% Stock-Level
+ *   -  2% Stock-Level Partitioned (BatchClient partitioned queries)
+ *
+ * Error Handling:
+ * If an individual transaction fails (e.g. abort/rollback or constraint error),
+ * the intended `txType` is attached to `err.txType` before re-throwing, ensuring
+ * that the coordinator thread attributes the failure to the exact transaction type.
+ */
+export async function executeTpccTransaction(
+  database: Database,
+  scaleFactor: number,
+  items: number,
+  extended = false,
+): Promise<string> {
+  const prob = Math.floor(Math.random() * 100);
+  let txType = 'new_order';
+  try {
+    if (extended) {
+      if (prob < 25) {
+        txType = 'new_order';
+        await executeNewOrder(database, scaleFactor, items, true);
+      } else if (prob < 45) {
+        txType = 'new_order_mutations';
+        await executeNewOrderMutations(database, scaleFactor, items, true);
+      } else if (prob < 78) {
+        txType = 'payment';
+        await executePayment(database, scaleFactor, true);
+      } else if (prob < 88) {
+        txType = 'payment_mutations_direct';
+        await executePaymentMutationsDirect(database, scaleFactor, true);
+      } else if (prob < 90) {
+        txType = 'order_status';
+        await executeOrderStatus(database, scaleFactor, true);
+      } else if (prob < 92) {
+        txType = 'order_status_reads';
+        await executeOrderStatusReads(database, scaleFactor, true);
+      } else if (prob < 96) {
+        txType = 'delivery';
+        await executeDelivery(database, scaleFactor, true);
+      } else if (prob < 98) {
+        txType = 'stock_level';
+        await executeStockLevel(database, scaleFactor, true);
+      } else {
+        txType = 'stock_level_partitioned';
+        await executeStockLevelPartitioned(database, scaleFactor, true);
+      }
+    } else {
+      if (prob < 45) {
+        txType = 'new_order';
+        await executeNewOrder(database, scaleFactor, items);
+      } else if (prob < 88) {
+        txType = 'payment';
+        await executePayment(database, scaleFactor);
+      } else if (prob < 92) {
+        txType = 'order_status';
+        await executeOrderStatus(database, scaleFactor);
+      } else if (prob < 96) {
+        txType = 'delivery';
+        await executeDelivery(database, scaleFactor);
+      } else {
+        txType = 'stock_level';
+        await executeStockLevel(database, scaleFactor);
+      }
+    }
+    return txType;
+  } catch (err: any) {
+    if (err && typeof err === 'object') {
+      err.txType = txType;
+    }
+    throw err;
+  }
+}
