@@ -93,6 +93,7 @@ if [ "$BENCHMARK_TYPE" = "tpcc" ] || [ "$BENCHMARK_TYPE" = "tpcc-init" ]; then
   ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}${BENCHMARK_NAME_FLAG}$BENCHMARK_TYPE,--warehouses=${WAREHOUSES:-1000},--items=${ITEMS:-1000000}"
   if [ "$BENCHMARK_TYPE" = "tpcc" ]; then
     ARGS="${ARGS},--clients=${CLIENTS:-10}"
+    if [ -n "$WORKERS" ] && ([ "$CLIENT_TYPE" = "node" ] || [ "$CLIENT_TYPE" = "python" ]); then ARGS="${ARGS},--workers=$WORKERS"; fi
   fi
 else
   MOCK_FLAG=""
@@ -113,7 +114,7 @@ else
   if [ -n "$BURST_FACTOR" ]; then ARGS="${ARGS},--burst-factor=$BURST_FACTOR"; fi
   if [ -n "$BURST_DURATION" ]; then ARGS="${ARGS},--burst-duration=$BURST_DURATION"; fi
   if [ -n "$BURST_FRACTION" ]; then ARGS="${ARGS},--burst-fraction=$BURST_FRACTION"; fi
-  if [ -n "$WORKERS" ] && [ "$CLIENT_TYPE" = "node" ]; then ARGS="${ARGS},--workers=$WORKERS"; fi
+  if [ -n "$WORKERS" ] && ([ "$CLIENT_TYPE" = "node" ] || [ "$CLIENT_TYPE" = "python" ]); then ARGS="${ARGS},--workers=$WORKERS"; fi
 fi
 
 ENV_FLAGS="--set-env-vars=BENCHMARK_CPU_LIMIT=$CPU"
