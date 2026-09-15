@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 import signal
 import sys
@@ -66,11 +67,8 @@ def validate_and_fill_load_params(args):
     return burst_factor, burst_duration, burst_fraction, cycle_duration_str, peak_factor
 
 
-def main():
-    """
-    Main command line entry point. Parses options, setups client services,
-    and handles graceful lifecycle shutdown sig-traps.
-    """
+def build_parser() -> argparse.ArgumentParser:
+    """Build and return the argument parser for the benchmark CLI."""
     parser = argparse.ArgumentParser(
         description="High-performance Cloud Spanner client library benchmark tool for Python."
     )
@@ -122,6 +120,11 @@ def main():
         default="steady",
         choices=["steady", "spiky", "gradual", "closed-loop"],
         help="Load type",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        help="Number of parallel worker processes to execute the workload across",
     )
     parser.add_argument(
         "--cycle-duration", help="Duration of a full cycle for gradual load"
@@ -209,6 +212,12 @@ def main():
         action="store_true",
         default=os.environ.get("LAZY_DECODE", "false").lower() in ("true", "1", "yes"),
         help="Enable lazy decoding of query results in StreamedResultSet",
+    )
+    workload_parser.add_argument(
+        "--workers",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Number of parallel worker processes to execute the workload across",
     )
 
     # Workload Scenario Subcommands routing
@@ -311,7 +320,22 @@ def main():
         default=False,
         help="Run TPC-C benchmark with extended coverage of client library features",
     )
+    tpcc_parser.add_argument(
+        "--workers",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Number of parallel worker processes to execute the workload across",
+    )
 
+    return parser
+
+
+def main():
+    """
+    Main command line entry point. Parses options, setups client services,
+    and handles graceful lifecycle shutdown sig-traps.
+    """
+    parser = build_parser()
     args = parser.parse_args()
     if args.spanner_enable_channel_pool:
         os.environ["SPANNER_ENABLE_CHANNEL_POOL"] = "true"
@@ -407,9 +431,57 @@ def main():
     from src.benchmarks.tpcc.benchmark import TpccBenchmarkRunner
     from src.spanner.client import create_spanner_client
 
-    spanner_client = create_spanner_client(args.project, host)
-    instance = spanner_client.instance(args.instance)
-    database = instance.database(args.database)
+    # 2. Calculate number of worker processes
+    cpu_limit = os.environ.get("BENCHMARK_CPU_LIMIT")
+    if cpu_limit:
+        try:
+            cpu_count = float(cpu_limit)
+        except ValueError:
+            cpu_count = float(os.cpu_count() or 1)
+        max_available_workers = (
+            max(1, math.floor(cpu_count) - 1)
+            if os.environ.get("USE_SIDECAR") == "true"
+            else max(1, math.floor(cpu_count))
+        )
+    else:
+        try:
+            # sched_getaffinity already accounts for CPU affinity set by taskset in entrypoint.sh
+            affinity_cpus = len(os.sched_getaffinity(0))
+            max_available_workers = max(1, affinity_cpus)
+        except (AttributeError, OSError):
+            cpu_count = float(os.cpu_count() or 1)
+            max_available_workers = (
+                max(1, math.floor(cpu_count) - 1)
+                if os.environ.get("USE_SIDECAR") == "true"
+                else max(1, math.floor(cpu_count))
+            )
+    threads = (
+        getattr(args, "clients", 10)
+        if args.command == "tpcc"
+        else getattr(args, "threads", 10)
+    )
+    auto_workers = max(1, min(threads, int(max_available_workers)))
+    workers_arg = getattr(args, "workers", None)
+    if workers_arg is not None:
+        workers = workers_arg
+    elif "WORKERS" in os.environ:
+        try:
+            workers = int(os.environ["WORKERS"])
+        except ValueError:
+            workers = auto_workers
+    else:
+        workers = auto_workers
+
+    # When running with multiple worker processes, worker processes instantiate their
+    # own dedicated Spanner clients. The coordinator only needs an in-process client if workers == 1.
+
+    if workers == 1:
+        spanner_client = create_spanner_client(args.project, host)
+        instance = spanner_client.instance(args.instance)
+        database = instance.database(args.database)
+    else:
+        spanner_client = None
+        database = None
 
     # 3. Instantiate concrete designation workload task benchmark
     cycle_duration_sec = parse_duration(cycle_duration_str)
@@ -437,6 +509,11 @@ def main():
             burst_duration=burst_duration,
             burst_fraction=burst_fraction,
             is_mock=args.mock,
+            workers=workers,
+            host=host,
+            project_id=args.project,
+            instance_id=args.instance,
+            database_id=args.database,
         )
     elif args.command == "select-update":
         benchmark = SelectAndUpdateBenchmark(
@@ -461,6 +538,11 @@ def main():
             burst_factor=burst_factor,
             burst_duration=burst_duration,
             burst_fraction=burst_fraction,
+            workers=workers,
+            host=host,
+            project_id=args.project,
+            instance_id=args.instance,
+            database_id=args.database,
         )
     elif args.command == "read-large-result-set":
         benchmark = ReadLargeResultSetBenchmark(
@@ -487,6 +569,11 @@ def main():
             burst_duration=burst_duration,
             burst_fraction=burst_fraction,
             lazy_decode=args.lazy_decode,
+            workers=workers,
+            host=host,
+            project_id=args.project,
+            instance_id=args.instance,
+            database_id=args.database,
         )
     elif args.command == "read-narrow-result-set":
         benchmark = ReadNarrowResultSetBenchmark(
@@ -513,6 +600,11 @@ def main():
             burst_duration=burst_duration,
             burst_fraction=burst_fraction,
             lazy_decode=args.lazy_decode,
+            workers=workers,
+            host=host,
+            project_id=args.project,
+            instance_id=args.instance,
+            database_id=args.database,
         )
     elif args.command == "tpcc":
         benchmark = TpccBenchmarkRunner(
@@ -530,6 +622,11 @@ def main():
             for_alerting=args.for_alerting,
             benchmark_name=args.benchmark_name,
             extended=args.extended,
+            workers=workers,
+            host=host,
+            project_id=args.project,
+            instance_id=args.instance,
+            database_id=args.database,
         )
     else:
         print(
@@ -576,18 +673,20 @@ def main():
             shutdown_metrics()
 
         # Close all Spanner client transports and pool cleanly to release threads
-        _safe_call(
-            lambda: (
-                database.channel_pool.close()
-                if getattr(database, "channel_pool", None)
-                else None
+        if database is not None:
+            _safe_call(
+                lambda: (
+                    database.channel_pool.close()
+                    if getattr(database, "channel_pool", None)
+                    else None
+                )
             )
-        )
-        _safe_call(lambda: database.pool.close())
-        _safe_call(lambda: database.spanner_api.transport.close())
-        _safe_call(lambda: spanner_client.database_admin_api.transport.close())
-        _safe_call(lambda: spanner_client.instance_admin_api.transport.close())
-        _safe_call(lambda: spanner_client.close())
+            _safe_call(lambda: database.pool.close())
+            _safe_call(lambda: database.spanner_api.transport.close())
+        if spanner_client is not None:
+            _safe_call(lambda: spanner_client.database_admin_api.transport.close())
+            _safe_call(lambda: spanner_client.instance_admin_api.transport.close())
+            _safe_call(lambda: spanner_client.close())
 
         if mock_server:
             print("[Lifecycle] Stopping local mock Spanner server...")
@@ -602,6 +701,10 @@ def main():
                         os.remove(socket_path)
                     except OSError:
                         pass
+
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
 
 
 if __name__ == "__main__":

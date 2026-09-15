@@ -7,6 +7,32 @@ from google.cloud.spanner_v1.database import Database
 from .abstract_benchmark import AbstractBenchmark
 
 
+def execute_point_select(
+    database: Database, table_name: str, min_id: int, max_id: int
+) -> None:
+    """Executes a single point-select statement query under single-use snapshot read context."""
+    # Pick random ID uniform across [min_id, max_id] (inclusive)
+    random_id = random.randint(min_id, max_id)
+
+    sql = f"SELECT * FROM {table_name} WHERE id = @id"
+
+    # Allocate a single-use read-only snapshot context with exact staleness of 15 seconds
+    with database.snapshot(
+        exact_staleness=datetime.timedelta(seconds=15), multi_use=False
+    ) as snapshot:
+        results = snapshot.execute_sql(
+            sql,
+            params={"id": random_id},
+            param_types={"id": spanner.param_types.INT64},
+        )
+
+        # Fully iterate row results to consume data bytes, forcing decoding
+        # and avoiding compiler/runtime dead-code elimination optimizations.
+        for row in results:
+            # Access the first item in row tuple
+            _ = row[0]
+
+
 class PointSelectBenchmark(AbstractBenchmark):
     """
     Implements a 1-to-1 parity Point Select performance workload for Python.
@@ -22,24 +48,4 @@ class PointSelectBenchmark(AbstractBenchmark):
     def execute_operation(
         self, database: Database, table_name: str, min_id: int, max_id: int
     ) -> None:
-        """Executes a single point-select statement query under single-use snapshot read context."""
-        # Pick random ID uniform across [min_id, max_id] (inclusive)
-        random_id = random.randint(min_id, max_id)
-
-        sql = f"SELECT * FROM {table_name} WHERE id = @id"
-
-        # Allocate a single-use read-only snapshot context with exact staleness of 15 seconds
-        with database.snapshot(
-            exact_staleness=datetime.timedelta(seconds=15), multi_use=False
-        ) as snapshot:
-            results = snapshot.execute_sql(
-                sql,
-                params={"id": random_id},
-                param_types={"id": spanner.param_types.INT64},
-            )
-
-            # Fully iterate row results to consume data bytes, forcing decoding
-            # and avoiding compiler/runtime dead-code elimination optimizations.
-            for row in results:
-                # Access the first item in row tuple
-                _ = row[0]
+        execute_point_select(database, table_name, min_id, max_id)

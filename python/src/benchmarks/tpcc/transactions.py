@@ -725,3 +725,63 @@ def execute_stock_level_partitioned(database: Database, scale_factor: int) -> No
 
     finally:
         snapshot.close()
+
+
+def execute_tpcc_transaction(
+    database: Database, scale_factor: int, items: int, extended: bool = False
+) -> str:
+    """
+    Executes a single random TPC-C transaction according to standard or extended mode probabilities,
+    returning the executed transaction type identifier.
+    """
+    prob = random.randint(0, 99)
+    tx_type = "new_order"
+    try:
+        if extended:
+            if prob < 25:
+                tx_type = "new_order"
+                execute_new_order(database, scale_factor, items, extended=True)
+            elif prob < 45:
+                tx_type = "new_order_mutations"
+                execute_new_order_mutations(database, scale_factor, items)
+            elif prob < 78:
+                tx_type = "payment"
+                execute_payment(database, scale_factor, extended=True)
+            elif prob < 88:
+                tx_type = "payment_mutations_direct"
+                execute_payment_mutations_direct(database, scale_factor)
+            elif prob < 90:
+                tx_type = "order_status"
+                execute_order_status(database, scale_factor, extended=True)
+            elif prob < 92:
+                tx_type = "order_status_reads"
+                execute_order_status_reads(database, scale_factor)
+            elif prob < 96:
+                tx_type = "delivery"
+                execute_delivery(database, scale_factor, extended=True)
+            elif prob < 98:
+                tx_type = "stock_level"
+                execute_stock_level(database, scale_factor, extended=True)
+            else:
+                tx_type = "stock_level_partitioned"
+                execute_stock_level_partitioned(database, scale_factor)
+        else:
+            if prob < 45:
+                tx_type = "new_order"
+                execute_new_order(database, scale_factor, items)
+            elif prob < 88:
+                tx_type = "payment"
+                execute_payment(database, scale_factor)
+            elif prob < 92:
+                tx_type = "order_status"
+                execute_order_status(database, scale_factor)
+            elif prob < 96:
+                tx_type = "delivery"
+                execute_delivery(database, scale_factor)
+            else:
+                tx_type = "stock_level"
+                execute_stock_level(database, scale_factor)
+        return tx_type
+    except Exception as err:
+        setattr(err, "tx_type", tx_type)
+        raise

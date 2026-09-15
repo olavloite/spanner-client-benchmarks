@@ -13,25 +13,56 @@ SQL = """SELECT
 FROM UNNEST(GENERATE_ARRAY(1, @num_rows)) AS n"""
 
 
+def execute_read_narrow_result_set(
+    database: Database, num_rows: int, lazy_decode: bool = False
+) -> float:
+    """Executes read-narrow-result-set query and measures iteration latency of remaining rows in microseconds."""
+    with database.snapshot() as snapshot:
+        results = snapshot.execute_sql(
+            SQL,
+            params={"num_rows": num_rows},
+            param_types={"num_rows": spanner.param_types.INT64},
+            lazy_decode=lazy_decode,
+        )
+
+        row_iterator = iter(results)
+        try:
+            first_row = next(row_iterator)
+            # Force full deserialization of the first row
+            for cell in first_row:
+                pass
+        except StopIteration:
+            return 0.0
+
+        # Measure iteration duration of remaining rows
+        start_time = time.perf_counter()
+        for row in row_iterator:
+            # Force full deserialization of each row
+            for cell in row:
+                pass
+        end_time = time.perf_counter()
+        return (end_time - start_time) * 1000000.0
+
+
 class ReadNarrowResultSetBenchmark(AbstractBenchmark):
     def __init__(
         self,
-        database: Database,
-        latency_histogram: Histogram,
-        operation_counter: Counter,
-        error_counter: Counter,
-        memory_usage_histogram: Optional[Histogram],
-        cpu_utilization_histogram: Optional[Histogram],
-        resource_probe_interval_str: str,
-        table_name: str,
-        min_id: int,
-        max_id: int,
-        tps: float,
-        threads: int,
-        duration_sec: float | None,
-        for_alerting: bool,
-        benchmark_name: str,
-        num_rows: int,
+        database: Optional[Database] = None,
+        latency_histogram: Optional[Histogram] = None,
+        operation_counter: Optional[Counter] = None,
+        error_counter: Optional[Counter] = None,
+        memory_usage_histogram: Optional[Histogram] = None,
+        cpu_utilization_histogram: Optional[Histogram] = None,
+        resource_probe_interval_str: str = "10s",
+        table_name: str = "test",
+        min_id: int = 1,
+        max_id: int = 1000000,
+        tps: float = 0.05,
+        threads: int = 10,
+        duration_sec: float | None = None,
+        for_alerting: bool = False,
+        benchmark_name: str = "",
+        num_rows: int = 200000,
         load_type: str = "steady",
         cycle_duration_sec: float | None = None,
         peak_factor: float = 2.0,
@@ -39,6 +70,11 @@ class ReadNarrowResultSetBenchmark(AbstractBenchmark):
         burst_duration: float = 1.0,
         burst_fraction: float = 0.1,
         lazy_decode: bool = False,
+        workers: int = 1,
+        host: Optional[str] = None,
+        project_id: Optional[str] = None,
+        instance_id: Optional[str] = None,
+        database_id: Optional[str] = None,
     ):
         super().__init__(
             database,
@@ -62,6 +98,11 @@ class ReadNarrowResultSetBenchmark(AbstractBenchmark):
             burst_factor,
             burst_duration,
             burst_fraction,
+            workers=workers,
+            host=host,
+            project_id=project_id,
+            instance_id=instance_id,
+            database_id=database_id,
         )
         self.num_rows = num_rows
         self.lazy_decode = lazy_decode
@@ -87,31 +128,8 @@ class ReadNarrowResultSetBenchmark(AbstractBenchmark):
     def execute_operation(
         self, database: Database, table_name: str, min_id: int, max_id: int
     ) -> None:
-        with database.snapshot() as snapshot:
-            results = snapshot.execute_sql(
-                SQL,
-                params={"num_rows": self.num_rows},
-                param_types={"num_rows": spanner.param_types.INT64},
-                lazy_decode=self.lazy_decode,
-            )
-
-            row_iterator = iter(results)
-            try:
-                first_row = next(row_iterator)
-                # Force full deserialization of the first row
-                for cell in first_row:
-                    pass
-            except StopIteration:
-                return
-
-            # Measure iteration duration of remaining rows
-            start_time = time.perf_counter()
-            for row in row_iterator:
-                # Force full deserialization of each row
-                for cell in row:
-                    pass
-            end_time = time.perf_counter()
-            latency_us = (end_time - start_time) * 1000000.0
-
-            self.latency_histogram.record(latency_us, self.get_attributes())
-            self._latency_sampler.add(latency_us)
+        latency_us = execute_read_narrow_result_set(
+            database, self.num_rows, self.lazy_decode
+        )
+        self.latency_histogram.record(latency_us, self.get_attributes())
+        self._latency_sampler.add(latency_us)
