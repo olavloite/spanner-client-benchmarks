@@ -115,6 +115,11 @@ on:
         required: false
         type: string
         default: 'false'
+      spanner_enable_dynamic_channel_pool:
+        description: 'Enable dynamic channel pool for Rust (true/false)'
+        required: false
+        type: string
+        default: ''
     secrets:
       GCP_SA_KEY:
         required: true
@@ -172,4 +177,5 @@ jobs:
           CLIENT_BRANCH: ${{ inputs.client_branch }}
           LAZY_DECODE: ${{ inputs.lazy_decode }}
           SPANNER_ENABLE_CHANNEL_POOL: ${{ inputs.spanner_enable_channel_pool }}
+          SPANNER_ENABLE_DYNAMIC_CHANNEL_POOL: ${{ inputs.spanner_enable_dynamic_channel_pool }}
         run: ./run_benchmark.sh ${{ matrix.client }}
