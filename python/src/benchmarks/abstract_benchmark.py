@@ -1,13 +1,17 @@
 import abc
+import collections
 import math
+import multiprocessing
 import os
 import random
+import selectors
 import socket
 import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
+from multiprocessing.connection import Connection
 from typing import Optional
 
 from google.cloud.spanner_v1.database import Database
@@ -96,8 +100,36 @@ class AbstractBenchmark(abc.ABC):
         burst_duration: float = 1.0,
         burst_fraction: float = 0.1,
         is_mock: bool = False,
+        workers: int = 1,
+        host: Optional[str] = None,
+        project_id: Optional[str] = None,
+        instance_id: Optional[str] = None,
+        database_id: Optional[str] = None,
     ):
         self.database = database
+        self.project_id = (
+            project_id
+            if project_id
+            else (
+                getattr(getattr(database, "_instance", None), "_client", None).project
+                if database and getattr(database, "_instance", None)
+                else None
+            )
+        )
+        self.instance_id = (
+            instance_id
+            if instance_id
+            else (
+                getattr(getattr(database, "_instance", None), "instance_id", None)
+                if database
+                else None
+            )
+        )
+        self.database_id = (
+            database_id
+            if database_id
+            else (getattr(database, "database_id", None) if database else None)
+        )
         self.latency_histogram = latency_histogram
         self.operation_counter = operation_counter
         self.error_counter = error_counter
@@ -111,6 +143,7 @@ class AbstractBenchmark(abc.ABC):
         self.threads = threads
         self.duration_sec = duration_sec
         self.for_alerting = for_alerting
+        self.benchmark_name = benchmark_name
         self.load_type = load_type
         self.cycle_duration_sec = cycle_duration_sec
         self.peak_factor = peak_factor
@@ -118,6 +151,8 @@ class AbstractBenchmark(abc.ABC):
         self.burst_duration = burst_duration
         self.burst_fraction = burst_fraction
         self.is_mock = is_mock
+        self.workers = max(1, workers)
+        self.host = host
 
         self.r_burst = self.tps * self.burst_factor
         self.r_normal = (self.tps - self.burst_fraction * self.r_burst) / (
@@ -157,6 +192,18 @@ class AbstractBenchmark(abc.ABC):
         self._generator_thread: Optional[threading.Thread] = None
         self._socket: Optional[socket.socket] = None
 
+        # Multi-worker process coordination state
+        self._workers: list[multiprocessing.Process] = []
+        self._worker_conns: list[Connection] = []
+        self._worker_in_flight: list[int] = []
+        self._worker_active: list[bool] = []
+        self._next_worker_index = 0
+        self._next_task_id = 1
+        self._task_queue: collections.deque[int] = collections.deque()
+        self._selector: Optional[selectors.DefaultSelector] = None
+        self._listener_thread: Optional[threading.Thread] = None
+        self._workers_cleaned_up = False
+
     @abc.abstractmethod
     def execute_operation(
         self, database: Database, table_name: str, min_id: int, max_id: int
@@ -174,20 +221,211 @@ class AbstractBenchmark(abc.ABC):
         """Returns alphanumeric identifier type (e.g. point-select)."""
         pass
 
+    def get_attributes_for_task(self, msg: Optional[dict] = None) -> dict:
+        """Resolves metric attributes for a completed task. Subclasses may override."""
+        return self.get_attributes()
+
+    def get_worker_pids(self) -> list[int]:
+        """Returns PIDs of currently alive worker processes for memory/CPU monitoring."""
+        return [p.pid for p in self._workers if p.pid and p.is_alive()]
+
+    def _get_worker_data(self, worker_id: int, concurrency: int):
+        from src.benchmarks.benchmark_worker import BenchmarkWorkerData
+
+        project_id = self.project_id or ""
+        instance_id = self.instance_id or ""
+        database_id = self.database_id or ""
+
+        return BenchmarkWorkerData(
+            worker_id=worker_id,
+            benchmark_type=self.get_benchmark_type(),
+            project_id=project_id,
+            instance_id=instance_id,
+            database_id=database_id,
+            host=self.host,
+            table_name=self.table_name,
+            min_id=self.min_id,
+            max_id=self.max_id,
+            num_rows=getattr(self, "num_rows", 100000),
+            lazy_decode=getattr(self, "lazy_decode", False),
+            scale_factor=getattr(self, "scale_factor", 1),
+            items=getattr(self, "items", 100000),
+            extended=getattr(self, "extended", False),
+            concurrency=concurrency,
+        )
+
+    def _init_workers(self) -> None:
+        from src.benchmarks.benchmark_worker import worker_process_main
+
+        print(f"Initializing {self.workers} worker processes...")
+        mp_context = multiprocessing.get_context("spawn")
+        worker_concurrency = max(1, math.ceil(self.threads / self.workers))
+
+        for worker_id in range(self.workers):
+            parent_conn, child_conn = mp_context.Pipe(duplex=True)
+            worker_data = self._get_worker_data(worker_id, worker_concurrency)
+            process = mp_context.Process(
+                target=worker_process_main,
+                args=(worker_id, child_conn, worker_data),
+                name=f"SpannerWorker-{worker_id}",
+                daemon=True,
+            )
+            process.start()
+            child_conn.close()
+            self._workers.append(process)
+            self._worker_conns.append(parent_conn)
+            self._worker_in_flight.append(0)
+            self._worker_active.append(True)
+
+        # Wait for all workers to send READY signal
+        for worker_id, conn in enumerate(self._worker_conns):
+            ready_received = False
+            start_wait = time.time()
+            while not ready_received and time.time() - start_wait < 30.0:
+                if conn.poll(0.1):
+                    try:
+                        msg = conn.recv()
+                    except (EOFError, OSError):
+                        process = self._workers[worker_id]
+                        raise RuntimeError(
+                            f"Worker {worker_id} process terminated unexpectedly during startup (exitcode={process.exitcode})"
+                        )
+                    if isinstance(msg, dict) and msg.get("type") == "ready":
+                        ready_received = True
+                    elif isinstance(msg, dict) and msg.get("type") == "error":
+                        raise RuntimeError(
+                            f"Worker {worker_id} failed to initialize: {msg.get('error')}"
+                        )
+            if not ready_received:
+                process = self._workers[worker_id]
+                raise TimeoutError(
+                    f"Timed out waiting for worker {worker_id} to initialize (exitcode={process.exitcode})"
+                )
+
+        print(f"All {self.workers} worker processes initialized and ready.")
+
+        # Register all worker parent pipes with DefaultSelector
+        self._selector = selectors.DefaultSelector()
+        for worker_id, conn in enumerate(self._worker_conns):
+            self._selector.register(conn, selectors.EVENT_READ, data=worker_id)
+
+        self._listener_thread = threading.Thread(
+            target=self._worker_response_listener,
+            name="WorkerResponseListener",
+            daemon=True,
+        )
+        self._listener_thread.start()
+
+    def _worker_response_listener(self) -> None:
+        while not self._workers_cleaned_up:
+            if not self._selector:
+                break
+            try:
+                events = self._selector.select(timeout=0.1)
+            except Exception:
+                break
+            for key, _ in events:
+                worker_id = key.data
+                conn = key.fileobj
+                try:
+                    while conn.poll(0):
+                        msg = conn.recv()
+                        if isinstance(msg, dict) and msg.get("type") == "completed":
+                            self._on_worker_task_completed(worker_id, msg)
+                except (EOFError, BrokenPipeError, OSError):
+                    try:
+                        self._selector.unregister(conn)
+                    except Exception:
+                        pass
+                    in_flight = 0
+                    with self._lock:
+                        self._worker_active[worker_id] = False
+                        in_flight = self._worker_in_flight[worker_id]
+                        self._worker_in_flight[worker_id] = float("inf")
+                        if in_flight > 0 and in_flight != float("inf"):
+                            self._outstanding_tasks = max(
+                                0, self._outstanding_tasks - in_flight
+                            )
+                            self._error_count += in_flight
+                    if in_flight > 0 and in_flight != float("inf"):
+                        self.error_counter.add(in_flight, self.get_attributes())
+                        # In closed-loop mode, replenish the lost tasks to healthy workers
+                        if (
+                            self.load_type == LoadType.CLOSED_LOOP
+                            and not self.is_stopped
+                        ):
+                            for _ in range(in_flight):
+                                self._submit_task_multi_worker()
+
+    def _on_worker_task_completed(self, worker_id: int, msg: dict) -> None:
+        with self._lock:
+            self._worker_in_flight[worker_id] = max(
+                0, self._worker_in_flight[worker_id] - 1
+            )
+            self._outstanding_tasks = max(0, self._outstanding_tasks - 1)
+
+        attributes = self.get_attributes_for_task(msg)
+        success = msg.get("success", False)
+        latency_us = msg.get("latency_us")
+
+        if success:
+            if latency_us is not None and latency_us > 0:
+                self.latency_histogram.record(latency_us, attributes)
+                self._latency_sampler.add(latency_us)
+            with self._lock:
+                self._success_count += 1
+            self.operation_counter.add(1, attributes)
+        else:
+            error_message = msg.get("error", "Unknown error")
+            print(f"Operation failed: {error_message}", file=sys.stderr)
+            self.error_counter.add(1, attributes)
+            self.operation_counter.add(1, attributes)
+            with self._lock:
+                self._error_count += 1
+
+        if self.load_type == LoadType.CLOSED_LOOP:
+            if not self.is_stopped:
+                with self._lock:
+                    self._dispatch_task_to_worker()
+        else:
+            with self._lock:
+                while (
+                    len(self._task_queue) > 0
+                    and self._outstanding_tasks < self.threads
+                    and not self.is_stopped
+                ):
+                    self._task_queue.popleft()
+                    self._dispatch_task_to_worker()
+
     def run(self) -> None:
         """
         Spawns the background ticker thread and blocks until duration completes or stopped.
         """
         print(f"Starting {self.get_benchmark_name()}")
-        print(
-            f"Parameters: TPS={self.tps}, Max Workers={self.threads}, MinID={self.min_id}, MaxID={self.max_id}"
-        )
+        worker_info = f", Worker Processes={self.workers}" if self.workers > 1 else ""
+        if self.load_type == LoadType.CLOSED_LOOP:
+            print(
+                f"Parameters: Mode=ClosedLoop, Clients/Concurrency={self.threads}{worker_info}"
+            )
+        else:
+            print(
+                f"Parameters: TPS={self.tps}, Max Workers={self.threads}, MinID={self.min_id}, MaxID={self.max_id}{worker_info}"
+            )
 
         self.is_stopped = False
+        self._start_resource_monitoring()
+
+        if self.workers > 1:
+            self._init_workers()
+
         if self.load_type == LoadType.CLOSED_LOOP:
-            print(f"Running in closed-loop mode with {self.threads} client threads.")
-            for _ in range(self.threads):
-                self._executor.submit(self._closed_loop_worker)
+            if self.workers > 1:
+                with self._lock:
+                    for _ in range(self.threads):
+                        self._dispatch_task_to_worker()
+            else:
+                for _ in range(self.threads):
+                    self._executor.submit(self._closed_loop_worker)
         else:
             socket_path = os.environ.get("SPANNER_BENCHMARK_SOCKET")
             if socket_path:
@@ -204,7 +442,6 @@ class AbstractBenchmark(abc.ABC):
                     daemon=True,
                 )
             self._generator_thread.start()
-            self._start_resource_monitoring()
 
         # Wait loop for duration expiration
         # TODO: Consider refactoring this busy-polling wait loop to use threading.Event().wait(duration_sec)
@@ -227,12 +464,21 @@ class AbstractBenchmark(abc.ABC):
             print("Benchmark interrupted by user keyboard event.")
             self.stop()
 
-        # Cleanly shutdown the executor and cancel any queued futures to release threads.
-        try:
-            self._executor.shutdown(wait=True, cancel_futures=True)
-        except TypeError:
-            # Fallback for Python < 3.9
-            self._executor.shutdown(wait=True)
+        if self.workers > 1:
+            drain_start = time.perf_counter()
+            while time.perf_counter() - drain_start < 5.0:
+                with self._lock:
+                    if self._outstanding_tasks == 0:
+                        break
+                time.sleep(0.05)
+            self._cleanup_workers()
+        else:
+            # Cleanly shutdown the executor and cancel any queued futures to release threads.
+            try:
+                self._executor.shutdown(wait=True, cancel_futures=True)
+            except TypeError:
+                # Fallback for Python < 3.9
+                self._executor.shutdown(wait=True)
 
         # Print final benchmark summary statistics
         with self._lock:
@@ -248,6 +494,7 @@ class AbstractBenchmark(abc.ABC):
         print("                  BENCHMARK RUN SUMMARY")
         print("=" * 60)
         print(f"Benchmark:       {self.get_benchmark_name()}")
+
         print(f"Total Ops:       {total_ops}")
         print(
             f"Success Ops:     {success_count} ({100.0 * success_count / total_ops:.1f}%)"
@@ -275,12 +522,10 @@ class AbstractBenchmark(abc.ABC):
             print("No latency statistics collected.")
         print("=" * 60 + "\n")
 
-        # For Cloud Run deployment, call os._exit(0) directly unless mocked in tests.
         import sys
 
         sys.stdout.flush()
         sys.stderr.flush()
-        os._exit(0)
 
     def stop(self) -> None:
         """Gracefully instructs the workload generator to cease spawning new operations."""
@@ -380,7 +625,13 @@ class AbstractBenchmark(abc.ABC):
                     time.sleep(0.0001)
 
     def _submit_task(self) -> None:
-        """Checks concurrency thresholds and dispatches task to thread executor pool."""
+        """Checks concurrency thresholds and dispatches task to thread executor pool or worker processes."""
+        if self.workers > 1:
+            self._submit_task_multi_worker()
+        else:
+            self._submit_task_single_worker()
+
+    def _submit_task_single_worker(self) -> None:
         with self._lock:
             queue_size = self._outstanding_tasks - self.threads
             if queue_size > 0:
@@ -401,6 +652,98 @@ class AbstractBenchmark(abc.ABC):
                     "Task dropped: workload queue is full (1M tasks exceeded)",
                     file=sys.stderr,
                 )
+
+    def _submit_task_multi_worker(self) -> None:
+        with self._lock:
+            if self._outstanding_tasks < self.threads:
+                self._dispatch_task_to_worker()
+            else:
+                self._enqueue_task()
+
+    def _enqueue_task(self) -> None:
+        queue_size = len(self._task_queue)
+        if queue_size > 0:
+            now = time.time()
+            if now - self._last_queue_log_time > 1.0:
+                print(
+                    f"Queue size: {queue_size} (concurrency limit reached, tasks are queueing)",
+                    file=sys.stderr,
+                )
+                self._last_queue_log_time = now
+        if len(self._task_queue) < 1000000:
+            self._task_queue.append(1)
+        else:
+            print(
+                "Task dropped: workload queue is full (1M tasks exceeded)",
+                file=sys.stderr,
+            )
+
+    def _dispatch_task_to_worker(self) -> None:
+        # Select the least loaded active worker, breaking ties round-robin
+        active_indices = [i for i in range(self.workers) if self._worker_active[i]]
+        if not active_indices or self.is_stopped:
+            return
+
+        selected_index = active_indices[0]
+        min_in_flight = float("inf")
+        for i in range(len(active_indices)):
+            idx = active_indices[(self._next_worker_index + i) % len(active_indices)]
+            if self._worker_in_flight[idx] < min_in_flight:
+                min_in_flight = self._worker_in_flight[idx]
+                selected_index = idx
+
+        self._next_worker_index = (self._next_worker_index + 1) % len(active_indices)
+        self._worker_in_flight[selected_index] += 1
+        self._outstanding_tasks += 1
+        task_id = self._next_task_id
+        self._next_task_id += 1
+
+        try:
+            self._worker_conns[selected_index].send(
+                {"type": "execute", "task_id": task_id}
+            )
+        except Exception as err:
+            print(
+                f"Failed to post execute task to worker {selected_index}: {err}",
+                file=sys.stderr,
+            )
+            self._worker_in_flight[selected_index] = max(
+                0, self._worker_in_flight[selected_index] - 1
+            )
+            self._outstanding_tasks = max(0, self._outstanding_tasks - 1)
+            self.error_counter.add(1, self.get_attributes())
+
+    def _cleanup_workers(self) -> None:
+        with self._lock:
+            if self._workers_cleaned_up:
+                return
+            self._workers_cleaned_up = True
+
+        for conn in self._worker_conns:
+            try:
+                conn.send({"type": "stop"})
+            except Exception:
+                pass
+
+        for process in self._workers:
+            try:
+                process.join(timeout=2.0)
+                if process.is_alive():
+                    process.terminate()
+            except Exception:
+                pass
+
+        for conn in self._worker_conns:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        if self._selector:
+            try:
+                self._selector.close()
+            except Exception:
+                pass
 
     def should_measure_entire_method(self) -> bool:
         return True
@@ -477,5 +820,6 @@ class AbstractBenchmark(abc.ABC):
             cpu_utilization_histogram=self.cpu_utilization_histogram,
             attributes=self.attributes,
             is_stopped_check=lambda: self.is_stopped,
+            worker_pids_supplier=self.get_worker_pids,
         )
         self._resource_monitor.start()
