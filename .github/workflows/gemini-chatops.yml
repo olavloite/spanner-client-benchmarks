@@ -131,6 +131,8 @@ jobs:
             items=$(echo "$run" | jq -r '.items')
             clients=$(echo "$run" | jq -r '.clients')
             workers=$(echo "$run" | jq -r '.workers // empty')
+            spanner_enable_channel_pool=$(echo "$run" | jq -r '.spanner_enable_channel_pool // empty')
+            spanner_enable_dynamic_channel_pool=$(echo "$run" | jq -r '.spanner_enable_dynamic_channel_pool // empty')
 
             label="$client_type-$client_branch"
             echo "Starting deployment for $client_type benchmark (branch: $client_branch)..."
@@ -153,6 +155,8 @@ jobs:
             ITEMS="$items" \
             CLIENTS="$clients" \
             WORKERS="$workers" \
+            SPANNER_ENABLE_CHANNEL_POOL="$spanner_enable_channel_pool" \
+            SPANNER_ENABLE_DYNAMIC_CHANNEL_POOL="$spanner_enable_dynamic_channel_pool" \
             FOR_ALERTING="false" \
             SKIP_CLEANUP="true" \
             ./run_benchmark.sh "$client_type" 2>&1 | sed "s/^/[$label] /" &

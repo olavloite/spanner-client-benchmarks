@@ -32,6 +32,11 @@ on:
         required: false
         type: string
         default: 'false'
+      spanner_enable_dynamic_channel_pool:
+        description: 'Enable dynamic channel pool for Rust (true/false)'
+        required: false
+        type: string
+        default: 'false'
       benchmark_name:
         description: 'Custom benchmark name identifier (optional)'
         required: false
@@ -73,6 +78,7 @@ jobs:
       spanner_num_channels: '16'
       client_branch: "${{ inputs.client_branch || 'main' }}"
       spanner_enable_channel_pool: "${{ inputs.spanner_enable_channel_pool || 'false' }}"
+      spanner_enable_dynamic_channel_pool: "${{ inputs.spanner_enable_dynamic_channel_pool || 'false' }}"
       benchmark_name: "${{ inputs.benchmark_name || 'channel-scaling-bursty-point-select' }}"
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
@@ -96,6 +102,7 @@ jobs:
       use_sidecar: 'true'
       client_branch: "${{ inputs.client_branch || 'main' }}"
       spanner_enable_channel_pool: "${{ inputs.spanner_enable_channel_pool || 'false' }}"
+      spanner_enable_dynamic_channel_pool: "${{ inputs.spanner_enable_dynamic_channel_pool || 'false' }}"
       benchmark_name: "${{ inputs.benchmark_name || 'channel-scaling-bursty-point-select' }}"
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
@@ -120,6 +127,7 @@ jobs:
       spanner_num_channels: '16'
       client_branch: "${{ inputs.client_branch || 'main' }}"
       spanner_enable_channel_pool: "${{ inputs.spanner_enable_channel_pool || 'false' }}"
+      spanner_enable_dynamic_channel_pool: "${{ inputs.spanner_enable_dynamic_channel_pool || 'false' }}"
       benchmark_name: "${{ inputs.benchmark_name || 'channel-scaling-bursty-select-update' }}"
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
@@ -143,6 +151,7 @@ jobs:
       use_sidecar: 'true'
       client_branch: "${{ inputs.client_branch || 'main' }}"
       spanner_enable_channel_pool: "${{ inputs.spanner_enable_channel_pool || 'false' }}"
+      spanner_enable_dynamic_channel_pool: "${{ inputs.spanner_enable_dynamic_channel_pool || 'false' }}"
       benchmark_name: "${{ inputs.benchmark_name || 'channel-scaling-bursty-select-update' }}"
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:

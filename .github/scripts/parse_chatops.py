@@ -31,7 +31,10 @@ MEMORY_PATTERN = re.compile(r"^[1-9][0-9]*(Gi|Mi)$")
 NAME_PATTERN = re.compile(r"^[a-zA-Z0-9/._-]+$")
 FLOAT_PATTERN = re.compile(r"^[0-9]+(\.[0-9]+)?$")
 INT_PATTERN = re.compile(r"^[0-9]+$")
-REPO_PATTERN = re.compile(r"^https://github\.com/[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+(\.git)?$")
+REPO_PATTERN = re.compile(
+    r"^https://github\.com/[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+(\.git)?$"
+)
+BOOL_PATTERN = re.compile(r"^(true|false|1|0|yes|no)$", re.IGNORECASE)
 
 LOAD_TYPE_SUPPORTED = {"steady", "spiky", "gradual"}
 
@@ -55,7 +58,7 @@ RESPONSE_SCHEMA = {
                     "client_branch": {"type": "STRING"},
                     "client_repo": {
                         "type": "STRING",
-                        "description": "The GitHub repository URL of the fork to clone (optional)"
+                        "description": "The GitHub repository URL of the fork to clone (optional)",
                     },
                     "benchmark_type": {
                         "type": "STRING",
@@ -76,6 +79,8 @@ RESPONSE_SCHEMA = {
                     "items": {"type": "STRING"},
                     "clients": {"type": "STRING"},
                     "workers": {"type": "STRING"},
+                    "spanner_enable_channel_pool": {"type": "STRING"},
+                    "spanner_enable_dynamic_channel_pool": {"type": "STRING"},
                 },
                 "required": ["client_type", "client_branch", "benchmark_type"],
             },
@@ -129,6 +134,12 @@ def sanitize_run(run):
     items = sanitize_value(run.get("items"), INT_PATTERN, "")
     clients = sanitize_value(run.get("clients"), INT_PATTERN, "")
     workers = sanitize_value(run.get("workers"), INT_PATTERN, "")
+    spanner_enable_channel_pool = sanitize_value(
+        run.get("spanner_enable_channel_pool"), BOOL_PATTERN, ""
+    )
+    spanner_enable_dynamic_channel_pool = sanitize_value(
+        run.get("spanner_enable_dynamic_channel_pool"), BOOL_PATTERN, ""
+    )
 
     return {
         "client_type": client,
@@ -150,6 +161,8 @@ def sanitize_run(run):
         "items": items,
         "clients": clients,
         "workers": workers,
+        "spanner_enable_channel_pool": spanner_enable_channel_pool,
+        "spanner_enable_dynamic_channel_pool": spanner_enable_dynamic_channel_pool,
         "for_alerting": "false",
     }
 
