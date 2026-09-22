@@ -2,6 +2,11 @@ package com.google.cloud.spanner.benchmark;
 
 import static org.junit.Assert.assertTrue;
 
+import io.opentelemetry.api.metrics.Meter;
+import io.opentelemetry.sdk.metrics.Aggregation;
+import io.opentelemetry.sdk.metrics.InstrumentSelector;
+import io.opentelemetry.sdk.metrics.SdkMeterProvider;
+import io.opentelemetry.sdk.metrics.View;
 import org.junit.Test;
 
 public class BenchmarkAppTest extends AbstractBenchmarkTest {
@@ -411,5 +416,22 @@ public class BenchmarkAppTest extends AbstractBenchmarkTest {
     thread.interrupt();
     thread.join(5000);
     assertNoErrors();
+  }
+
+  @Test
+  public void testSdkMetricsDropped() {
+    SimpleMetricReader reader = new SimpleMetricReader();
+    SdkMeterProvider provider =
+        SdkMeterProvider.builder()
+            .registerMetricReader(reader)
+            .registerView(
+                InstrumentSelector.builder().setName("otel.sdk.*").build(),
+                View.builder().setAggregation(Aggregation.drop()).build())
+            .build();
+    Meter meter = provider.get("io.opentelemetry.sdk.metrics");
+    meter.histogramBuilder("otel.sdk.metric_reader.collection.duration").build().record(10.0);
+    assertTrue(
+        "otel.sdk.* metrics should be dropped by the view configuration",
+        reader.collectAllMetrics().isEmpty());
   }
 }

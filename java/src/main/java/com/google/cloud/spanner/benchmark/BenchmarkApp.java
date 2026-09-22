@@ -196,6 +196,9 @@ public class BenchmarkApp implements Runnable {
                         GoogleCloudMetricExporter.createWithConfiguration(
                             MetricConfiguration.builder().setProjectId(projectId).build())))
                 .registerView(
+                    InstrumentSelector.builder().setName("otel.sdk.*").build(),
+                    View.builder().setAggregation(Aggregation.drop()).build())
+                .registerView(
                     InstrumentSelector.builder().setName(LATENCY_NAME).build(),
                     View.builder()
                         .setAggregation(Aggregation.explicitBucketHistogram(getLatencyBuckets()))
