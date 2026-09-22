@@ -81,6 +81,7 @@ RESPONSE_SCHEMA = {
                     "workers": {"type": "STRING"},
                     "spanner_enable_channel_pool": {"type": "STRING"},
                     "spanner_enable_dynamic_channel_pool": {"type": "STRING"},
+                    "google_spanner_enable_direct_access": {"type": "STRING"},
                 },
                 "required": ["client_type", "client_branch", "benchmark_type"],
             },
@@ -140,6 +141,9 @@ def sanitize_run(run):
     spanner_enable_dynamic_channel_pool = sanitize_value(
         run.get("spanner_enable_dynamic_channel_pool"), BOOL_PATTERN, ""
     )
+    google_spanner_enable_direct_access = sanitize_value(
+        run.get("google_spanner_enable_direct_access"), BOOL_PATTERN, ""
+    )
 
     return {
         "client_type": client,
@@ -163,6 +167,7 @@ def sanitize_run(run):
         "workers": workers,
         "spanner_enable_channel_pool": spanner_enable_channel_pool,
         "spanner_enable_dynamic_channel_pool": spanner_enable_dynamic_channel_pool,
+        "google_spanner_enable_direct_access": google_spanner_enable_direct_access,
         "for_alerting": "false",
     }
 

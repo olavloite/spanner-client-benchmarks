@@ -133,6 +133,7 @@ jobs:
             workers=$(echo "$run" | jq -r '.workers // empty')
             spanner_enable_channel_pool=$(echo "$run" | jq -r '.spanner_enable_channel_pool // empty')
             spanner_enable_dynamic_channel_pool=$(echo "$run" | jq -r '.spanner_enable_dynamic_channel_pool // empty')
+            google_spanner_enable_direct_access=$(echo "$run" | jq -r '.google_spanner_enable_direct_access // empty')
 
             label="$client_type-$client_branch"
             echo "Starting deployment for $client_type benchmark (branch: $client_branch)..."
@@ -157,6 +158,7 @@ jobs:
             WORKERS="$workers" \
             SPANNER_ENABLE_CHANNEL_POOL="$spanner_enable_channel_pool" \
             SPANNER_ENABLE_DYNAMIC_CHANNEL_POOL="$spanner_enable_dynamic_channel_pool" \
+            GOOGLE_SPANNER_ENABLE_DIRECT_ACCESS="$google_spanner_enable_direct_access" \
             FOR_ALERTING="false" \
             SKIP_CLEANUP="true" \
             ./run_benchmark.sh "$client_type" 2>&1 | sed "s/^/[$label] /" &

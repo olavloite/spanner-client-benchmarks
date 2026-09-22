@@ -120,6 +120,11 @@ on:
         required: false
         type: string
         default: ''
+      google_spanner_enable_direct_access:
+        description: 'Enable DirectPath for supported clients (true/false)'
+        required: false
+        type: string
+        default: 'false'
     secrets:
       GCP_SA_KEY:
         required: true
@@ -178,4 +183,5 @@ jobs:
           LAZY_DECODE: ${{ inputs.lazy_decode }}
           SPANNER_ENABLE_CHANNEL_POOL: ${{ inputs.spanner_enable_channel_pool }}
           SPANNER_ENABLE_DYNAMIC_CHANNEL_POOL: ${{ inputs.spanner_enable_dynamic_channel_pool }}
+          GOOGLE_SPANNER_ENABLE_DIRECT_ACCESS: ${{ inputs.google_spanner_enable_direct_access }}
         run: ./run_benchmark.sh ${{ matrix.client }}

@@ -37,6 +37,11 @@ on:
         required: false
         type: string
         default: 'false'
+      google_spanner_enable_direct_access:
+        description: 'Enable DirectPath for Java/Go (true/false)'
+        required: false
+        type: string
+        default: 'false'
       benchmark_name:
         description: 'Custom benchmark name identifier (optional)'
         required: false
@@ -79,6 +84,7 @@ jobs:
       client_branch: "${{ inputs.client_branch || 'main' }}"
       spanner_enable_channel_pool: "${{ inputs.spanner_enable_channel_pool || 'false' }}"
       spanner_enable_dynamic_channel_pool: "${{ inputs.spanner_enable_dynamic_channel_pool || 'false' }}"
+      google_spanner_enable_direct_access: "${{ inputs.google_spanner_enable_direct_access || 'false' }}"
       benchmark_name: "${{ inputs.benchmark_name || 'channel-scaling-bursty-point-select' }}"
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
@@ -103,6 +109,7 @@ jobs:
       client_branch: "${{ inputs.client_branch || 'main' }}"
       spanner_enable_channel_pool: "${{ inputs.spanner_enable_channel_pool || 'false' }}"
       spanner_enable_dynamic_channel_pool: "${{ inputs.spanner_enable_dynamic_channel_pool || 'false' }}"
+      google_spanner_enable_direct_access: "${{ inputs.google_spanner_enable_direct_access || 'false' }}"
       benchmark_name: "${{ inputs.benchmark_name || 'channel-scaling-bursty-point-select' }}"
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
@@ -128,6 +135,7 @@ jobs:
       client_branch: "${{ inputs.client_branch || 'main' }}"
       spanner_enable_channel_pool: "${{ inputs.spanner_enable_channel_pool || 'false' }}"
       spanner_enable_dynamic_channel_pool: "${{ inputs.spanner_enable_dynamic_channel_pool || 'false' }}"
+      google_spanner_enable_direct_access: "${{ inputs.google_spanner_enable_direct_access || 'false' }}"
       benchmark_name: "${{ inputs.benchmark_name || 'channel-scaling-bursty-select-update' }}"
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
@@ -152,6 +160,7 @@ jobs:
       client_branch: "${{ inputs.client_branch || 'main' }}"
       spanner_enable_channel_pool: "${{ inputs.spanner_enable_channel_pool || 'false' }}"
       spanner_enable_dynamic_channel_pool: "${{ inputs.spanner_enable_dynamic_channel_pool || 'false' }}"
+      google_spanner_enable_direct_access: "${{ inputs.google_spanner_enable_direct_access || 'false' }}"
       benchmark_name: "${{ inputs.benchmark_name || 'channel-scaling-bursty-select-update' }}"
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:

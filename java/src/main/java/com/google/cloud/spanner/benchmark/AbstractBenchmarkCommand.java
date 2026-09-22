@@ -154,6 +154,11 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
         }
       }
       SpannerOptions spannerOptions = spannerOptionsBuilder.build();
+      if (Boolean.TRUE.equals(spannerOptions.isEnableDirectAccess())
+          || "true".equalsIgnoreCase(System.getenv("GOOGLE_SPANNER_ENABLE_DIRECT_ACCESS"))) {
+        System.out.println(
+            "Configured Spanner Java client with DirectPath (direct access) enabled.");
+      }
       try (Spanner spanner = spannerOptions.getService()) {
         DatabaseClient client =
             spanner.getDatabaseClient(
