@@ -430,6 +430,9 @@ func createSpannerClient(ctx context.Context, project, instance, database, host 
 			log.Printf("Configured Spanner Go client with %d channels.", numChannels)
 		}
 	}
+	if strings.EqualFold(os.Getenv("GOOGLE_SPANNER_ENABLE_DIRECT_ACCESS"), "true") {
+		log.Println("Configured Spanner Go client with DirectPath (direct access) enabled.")
+	}
 	return spanner.NewClient(ctx, databaseName, clientOpts...)
 }
 

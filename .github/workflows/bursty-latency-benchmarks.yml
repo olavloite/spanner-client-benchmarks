@@ -11,6 +11,11 @@ on:
         required: false
         type: boolean
         default: false
+      google_spanner_enable_direct_access:
+        description: 'Enable DirectPath for Java/Go (true/false)'
+        required: false
+        type: string
+        default: 'false'
 
 jobs:
   run-point-select:
@@ -26,6 +31,7 @@ jobs:
       benchmark_name: 'scheduled-bursty-point-select'
       use_sidecar: 'true'
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
+      google_spanner_enable_direct_access: "${{ inputs.google_spanner_enable_direct_access || 'false' }}"
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
 
@@ -42,5 +48,6 @@ jobs:
       benchmark_name: 'scheduled-bursty-select-update'
       use_sidecar: 'true'
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
+      google_spanner_enable_direct_access: "${{ inputs.google_spanner_enable_direct_access || 'false' }}"
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}

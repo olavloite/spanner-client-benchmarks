@@ -118,6 +118,7 @@ These variables can be set as environment variables before executing `./run_benc
 - `SPANNER_DISABLE_BUILTIN_METRICS`: Set to `true` to disable client-side OpenTelemetry metrics emission inside the benchmark runner. Defaults to `false`.
 - `SPANNER_ENABLE_CHANNEL_POOL`: Set to `true` to enable dynamic channel pooling in the Python client. Defaults to `false`.
 - `SPANNER_ENABLE_DYNAMIC_CHANNEL_POOL`: Set to `true` to enable dynamic channel pooling in the Rust client. Defaults to `false`.
+- `GOOGLE_SPANNER_ENABLE_DIRECT_ACCESS`: Set to `true` to enable DirectPath (direct VPC routing to Spanner backends via IPv6/ALTS, bypassing Google Frontends) for supported clients (Java, Go) deployed to GCE VMs in Google Cloud. Defaults to `false`.
 - `POLLING_INTERVAL`: Cloud Build polling interval in seconds. Defaults to `30`.
 - `SKIP_CLEANUP`: Set to `true` to skip running the automatic cleanup script (`cleanup_benchmarks.sh`) before deployment. Defaults to `false`.
 - `USE_SIDECAR`: Set to `true` to run the workload generator as a decoupled sidecar process, communicating with the client benchmark runner over a local Unix domain socket (`/tmp/benchmark.sock`). Defaults to `false`. When deployed to GCE, it enforces process CPU affinity isolation (workload generator on CPU 0, client runner on CPUs `1` to `N-1`) to minimize context-switch latency jitter.
