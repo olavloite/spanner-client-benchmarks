@@ -5,7 +5,7 @@ COPY generator/ .
 RUN CGO_ENABLED=0 go build -o workload-generator .
 
 # Stage 1: Build Java application
-FROM maven:3.9.15-eclipse-temurin-26 AS build
+FROM maven:3.9-eclipse-temurin-26 AS build
 WORKDIR /app
 
 # Install git and python3
