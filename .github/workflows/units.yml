@@ -47,6 +47,28 @@ jobs:
         working-directory: java
         run: ./build_app.sh
 
+  jdbc-tests:
+    name: JDBC Snapshot Compatibility Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Verify code formatting
+        working-directory: jdbc
+        run: mvn fmt:check
+
+      - name: Run build script (clones and tests against Spanner JDBC main branch)
+        working-directory: jdbc
+        run: ./build_app.sh
+
   go-tests:
     name: Go Integration Tests
     runs-on: ubuntu-latest

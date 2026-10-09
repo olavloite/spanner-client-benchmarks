@@ -1,0 +1,509 @@
+package com.google.cloud.spanner.benchmark;
+
+import com.google.cloud.spanner.MockSpannerServiceImpl;
+import com.google.cloud.spanner.MockSpannerServiceImpl.StatementResult;
+import com.google.cloud.spanner.Statement;
+import com.google.cloud.spanner.admin.database.v1.MockDatabaseAdminImpl;
+import com.google.protobuf.ListValue;
+import com.google.protobuf.Value;
+import com.google.spanner.v1.ResultSet;
+import com.google.spanner.v1.ResultSetMetadata;
+import com.google.spanner.v1.StructType;
+import com.google.spanner.v1.StructType.Field;
+import com.google.spanner.v1.Type;
+import com.google.spanner.v1.TypeCode;
+import io.grpc.Server;
+import io.grpc.ServerBuilder;
+
+public class MockServerUtil {
+
+  public static Server startMockSpannerServer(BenchmarkApp parent, String tableName) {
+    if (tableName == null || tableName.isEmpty()) {
+      tableName = "my_table";
+    }
+
+    MockSpannerServiceImpl mockSpanner = new MockSpannerServiceImpl();
+    MockDatabaseAdminImpl mockDatabaseAdmin = new MockDatabaseAdminImpl();
+
+    ResultSetMetadata metadata =
+        ResultSetMetadata.newBuilder()
+            .setRowType(
+                StructType.newBuilder()
+                    .addFields(
+                        Field.newBuilder()
+                            .setName("id")
+                            .setType(Type.newBuilder().setCode(TypeCode.INT64)))
+                    .addFields(
+                        Field.newBuilder()
+                            .setName("value")
+                            .setType(Type.newBuilder().setCode(TypeCode.STRING))))
+            .build();
+    ResultSet resultSet =
+        ResultSet.newBuilder()
+            .setMetadata(metadata)
+            .addRows(
+                ListValue.newBuilder()
+                    .addValues(Value.newBuilder().setStringValue("1"))
+                    .addValues(Value.newBuilder().setStringValue("test-value")))
+            .build();
+
+    // Point Select / Select and Update queries for both named params and JDBC positional params
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT * FROM " + tableName + " WHERE id = @id"), resultSet));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT * FROM " + tableName + " WHERE id = @p1"), resultSet));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT id FROM " + tableName + " WHERE id = @id"), resultSet));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT id FROM " + tableName + " WHERE id = @p1"), resultSet));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of("UPDATE " + tableName + " SET value = @value WHERE id = @id"), 1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of("UPDATE " + tableName + " SET value = @p1 WHERE id = @p2"), 1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of("INSERT INTO " + tableName + " (id, value) VALUES (@id, @value)"), 1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(
+            Statement.of("INSERT INTO " + tableName + " (id, value) VALUES (@p1, @p2)"), 1L));
+
+    // Large result set mock
+    ResultSet largeResultSet =
+        ResultSet.newBuilder()
+            .setMetadata(
+                ResultSetMetadata.newBuilder()
+                    .setRowType(
+                        StructType.newBuilder()
+                            .addFields(
+                                Field.newBuilder()
+                                    .setName("random_bool")
+                                    .setType(Type.newBuilder().setCode(TypeCode.BOOL).build()))
+                            .addFields(
+                                Field.newBuilder()
+                                    .setName("random_bytes")
+                                    .setType(Type.newBuilder().setCode(TypeCode.BYTES).build()))
+                            .addFields(
+                                Field.newBuilder()
+                                    .setName("random_date")
+                                    .setType(Type.newBuilder().setCode(TypeCode.DATE).build()))
+                            .addFields(
+                                Field.newBuilder()
+                                    .setName("random_float32")
+                                    .setType(Type.newBuilder().setCode(TypeCode.FLOAT32).build()))
+                            .addFields(
+                                Field.newBuilder()
+                                    .setName("random_float64")
+                                    .setType(Type.newBuilder().setCode(TypeCode.FLOAT64).build()))
+                            .addFields(
+                                Field.newBuilder()
+                                    .setName("random_interval")
+                                    .setType(Type.newBuilder().setCode(TypeCode.STRING).build()))
+                            .addFields(
+                                Field.newBuilder()
+                                    .setName("random_json")
+                                    .setType(Type.newBuilder().setCode(TypeCode.STRING).build()))
+                            .addFields(
+                                Field.newBuilder()
+                                    .setName("random_int64")
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build()))
+                            .addFields(
+                                Field.newBuilder()
+                                    .setName("random_numeric")
+                                    .setType(Type.newBuilder().setCode(TypeCode.NUMERIC).build()))
+                            .addFields(
+                                Field.newBuilder()
+                                    .setName("random_string")
+                                    .setType(Type.newBuilder().setCode(TypeCode.STRING).build()))
+                            .addFields(
+                                Field.newBuilder()
+                                    .setName("random_timestamp")
+                                    .setType(Type.newBuilder().setCode(TypeCode.TIMESTAMP).build()))
+                            .addFields(
+                                Field.newBuilder()
+                                    .setName("random_uuid")
+                                    .setType(Type.newBuilder().setCode(TypeCode.STRING).build()))
+                            .build())
+                    .build())
+            .addRows(
+                ListValue.newBuilder()
+                    .addValues(Value.newBuilder().setBoolValue(true).build())
+                    .addValues(Value.newBuilder().setStringValue("YWJj").build())
+                    .addValues(Value.newBuilder().setStringValue("2026-06-02").build())
+                    .addValues(Value.newBuilder().setNumberValue(1.23).build())
+                    .addValues(Value.newBuilder().setNumberValue(4.56).build())
+                    .addValues(Value.newBuilder().setStringValue("0-0 0 0:0:0").build())
+                    .addValues(Value.newBuilder().setStringValue("{\"key\":\"val\"}").build())
+                    .addValues(Value.newBuilder().setStringValue("100").build())
+                    .addValues(Value.newBuilder().setStringValue("12.34").build())
+                    .addValues(Value.newBuilder().setStringValue("hello").build())
+                    .addValues(Value.newBuilder().setStringValue("2026-06-02T13:43:09Z").build())
+                    .addValues(
+                        Value.newBuilder()
+                            .setStringValue("00000000-0000-0000-0000-000000000000")
+                            .build())
+                    .build())
+            .build();
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(Statement.of("SELECT\n  MOD(FARM_FINGERPRINT"), largeResultSet));
+
+    // Narrow result set mock
+    ResultSet narrowResultSet =
+        ResultSet.newBuilder()
+            .setMetadata(
+                ResultSetMetadata.newBuilder()
+                    .setRowType(
+                        StructType.newBuilder()
+                            .addFields(
+                                Field.newBuilder()
+                                    .setName("random_int64_1")
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build()))
+                            .addFields(
+                                Field.newBuilder()
+                                    .setName("random_int64_2")
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build()))
+                            .build())
+                    .build())
+            .addRows(
+                ListValue.newBuilder()
+                    .addValues(Value.newBuilder().setStringValue("100").build())
+                    .addValues(Value.newBuilder().setStringValue("200").build())
+                    .build())
+            .build();
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT\n  FARM_FINGERPRINT(GENERATE_UUID()) AS random_int64_1"),
+            narrowResultSet));
+
+    // TPCC Queries mock
+    ResultSet warehouseCountResult =
+        ResultSet.newBuilder()
+            .setMetadata(
+                ResultSetMetadata.newBuilder()
+                    .setRowType(
+                        StructType.newBuilder()
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build())
+                                    .setName("count")
+                                    .build())
+                            .build())
+                    .build())
+            .addRows(
+                ListValue.newBuilder()
+                    .addValues(Value.newBuilder().setStringValue("1").build())
+                    .build())
+            .build();
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT COUNT(*) FROM warehouse"), warehouseCountResult));
+
+    ResultSet districtResult =
+        ResultSet.newBuilder()
+            .setMetadata(
+                ResultSetMetadata.newBuilder()
+                    .setRowType(
+                        StructType.newBuilder()
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build())
+                                    .setName("next_order_id")
+                                    .build())
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.FLOAT64).build())
+                                    .setName("tax")
+                                    .build())
+                            .build())
+                    .build())
+            .addRows(
+                ListValue.newBuilder()
+                    .addValues(Value.newBuilder().setStringValue("1000").build())
+                    .addValues(Value.newBuilder().setNumberValue(0.1).build())
+                    .build())
+            .build();
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT next_order_id, tax FROM district"), districtResult));
+
+    ResultSet customerResult =
+        ResultSet.newBuilder()
+            .setMetadata(
+                ResultSetMetadata.newBuilder()
+                    .setRowType(
+                        StructType.newBuilder()
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.FLOAT64).build())
+                                    .setName("discount")
+                                    .build())
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.STRING).build())
+                                    .setName("last_name")
+                                    .build())
+                            .build())
+                    .build())
+            .addRows(
+                ListValue.newBuilder()
+                    .addValues(Value.newBuilder().setNumberValue(0.15).build())
+                    .addValues(Value.newBuilder().setStringValue("Smith").build())
+                    .build())
+            .build();
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT discount, last_name FROM customer"), customerResult));
+
+    ResultSet customerBalanceResult =
+        ResultSet.newBuilder()
+            .setMetadata(
+                ResultSetMetadata.newBuilder()
+                    .setRowType(
+                        StructType.newBuilder()
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.FLOAT64).build())
+                                    .setName("balance")
+                                    .build())
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.STRING).build())
+                                    .setName("first_name")
+                                    .build())
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.STRING).build())
+                                    .setName("last_name")
+                                    .build())
+                            .build())
+                    .build())
+            .addRows(
+                ListValue.newBuilder()
+                    .addValues(Value.newBuilder().setNumberValue(100.0).build())
+                    .addValues(Value.newBuilder().setStringValue("John").build())
+                    .addValues(Value.newBuilder().setStringValue("Smith").build())
+                    .build())
+            .build();
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT balance, first_name, last_name FROM customer"),
+            customerBalanceResult));
+
+    ResultSet ordersResult =
+        ResultSet.newBuilder()
+            .setMetadata(
+                ResultSetMetadata.newBuilder()
+                    .setRowType(
+                        StructType.newBuilder()
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build())
+                                    .setName("order_id")
+                                    .build())
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.TIMESTAMP).build())
+                                    .setName("entry_date")
+                                    .build())
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build())
+                                    .setName("carrier_id")
+                                    .build())
+                            .build())
+                    .build())
+            .addRows(
+                ListValue.newBuilder()
+                    .addValues(Value.newBuilder().setStringValue("1000").build())
+                    .addValues(Value.newBuilder().setStringValue("2026-06-02T13:43:09Z").build())
+                    .addValues(Value.newBuilder().setStringValue("1").build())
+                    .build())
+            .build();
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT order_id, entry_date, carrier_id FROM orders"), ordersResult));
+
+    ResultSet orderLineResult =
+        ResultSet.newBuilder()
+            .setMetadata(
+                ResultSetMetadata.newBuilder()
+                    .setRowType(
+                        StructType.newBuilder()
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build())
+                                    .setName("order_line_id")
+                                    .build())
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build())
+                                    .setName("item_id")
+                                    .build())
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build())
+                                    .setName("quantity")
+                                    .build())
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.FLOAT64).build())
+                                    .setName("amount")
+                                    .build())
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.TIMESTAMP).build())
+                                    .setName("delivery_date")
+                                    .build())
+                            .build())
+                    .build())
+            .addRows(
+                ListValue.newBuilder()
+                    .addValues(Value.newBuilder().setStringValue("1").build())
+                    .addValues(Value.newBuilder().setStringValue("1").build())
+                    .addValues(Value.newBuilder().setStringValue("5").build())
+                    .addValues(Value.newBuilder().setNumberValue(25.0).build())
+                    .addValues(Value.newBuilder().setStringValue("2026-06-02T13:43:09Z").build())
+                    .build())
+            .build();
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of(
+                "SELECT order_line_id, item_id, quantity, amount, delivery_date FROM order_line"),
+            orderLineResult));
+
+    ResultSet newOrdersResult =
+        ResultSet.newBuilder()
+            .setMetadata(
+                ResultSetMetadata.newBuilder()
+                    .setRowType(
+                        StructType.newBuilder()
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build())
+                                    .setName("order_id")
+                                    .build())
+                            .build())
+                    .build())
+            .addRows(
+                ListValue.newBuilder()
+                    .addValues(Value.newBuilder().setStringValue("1000").build())
+                    .build())
+            .build();
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(Statement.of("SELECT order_id FROM new_orders"), newOrdersResult));
+
+    ResultSet nextOrderIdResult =
+        ResultSet.newBuilder()
+            .setMetadata(
+                ResultSetMetadata.newBuilder()
+                    .setRowType(
+                        StructType.newBuilder()
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build())
+                                    .setName("next_order_id")
+                                    .build())
+                            .build())
+                    .build())
+            .addRows(
+                ListValue.newBuilder()
+                    .addValues(Value.newBuilder().setStringValue("1000").build())
+                    .build())
+            .build();
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT next_order_id FROM district"), nextOrderIdResult));
+
+    ResultSet stockCountResult =
+        ResultSet.newBuilder()
+            .setMetadata(
+                ResultSetMetadata.newBuilder()
+                    .setRowType(
+                        StructType.newBuilder()
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build())
+                                    .setName("count")
+                                    .build())
+                            .build())
+                    .build())
+            .addRows(
+                ListValue.newBuilder()
+                    .addValues(Value.newBuilder().setStringValue("10").build())
+                    .build())
+            .build();
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(
+            Statement.of("SELECT COUNT(DISTINCT s.item_id) FROM order_line ol"), stockCountResult));
+
+    ResultSet stockResult =
+        ResultSet.newBuilder()
+            .setMetadata(
+                ResultSetMetadata.newBuilder()
+                    .setRowType(
+                        StructType.newBuilder()
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build())
+                                    .setName("item_id")
+                                    .build())
+                            .addFields(
+                                Field.newBuilder()
+                                    .setType(Type.newBuilder().setCode(TypeCode.INT64).build())
+                                    .setName("quantity")
+                                    .build())
+                            .build())
+                    .build())
+            .addRows(
+                ListValue.newBuilder()
+                    .addValues(Value.newBuilder().setStringValue("1").build())
+                    .addValues(Value.newBuilder().setStringValue("50").build())
+                    .build())
+            .build();
+    mockSpanner.putPartialStatementResult(
+        StatementResult.query(Statement.of("SELECT item_id, quantity FROM stock"), stockResult));
+
+    // DML statements for TPC-C (matched by statement prefix)
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(Statement.of("UPDATE district SET"), 1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(Statement.of("INSERT INTO orders"), 1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(Statement.of("INSERT INTO new_orders"), 1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(Statement.of("INSERT INTO order_line"), 1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(Statement.of("UPDATE stock SET"), 1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(Statement.of("UPDATE warehouse SET"), 1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(Statement.of("UPDATE customer SET"), 1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(Statement.of("INSERT INTO history"), 1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(Statement.of("DELETE FROM new_orders"), 1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(Statement.of("UPDATE orders SET"), 1L));
+    mockSpanner.putPartialStatementResult(
+        StatementResult.update(Statement.of("UPDATE order_line SET"), 1L));
+
+    try {
+      Server server =
+          ServerBuilder.forPort(0)
+              .addService(mockSpanner)
+              .addService(mockDatabaseAdmin)
+              .build()
+              .start();
+      int port = server.getPort();
+      parent.setHost("http://localhost:" + port);
+      return server;
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to start local mock Spanner server", e);
+    }
+  }
+}

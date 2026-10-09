@@ -37,7 +37,7 @@ async fn execute_new_order(
     let builder = client
         .read_write_transaction()
         .set_transaction_tag("new_order");
-    let runner = builder.build().await?;
+    let runner = builder.build();
     runner.run(async move |transaction| {
         let warehouse_id = rand::random_range(1..=scale_factor);
         let district_id = rand::random_range(1..=10);
@@ -60,7 +60,7 @@ async fn execute_new_order(
         let mut result_set: ResultSet = transaction.execute_query(statement).await?;
         let mut next_order_id = 1000i64;
         if let Some(row) = result_set.next().await.transpose()? {
-            let val: i64 = row.get(0_usize);
+            let val: i64 = row.get(0_usize)?;
             next_order_id = val;
         }
         drop(result_set);
@@ -73,8 +73,8 @@ async fn execute_new_order(
             .build();
         let mut customer_result_set: ResultSet = transaction.execute_query(customer_query).await?;
         while let Some(row) = customer_result_set.next().await.transpose()? {
-            let _: f64 = black_box(row.get(0_usize));
-            let _: String = black_box(row.get(1_usize));
+            let _: f64 = black_box(row.get(0_usize)?);
+            let _: String = black_box(row.get(1_usize)?);
         }
         drop(customer_result_set);
 
@@ -160,7 +160,7 @@ async fn execute_payment(
     let builder = client
         .read_write_transaction()
         .set_transaction_tag("payment");
-    let runner = builder.build().await?;
+    let runner = builder.build();
     runner.run(async move |transaction| {
         let warehouse_id = rand::random_range(1..=scale_factor);
         let district_id = rand::random_range(1..=10);
@@ -231,9 +231,9 @@ async fn execute_order_status(
         .build();
     let mut customer_result_set: ResultSet = transaction.execute_query(customer_query).await?;
     while let Some(row) = customer_result_set.next().await.transpose()? {
-        let _: f64 = black_box(row.get(0_usize));
-        let _: String = black_box(row.get(1_usize));
-        let _: String = black_box(row.get(2_usize));
+        let _: f64 = black_box(row.get(0_usize)?);
+        let _: String = black_box(row.get(1_usize)?);
+        let _: String = black_box(row.get(2_usize)?);
     }
     drop(customer_result_set);
 
@@ -246,7 +246,7 @@ async fn execute_order_status(
     let mut order_result_set: ResultSet = transaction.execute_query(order_query).await?;
     let mut order_id_opt = None;
     if let Some(row) = order_result_set.next().await.transpose()? {
-        let order_id: i64 = row.get(0_usize);
+        let order_id: i64 = row.get(0_usize)?;
         order_id_opt = Some(order_id);
     }
     drop(order_result_set);
@@ -260,10 +260,10 @@ async fn execute_order_status(
             .build();
         let mut line_result_set: ResultSet = transaction.execute_query(line_query).await?;
         while let Some(row) = line_result_set.next().await.transpose()? {
-            let _: i64 = black_box(row.get(0_usize));
-            let _: i64 = black_box(row.get(1_usize));
-            let _: i64 = black_box(row.get(2_usize));
-            let _: f64 = black_box(row.get(3_usize));
+            let _: i64 = black_box(row.get(0_usize)?);
+            let _: i64 = black_box(row.get(1_usize)?);
+            let _: i64 = black_box(row.get(2_usize)?);
+            let _: f64 = black_box(row.get(3_usize)?);
         }
     }
 
@@ -278,7 +278,7 @@ async fn execute_delivery(
     let builder = client
         .read_write_transaction()
         .set_transaction_tag("delivery");
-    let runner = builder.build().await?;
+    let runner = builder.build();
     runner.run(async move |transaction| {
         let warehouse_id = rand::random_range(1..=scale_factor);
         let carrier_id = rand::random_range(1..=10);
@@ -294,7 +294,7 @@ async fn execute_delivery(
             let mut new_orders_result_set: ResultSet = transaction.execute_query(new_orders_query).await?;
             let mut order_id_opt = None;
             if let Some(row) = new_orders_result_set.next().await.transpose()? {
-                let order_id: i64 = row.get(0_usize);
+                let order_id: i64 = row.get(0_usize)?;
                 order_id_opt = Some(order_id);
             }
             drop(new_orders_result_set);
@@ -346,18 +346,13 @@ async fn execute_delivery(
 async fn execute_stock_level(
     client: DatabaseClient,
     scale_factor: i64,
-    extended: bool,
+    _extended: bool,
 ) -> anyhow::Result<()> {
     let warehouse_id = rand::random_range(1..=scale_factor);
     let district_id = rand::random_range(1..=10);
     let threshold = rand::random_range(15..=20);
 
-    let mut builder = client.read_only_transaction();
-    if extended {
-        builder =
-            builder.set_timestamp_bound(TimestampBound::exact_staleness(Duration::from_secs(15)));
-    }
-    let transaction = builder.build().await?;
+    let transaction = client.read_only_transaction().build().await?;
 
     let district_query = Statement::builder(
         "SELECT next_order_id FROM district WHERE warehouse_id = @w AND district_id = @d",
@@ -369,7 +364,7 @@ async fn execute_stock_level(
     let mut district_result_set: ResultSet = transaction.execute_query(district_query).await?;
     let mut next_order_id_opt = None;
     if let Some(row) = district_result_set.next().await.transpose()? {
-        let next_id: i64 = row.get(0_usize);
+        let next_id: i64 = row.get(0_usize)?;
         next_order_id_opt = Some(next_id);
     }
     drop(district_result_set);
@@ -414,7 +409,7 @@ pub(crate) async fn run_tpcc_benchmark(
     let capacity_statement = Statement::builder("SELECT COUNT(*) FROM warehouse").build();
     let mut count_result_set: ResultSet = single_use_tx.execute_query(capacity_statement).await?;
     if let Some(row) = count_result_set.next().await.transpose()? {
-        let warehouse_count: i64 = row.get(0_usize);
+        let warehouse_count: i64 = row.get(0_usize)?;
         if warehouse_count < warehouses {
             anyhow::bail!(
                 "Database capacity check failed: Required scale factor {} warehouses, but database only has {}",
@@ -650,8 +645,7 @@ async fn execute_new_order_mutations(
     let runner = client
         .read_write_transaction()
         .set_transaction_tag("new_order_mutations")
-        .build()
-        .await?;
+        .build();
 
     runner
         .run(async move |transaction| {
@@ -664,7 +658,7 @@ async fn execute_new_order_mutations(
             let mut result_set = transaction.execute_read(read_district).await?;
             let mut next_order_id = 1000i64;
             if let Some(row) = result_set.next().await.transpose()? {
-                next_order_id = row.get(0_usize);
+                next_order_id = row.get(0_usize)?;
             }
             drop(result_set);
 
@@ -676,8 +670,8 @@ async fn execute_new_order_mutations(
                 .build();
             let mut customer_result_set = transaction.execute_read(read_customer).await?;
             if let Some(row) = customer_result_set.next().await.transpose()? {
-                let _: f64 = black_box(row.get(0_usize));
-                let _: String = black_box(row.get(1_usize));
+                let _: f64 = black_box(row.get(0_usize)?);
+                let _: String = black_box(row.get(1_usize)?);
             }
             drop(customer_result_set);
 
@@ -693,8 +687,8 @@ async fn execute_new_order_mutations(
             let mut stock_result_set = transaction.execute_read(read_stock).await?;
             let mut stock_quantities = std::collections::HashMap::new();
             while let Some(row) = stock_result_set.next().await.transpose()? {
-                let item_id: i64 = row.get(0_usize);
-                let quantity: i64 = row.get(1_usize);
+                let item_id: i64 = row.get(0_usize)?;
+                let quantity: i64 = row.get(1_usize)?;
                 stock_quantities.insert(item_id, quantity);
             }
             drop(stock_result_set);
@@ -720,7 +714,7 @@ async fn execute_new_order_mutations(
                     .set("customer_id")
                     .to(&customer_id)
                     .set("entry_date")
-                    .to(&now)
+                    .to(now)
                     .set("item_count")
                     .to(&num_items)
                     .set("all_local")
@@ -734,7 +728,7 @@ async fn execute_new_order_mutations(
                     .set("order_id")
                     .to(&next_order_id)
                     .set("created_timestamp")
-                    .to(&now)
+                    .to(now)
                     .build(),
             ];
 
@@ -797,8 +791,7 @@ async fn execute_payment_mutations_direct(
     let runner = client
         .read_write_transaction()
         .set_transaction_tag("payment_mutations_direct")
-        .build()
-        .await?;
+        .build();
 
     runner.run(async move |transaction| {
         let statements = vec![
@@ -842,7 +835,7 @@ async fn execute_payment_mutations_direct(
         .set("customer_id")
         .to(&customer_id)
         .set("date")
-        .to(&now)
+        .to(now)
         .set("amount")
         .to(&amount)
         .set("data")
@@ -881,9 +874,9 @@ async fn execute_order_status_reads(
             .build();
     let mut customer_result_set = transaction.execute_read(read_customer).await?;
     if let Some(row) = customer_result_set.next().await.transpose()? {
-        let _: f64 = black_box(row.get(0_usize));
-        let _: String = black_box(row.get(1_usize));
-        let _: String = black_box(row.get(2_usize));
+        let _: f64 = black_box(row.get(0_usize)?);
+        let _: String = black_box(row.get(1_usize)?);
+        let _: String = black_box(row.get(2_usize)?);
     }
     drop(customer_result_set);
 
@@ -897,7 +890,7 @@ async fn execute_order_status_reads(
     let mut order_result_set = transaction.execute_query(order_query).await?;
     let mut order_id_opt = None;
     if let Some(row) = order_result_set.next().await.transpose()? {
-        let order_id: i64 = row.get(0_usize);
+        let order_id: i64 = row.get(0_usize)?;
         order_id_opt = Some(order_id);
     }
     drop(order_result_set);
@@ -916,10 +909,10 @@ async fn execute_order_status_reads(
         .build();
         let mut line_result_set = transaction.execute_read(read_lines).await?;
         while let Some(row) = line_result_set.next().await.transpose()? {
-            let _: i64 = black_box(row.get(0_usize));
-            let _: i64 = black_box(row.get(1_usize));
-            let _: i64 = black_box(row.get(2_usize));
-            let _: f64 = black_box(row.get(3_usize));
+            let _: i64 = black_box(row.get(0_usize)?);
+            let _: i64 = black_box(row.get(1_usize)?);
+            let _: i64 = black_box(row.get(2_usize)?);
+            let _: f64 = black_box(row.get(3_usize)?);
         }
     }
 
@@ -953,9 +946,9 @@ async fn execute_stock_level_partitioned(
         .await?;
     let mut next_order_id_opt = None;
     for partition in district_partitions {
-        let mut rs = partition.execute(&client).await?;
-        if let Some(row) = rs.next().await.transpose()? {
-            let next_id: i64 = row.get(0_usize);
+        let mut result_set = partition.execute(&client).await?;
+        if let Some(row) = result_set.next().await.transpose()? {
+            let next_id: i64 = row.get(0_usize)?;
             next_order_id_opt = Some(next_id);
             break;
         }
@@ -982,10 +975,10 @@ async fn execute_stock_level_partitioned(
         for partition in partitions {
             let client_clone = client.clone();
             tasks.push(tokio::spawn(async move {
-                let mut rs = partition.execute(&client_clone).await?;
+                let mut result_set = partition.execute(&client_clone).await?;
                 let mut item_ids = Vec::new();
-                while let Some(row) = rs.next().await.transpose()? {
-                    let item_id: i64 = row.get(0_usize);
+                while let Some(row) = result_set.next().await.transpose()? {
+                    let item_id: i64 = row.get(0_usize)?;
                     item_ids.push(item_id);
                 }
                 Ok::<_, anyhow::Error>(item_ids)

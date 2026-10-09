@@ -22,7 +22,7 @@ Before you state that a task is complete, you **MUST** run the code formatters, 
 
 ### Formatting Commands by Language/Directory
 
-#### ☕ Java (Directories: `java`, `analyzer`)
+#### ☕ Java & JDBC (Directories: `java`, `jdbc`, `analyzer`)
 - **Action**: Run the formatter.
 - **Command**:
   ```bash
@@ -61,7 +61,7 @@ Before you state that a task is complete, you **MUST** run the code formatters, 
 
 ### 🧪 Unit Testing Commands by Language/Directory
 
-#### ☕ Java (Directory: `java`)
+#### ☕ Java & JDBC (Directories: `java`, `jdbc`)
 - **Command**:
   ```bash
   mvn test

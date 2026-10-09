@@ -1,0 +1,62 @@
+package com.google.cloud.spanner.benchmark;
+
+import com.google.cloud.spanner.TimestampBound;
+import com.google.cloud.spanner.jdbc.CloudSpannerJdbcConnection;
+import io.opentelemetry.api.metrics.DoubleHistogram;
+import io.opentelemetry.api.metrics.LongCounter;
+import io.opentelemetry.api.metrics.LongHistogram;
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
+import picocli.CommandLine.Command;
+
+@Command(name = "point-select", description = "Runs point select benchmark.")
+public class PointSelectCommand extends AbstractBenchmarkCommand {
+
+  @Override
+  protected ConnectionSupplier.ConnectionInitializer getConnectionInitializer() {
+    return connection -> {
+      connection.setReadOnly(true);
+      CloudSpannerJdbcConnection spannerConnection =
+          connection.unwrap(CloudSpannerJdbcConnection.class);
+      spannerConnection.setReadOnlyStaleness(TimestampBound.ofExactStaleness(15, TimeUnit.SECONDS));
+    };
+  }
+
+  @Override
+  protected AbstractBenchmark createBenchmark(
+      ConnectionSupplier connectionSupplier,
+      LongHistogram latencyHistogram,
+      LongCounter operationCounter,
+      LongCounter errorCounter,
+      LongHistogram memoryUsageHistogram,
+      DoubleHistogram cpuUtilizationHistogram,
+      String resourceProbeInterval,
+      Duration duration,
+      boolean forAlerting,
+      String benchmarkName,
+      boolean isMock) {
+    return new PointSelectBenchmark(
+        connectionSupplier,
+        latencyHistogram,
+        operationCounter,
+        errorCounter,
+        memoryUsageHistogram,
+        cpuUtilizationHistogram,
+        resourceProbeInterval,
+        tableName,
+        1,
+        numRows,
+        tps,
+        threads,
+        duration,
+        forAlerting,
+        benchmarkName,
+        loadType,
+        AbstractBenchmark.parseDuration(cycleDuration),
+        peakFactor,
+        burstFactor,
+        burstDuration,
+        burstFraction,
+        isMock);
+  }
+}

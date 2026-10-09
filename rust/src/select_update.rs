@@ -12,7 +12,7 @@ pub fn execute_select_update(
     max_id: i64,
 ) -> BoxFuture<'static, anyhow::Result<()>> {
     async move {
-        let runner = client.read_write_transaction().build().await?;
+        let runner = client.read_write_transaction().build();
         runner
             .run(async move |transaction| {
                 let random_id = rand::random_range(min_id..=max_id);

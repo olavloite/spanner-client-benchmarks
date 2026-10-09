@@ -24,8 +24,8 @@ pub fn execute_point_select(
             .build();
         let mut result_set: ResultSet = transaction.execute_query(statement).await?;
         while let Some(row) = result_set.next().await.transpose()? {
-            let _: i64 = black_box(row.get(0_usize));
-            let _: String = black_box(row.get(1_usize));
+            let _: i64 = black_box(row.get(0_usize)?);
+            let _: String = black_box(row.get(1_usize)?);
         }
         Ok(())
     }

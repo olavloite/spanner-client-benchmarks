@@ -1,0 +1,218 @@
+package com.google.cloud.spanner.benchmark;
+
+import static com.google.cloud.spanner.benchmark.BenchmarkApp.LATENCY_NAME;
+import static com.google.cloud.spanner.benchmark.BenchmarkApp.METER_NAME;
+import static com.google.cloud.spanner.benchmark.BenchmarkApp.initializeOpenTelemetry;
+
+import com.google.cloud.spanner.jdbc.JdbcDriver;
+import io.grpc.Server;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.metrics.DoubleHistogram;
+import io.opentelemetry.api.metrics.LongCounter;
+import io.opentelemetry.api.metrics.LongHistogram;
+import io.opentelemetry.api.metrics.Meter;
+import java.time.Duration;
+import java.util.Properties;
+import picocli.CommandLine.ITypeConverter;
+import picocli.CommandLine.Option;
+import picocli.CommandLine.ParentCommand;
+
+public abstract class AbstractBenchmarkCommand implements Runnable {
+  @ParentCommand protected BenchmarkApp parent;
+
+  @Option(
+      names = {"-t", "--table"},
+      description = "Table name",
+      required = true)
+  protected String tableName;
+
+  @Option(
+      names = {"--num-rows"},
+      description = "Number of rows to generate/select")
+  protected long numRows = 1000000;
+
+  @Option(
+      names = {"--tps"},
+      description = "Target transactions per second")
+  protected double tps = 10.0;
+
+  @Option(
+      names = {"--threads"},
+      description = "Number of threads in the pool",
+      defaultValue = "10")
+  protected int threads;
+
+  @Option(
+      names = {"--load-type"},
+      description = "Load type (STEADY, SPIKY, GRADUAL, CLOSED_LOOP)",
+      defaultValue = "STEADY",
+      converter = LoadTypeConverter.class)
+  protected LoadType loadType = LoadType.STEADY;
+
+  @Option(
+      names = {"--cycle-duration"},
+      description = "Duration of a full cycle for gradual load")
+  protected String cycleDuration;
+
+  @Option(
+      names = {"--peak-factor"},
+      description = "Ratio of peak rate to average rate for gradual load")
+  protected Double peakFactor;
+
+  @Option(
+      names = {"--burst-factor"},
+      description = "Ratio of burst rate to average rate")
+  protected Double burstFactor;
+
+  @Option(
+      names = {"--burst-duration"},
+      description = "Average duration of a burst in seconds")
+  protected Double burstDuration;
+
+  @Option(
+      names = {"--burst-fraction"},
+      description = "Fraction of total time spent in the burst state")
+  protected Double burstFraction;
+
+  protected String getMetricName() {
+    return LATENCY_NAME;
+  }
+
+  protected ConnectionSupplier.ConnectionInitializer getConnectionInitializer() {
+    return null;
+  }
+
+  @Override
+  public void run() {
+    // Validation
+    if (loadType == LoadType.STEADY) {
+      if (cycleDuration != null
+          || peakFactor != null
+          || burstFactor != null
+          || burstDuration != null
+          || burstFraction != null) {
+        throw new IllegalArgumentException(
+            "Cannot specify burst or gradual load options when load-type is steady");
+      }
+    } else if (loadType == LoadType.SPIKY) {
+      if (cycleDuration != null || peakFactor != null) {
+        throw new IllegalArgumentException(
+            "Cannot specify gradual load options when load-type is spiky");
+      }
+      if (burstFactor == null) burstFactor = 1.0;
+      if (burstDuration == null) burstDuration = 1.0;
+      if (burstFraction == null) burstFraction = 0.1;
+    } else if (loadType == LoadType.GRADUAL) {
+      if (burstFactor != null || burstDuration != null || burstFraction != null) {
+        throw new IllegalArgumentException(
+            "Cannot specify burst load options when load-type is gradual");
+      }
+      if (cycleDuration == null) cycleDuration = "1h";
+      if (peakFactor == null) peakFactor = 2.0;
+    }
+
+    if (burstFactor == null) burstFactor = 1.0;
+    if (burstDuration == null) burstDuration = 1.0;
+    if (burstFraction == null) burstFraction = 0.1;
+    if (cycleDuration == null) cycleDuration = "1h";
+    if (peakFactor == null) peakFactor = 2.0;
+
+    Server server = null;
+    if (parent.isMock()) {
+      server = MockServerUtil.startMockSpannerServer(parent, tableName);
+    }
+
+    try {
+      // Initialize OpenTelemetry
+      OpenTelemetry openTelemetry =
+          initializeOpenTelemetry(
+              parent.getProjectId(),
+              parent.getHost(),
+              parent.getBenchmarkName(),
+              parent.isNoMetrics());
+      Meter meter = openTelemetry.getMeter(METER_NAME);
+      BenchmarkMetrics metrics = BenchmarkApp.createBenchmarkMetrics(meter, getMetricName());
+
+      // Construct JDBC URL and properties
+      String url;
+      if (parent.getHost() != null) {
+        String cleanHost = parent.getHost().replaceFirst("^https?://", "");
+        url =
+            String.format(
+                "jdbc:cloudspanner://%s/projects/%s/instances/%s/databases/%s?usePlainText=true",
+                cleanHost, parent.getProjectId(), parent.getInstanceId(), parent.getDatabaseId());
+      } else {
+        url =
+            String.format(
+                "jdbc:cloudspanner:/projects/%s/instances/%s/databases/%s",
+                parent.getProjectId(), parent.getInstanceId(), parent.getDatabaseId());
+      }
+
+      Properties info = new Properties();
+      info.put(JdbcDriver.OPEN_TELEMETRY_PROPERTY_KEY, openTelemetry);
+
+      String numChannelsStr = System.getenv("SPANNER_NUM_CHANNELS");
+      if (numChannelsStr != null && !numChannelsStr.isEmpty()) {
+        try {
+          int numChannels = Integer.parseInt(numChannelsStr);
+          info.setProperty("numChannels", String.valueOf(numChannels));
+          System.out.println("Configured Spanner JDBC driver with " + numChannels + " channels.");
+        } catch (NumberFormatException e) {
+          System.err.println("Invalid SPANNER_NUM_CHANNELS value: " + numChannelsStr);
+        }
+      }
+
+      if ("true".equalsIgnoreCase(System.getenv("GOOGLE_SPANNER_ENABLE_DIRECT_ACCESS"))) {
+        System.out.println(
+            "Configured Spanner JDBC client with DirectPath (direct access) enabled.");
+      }
+
+      ConnectionSupplier connectionSupplier =
+          new ConnectionSupplier(url, info, getConnectionInitializer());
+
+      Duration duration = AbstractBenchmark.parseDuration(parent.getDuration());
+      boolean forAlerting = parent.isForAlerting();
+      String benchmarkName = parent.getBenchmarkName();
+      AbstractBenchmark benchmark =
+          createBenchmark(
+              connectionSupplier,
+              metrics.latencyHistogram,
+              metrics.operationCounter,
+              metrics.errorCounter,
+              metrics.memoryUsageHistogram,
+              metrics.cpuUtilizationHistogram,
+              parent.getResourceProbeInterval(),
+              duration,
+              forAlerting,
+              benchmarkName,
+              parent.isMock());
+      benchmark.run();
+    } catch (Exception e) {
+      e.printStackTrace();
+    } finally {
+      if (server != null) {
+        server.shutdown();
+      }
+    }
+  }
+
+  protected abstract AbstractBenchmark createBenchmark(
+      ConnectionSupplier connectionSupplier,
+      LongHistogram latencyHistogram,
+      LongCounter operationCounter,
+      LongCounter errorCounter,
+      LongHistogram memoryUsageHistogram,
+      DoubleHistogram cpuUtilizationHistogram,
+      String resourceProbeInterval,
+      Duration duration,
+      boolean forAlerting,
+      String benchmarkName,
+      boolean isMock);
+
+  public static class LoadTypeConverter implements ITypeConverter<LoadType> {
+    @Override
+    public LoadType convert(String value) {
+      return LoadType.valueOf(value.toUpperCase().replace('-', '_'));
+    }
+  }
+}

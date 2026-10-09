@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [go, java, node, python, rust]
+        language: [go, java, jdbc, node, python, rust]
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

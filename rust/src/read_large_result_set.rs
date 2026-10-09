@@ -1,5 +1,6 @@
 use futures::FutureExt;
 use futures::future::BoxFuture;
+use google_cloud_spanner::Error;
 use google_cloud_spanner::client::DatabaseClient;
 use google_cloud_spanner::result::{ResultSet, Row};
 use google_cloud_spanner::statement::Statement;
@@ -7,6 +8,7 @@ use opentelemetry::KeyValue;
 use opentelemetry::metrics::Histogram;
 use std::hint::black_box;
 use std::time::Instant;
+use time::{Date, OffsetDateTime};
 
 pub fn execute_read_large_result_set(
     client: DatabaseClient,
@@ -34,7 +36,7 @@ pub fn execute_read_large_result_set(
         let transaction = client.single_use().build();
         let mut result_set: ResultSet = transaction.execute_query(statement).await?;
         if let Some(row) = result_set.next().await.transpose()? {
-            decode_row(&row);
+            decode_row(&row)?;
         } else {
             return Ok(());
         }
@@ -43,7 +45,7 @@ pub fn execute_read_large_result_set(
         // to measure purely the iteration and decoding latency of the remaining rows. Do not change this.
         let start = Instant::now();
         while let Some(row) = result_set.next().await.transpose()? {
-            decode_row(&row);
+            decode_row(&row)?;
         }
         let duration_us = start.elapsed().as_micros() as f64;
         histogram.record(duration_us, &attributes);
@@ -53,14 +55,15 @@ pub fn execute_read_large_result_set(
     .boxed()
 }
 
-fn decode_row(row: &Row) {
-    let _: bool = black_box(row.get(0));
-    let _: Vec<u8> = black_box(row.get(1));
-    let _: time::Date = black_box(row.get(2));
-    let _: f32 = black_box(row.get(3));
-    let _: f64 = black_box(row.get(4));
-    let _: String = black_box(row.get(5));
-    let _: i64 = black_box(row.get(6));
-    let _: String = black_box(row.get(7));
-    let _: time::OffsetDateTime = black_box(row.get(8));
+fn decode_row(row: &Row) -> Result<(), Error> {
+    let _: bool = black_box(row.get(0)?);
+    let _: Vec<u8> = black_box(row.get(1)?);
+    let _: Date = black_box(row.get(2)?);
+    let _: f32 = black_box(row.get(3)?);
+    let _: f64 = black_box(row.get(4)?);
+    let _: String = black_box(row.get(5)?);
+    let _: i64 = black_box(row.get(6)?);
+    let _: String = black_box(row.get(7)?);
+    let _: OffsetDateTime = black_box(row.get(8)?);
+    Ok(())
 }

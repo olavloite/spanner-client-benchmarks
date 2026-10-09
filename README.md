@@ -9,6 +9,7 @@ The benchmarks are built and run against the **most recent source code** of thei
 ## Current State & Language Support
 
 - 🟢 **Java**: Implemented.
+- 🟢 **Java (JDBC)**: Implemented.
 - 🟢 **Go**: Implemented.
 - 🟢 **Node.js**: Implemented.
 - 🟢 **Python**: Implemented.
