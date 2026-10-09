@@ -13,7 +13,7 @@ except AttributeError:
     pass
 
 # Strict enum definitions for sanitization
-SUPPORTED_CLIENTS = {"go", "java", "jdbc", "node", "python", "rust"}
+SUPPORTED_CLIENTS = {"go", "java", "jdbc", "node", "python", "python-async", "rust"}
 SUPPORTED_BENCHMARKS = {
     "point-select",
     "select-update",
