@@ -13,6 +13,7 @@ The benchmarks are built and run against the **most recent source code** of thei
 - 🟢 **Go**: Implemented.
 - 🟢 **Node.js**: Implemented.
 - 🟢 **Python**: Implemented.
+- 🟢 **Python (Async)**: Implemented.
 - 🟢 **Rust**: Implemented.
 
 ---
@@ -130,9 +131,11 @@ These variables can be set as environment variables before executing `./run_benc
 ## Project Structure
 
 - [java/](java/): Java benchmark implementation.
+- [jdbc/](jdbc/): JDBC benchmark implementation.
 - [go/](go/): Go benchmark implementation.
 - [node/](node/): Node.js benchmark implementation.
 - [python/](python/): Python benchmark implementation.
+- [python-async/](python-async/): Python asynchronous benchmark implementation.
 - [rust/](rust/): Rust benchmark implementation.
 - [analyzer/](analyzer/): Benchmarks regression analyzer.
 
@@ -145,7 +148,7 @@ Build and execution scripts are provided at the project root to simplify running
 ### 1. Local Execution
 To build and test the benchmarks locally against the latest upstream client library:
 ```bash
-./run_benchmark_locally.sh <go|java|node|python|rust> [options] [benchmark-type]
+./run_benchmark_locally.sh <go|java|jdbc|node|python|python-async|rust> [options] [benchmark-type]
 ```
 
 To run local builds against a specific upstream branch or commit hash:
@@ -159,7 +162,7 @@ export USE_RELEASED_VERSION="false"
 ### 2. Cloud Deployments (GCE by default, or Cloud Run)
 Benchmarks are designed to run on GCE VM Spot instances for sustained, predictable performance tracking. They can also be deployed as Cloud Run Jobs. To package and deploy them to the cloud:
 ```bash
-./run_benchmark.sh <go|java|node|python|rust>
+./run_benchmark.sh <go|java|jdbc|node|python|python-async|rust>
 ```
 This will:
 - Pull the latest client library code from the official upstream repository.

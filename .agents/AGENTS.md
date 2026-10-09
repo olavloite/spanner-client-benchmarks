@@ -36,7 +36,7 @@ Before you state that a task is complete, you **MUST** run the code formatters, 
   gofmt -s -w .
   ```
 
-#### 🐍 Python (Directory: `python`)
+#### 🐍 Python (Directories: `python`, `python-async`)
 - **Action**: Run the formatter and linter fix.
 - **Command**:
   ```bash
@@ -73,7 +73,7 @@ Before you state that a task is complete, you **MUST** run the code formatters, 
   go test -v ./...
   ```
 
-#### 🐍 Python (Directory: `python`)
+#### 🐍 Python (Directories: `python`, `python-async`)
 - **Command**:
   ```bash
   python3 -m unittest discover -s tests

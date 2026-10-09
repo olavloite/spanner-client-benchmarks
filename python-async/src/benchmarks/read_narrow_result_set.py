@@ -1,0 +1,135 @@
+import time
+from typing import Optional
+
+from google.cloud import spanner
+from google.cloud.spanner_v1.database import Database
+from opentelemetry.metrics import Counter, Histogram
+
+from .abstract_benchmark import AbstractBenchmark
+
+SQL = """SELECT
+  FARM_FINGERPRINT(GENERATE_UUID()) AS random_int64_1,
+  FARM_FINGERPRINT(GENERATE_UUID()) AS random_int64_2
+FROM UNNEST(GENERATE_ARRAY(1, @num_rows)) AS n"""
+
+
+async def execute_read_narrow_result_set(
+    database: Database, num_rows: int, lazy_decode: bool = False
+) -> float:
+    """Executes read-narrow-result-set query and measures iteration latency of remaining rows in microseconds."""
+    async with database.snapshot() as snapshot:
+        results = await snapshot.execute_sql(
+            SQL,
+            params={"num_rows": num_rows},
+            param_types={"num_rows": spanner.param_types.INT64},
+            lazy_decode=lazy_decode,
+        )
+
+        row_iterator = aiter(results)
+        try:
+            first_row = await anext(row_iterator)
+            # Force full deserialization of the first row
+            for cell in first_row:
+                pass
+        except StopAsyncIteration:
+            return 0.0
+
+        # Measure iteration duration of remaining rows
+        start_time = time.perf_counter()
+        async for row in row_iterator:
+            # Force full deserialization of each row
+            for cell in row:
+                pass
+        end_time = time.perf_counter()
+        return (end_time - start_time) * 1000000.0
+
+
+class ReadNarrowResultSetBenchmark(AbstractBenchmark):
+    def __init__(
+        self,
+        database: Optional[Database] = None,
+        latency_histogram: Optional[Histogram] = None,
+        operation_counter: Optional[Counter] = None,
+        error_counter: Optional[Counter] = None,
+        memory_usage_histogram: Optional[Histogram] = None,
+        cpu_utilization_histogram: Optional[Histogram] = None,
+        resource_probe_interval_str: str = "10s",
+        table_name: str = "test",
+        min_id: int = 1,
+        max_id: int = 1000000,
+        tps: float = 0.05,
+        threads: int = 10,
+        duration_sec: float | None = None,
+        for_alerting: bool = False,
+        benchmark_name: str = "",
+        num_rows: int = 200000,
+        load_type: str = "steady",
+        cycle_duration_sec: float | None = None,
+        peak_factor: float = 2.0,
+        burst_factor: float = 1.0,
+        burst_duration: float = 1.0,
+        burst_fraction: float = 0.1,
+        lazy_decode: bool = False,
+        workers: int = 1,
+        host: Optional[str] = None,
+        project_id: Optional[str] = None,
+        instance_id: Optional[str] = None,
+        database_id: Optional[str] = None,
+    ):
+        super().__init__(
+            database,
+            latency_histogram,
+            operation_counter,
+            error_counter,
+            memory_usage_histogram,
+            cpu_utilization_histogram,
+            resource_probe_interval_str,
+            table_name,
+            min_id,
+            max_id,
+            tps,
+            threads,
+            duration_sec,
+            for_alerting,
+            benchmark_name,
+            load_type,
+            cycle_duration_sec,
+            peak_factor,
+            burst_factor,
+            burst_duration,
+            burst_fraction,
+            workers=workers,
+            host=host,
+            project_id=project_id,
+            instance_id=instance_id,
+            database_id=database_id,
+        )
+        self.num_rows = num_rows
+        self.lazy_decode = lazy_decode
+
+    def get_benchmark_name(self) -> str:
+        return "Read Narrow Result Set Benchmark"
+
+    def get_benchmark_type(self) -> str:
+        return "read-narrow-result-set"
+
+    # INTENTIONAL: Do not change should_measure_entire_method to return True.
+    # We intentionally exclude the initial query execution and the first row fetch
+    # to measure purely the iteration and decoding latency of the remaining rows.
+    def should_measure_entire_method(self) -> bool:
+        return False
+
+    def get_attributes(self) -> dict:
+        attrs = super().get_attributes()
+        attrs["num_rows"] = self.num_rows
+        attrs["lazy_decode"] = str(self.lazy_decode).lower()
+        return attrs
+
+    async def execute_operation(
+        self, database: Database, table_name: str, min_id: int, max_id: int
+    ) -> None:
+        latency_us = await execute_read_narrow_result_set(
+            database, self.num_rows, self.lazy_decode
+        )
+        self.latency_histogram.record(latency_us, self.get_attributes())
+        self._latency_sampler.add(latency_us)

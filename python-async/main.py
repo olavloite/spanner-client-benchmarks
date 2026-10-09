@@ -1,9 +1,16 @@
 import argparse
+import asyncio
 import math
 import os
 import signal
 import sys
+from typing import Any, Callable
 
+from src.benchmarks.point_select import PointSelectBenchmark
+from src.benchmarks.read_large_result_set import ReadLargeResultSetBenchmark
+from src.benchmarks.read_narrow_result_set import ReadNarrowResultSetBenchmark
+from src.benchmarks.select_update import SelectAndUpdateBenchmark
+from src.benchmarks.tpcc.benchmark import TpccBenchmarkRunner
 from src.metrics.otel import (
     CPU_UTILIZATION_NAME,
     ERROR_COUNT_NAME,
@@ -13,12 +20,22 @@ from src.metrics.otel import (
     READ_LATENCY_NAME,
     setup_metrics,
 )
+from src.spanner.client import create_spanner_client
 from src.utils.duration import parse_duration
 
 
-def _safe_call(action):
+def _safe_call(action: Callable[[], Any]) -> None:
     try:
         action()
+    except Exception:
+        pass
+
+
+async def _async_safe_call(action: Callable[[], Any]) -> None:
+    try:
+        res = action()
+        if asyncio.iscoroutine(res):
+            await res
     except Exception:
         pass
 
@@ -70,20 +87,20 @@ def validate_and_fill_load_params(args):
 def build_parser() -> argparse.ArgumentParser:
     """Build and return the argument parser for the benchmark CLI."""
     parser = argparse.ArgumentParser(
-        description="High-performance Cloud Spanner client library benchmark tool for Python."
+        description="High-performance Cloud Spanner async client library benchmark tool for Python."
     )
 
-    def str2bool(v):
-        if isinstance(v, bool):
-            return v
-        if v.lower() in ("yes", "true", "t", "y", "1"):
+    def str2bool(value):
+        if isinstance(value, bool):
+            return value
+        if value.lower() in ("yes", "true", "t", "y", "1"):
             return True
-        elif v.lower() in ("no", "false", "f", "n", "0"):
+        elif value.lower() in ("no", "false", "f", "n", "0"):
             return False
         else:
             raise argparse.ArgumentTypeError("Boolean value expected.")
 
-    # Global flags matching Java, Go, and Node setups
+    # Global flags matching Java, Go, Node, and Python setups
     parser.add_argument(
         "-p", "--project", required=True, help="Google Cloud Project ID"
     )
@@ -180,7 +197,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--threads",
         type=int,
         default=10,
-        help="ThreadPoolExecutor worker thread concurrency cap",
+        help="Concurrency cap for tasks",
     )
     workload_parser.add_argument(
         "--load-type",
@@ -330,10 +347,10 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main():
+async def async_main():
     """
-    Main command line entry point. Parses options, setups client services,
-    and handles graceful lifecycle shutdown sig-traps.
+    Main asynchronous command line entry point. Parses options, sets up client services,
+    and handles graceful lifecycle shutdown signal traps.
     """
     parser = build_parser()
     args = parser.parse_args()
@@ -423,14 +440,6 @@ def main():
         unit="1",
     )
 
-    # 2. Initialize the Google Cloud Spanner Client driver
-    from src.benchmarks.point_select import PointSelectBenchmark
-    from src.benchmarks.read_large_result_set import ReadLargeResultSetBenchmark
-    from src.benchmarks.read_narrow_result_set import ReadNarrowResultSetBenchmark
-    from src.benchmarks.select_update import SelectAndUpdateBenchmark
-    from src.benchmarks.tpcc.benchmark import TpccBenchmarkRunner
-    from src.spanner.client import create_spanner_client
-
     # 2. Calculate number of worker processes
     cpu_limit = os.environ.get("BENCHMARK_CPU_LIMIT")
     if cpu_limit:
@@ -445,7 +454,6 @@ def main():
         )
     else:
         try:
-            # sched_getaffinity already accounts for CPU affinity set by taskset in entrypoint.sh
             affinity_cpus = len(os.sched_getaffinity(0))
             max_available_workers = max(1, affinity_cpus)
         except (AttributeError, OSError):
@@ -461,9 +469,9 @@ def main():
         else getattr(args, "threads", 10)
     )
     auto_workers = max(1, min(threads, int(max_available_workers)))
-    workers_arg = getattr(args, "workers", None)
-    if workers_arg is not None:
-        workers = workers_arg
+    workers_argument = getattr(args, "workers", None)
+    if workers_argument is not None:
+        workers = workers_argument
     elif "WORKERS" in os.environ:
         try:
             workers = int(os.environ["WORKERS"])
@@ -474,11 +482,10 @@ def main():
 
     # When running with multiple worker processes, worker processes instantiate their
     # own dedicated Spanner clients. The coordinator only needs an in-process client if workers == 1.
-
     if workers == 1:
         spanner_client = create_spanner_client(args.project, host)
         instance = spanner_client.instance(args.instance)
-        database = instance.database(args.database)
+        database = await instance.database(args.database)
     else:
         spanner_client = None
         database = None
@@ -637,55 +644,65 @@ def main():
 
     # 4. Register process lifecycle termination traps (SIGINT, SIGTERM)
     is_terminating = False
+    metrics_shut_down = False
 
-    def graceful_termination_handler(sig, frame):
+    def shutdown_telemetry():
+        nonlocal metrics_shut_down
+        if not metrics_shut_down:
+            metrics_shut_down = True
+            shutdown_metrics()
+
+    def graceful_termination_handler():
         nonlocal is_terminating
         if is_terminating:
             return
         is_terminating = True
-        print(
-            f"\n[Lifecycle] Received signal {sig}. Initiating graceful termination..."
-        )
-
-        # Tell workload generator to stop spawning new executor tasks
+        print("\n[Lifecycle] Received signal. Initiating graceful termination...")
         benchmark.stop()
 
-        # Shutdown metrics PeriodicExportingMetricReader
-        shutdown_metrics()
-        print("[Lifecycle] Graceful shutdown complete. Exiting.")
-        sys.exit(0)
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, graceful_termination_handler)
+        except (NotImplementedError, AttributeError):
+            signal.signal(sig, lambda s, f: graceful_termination_handler())
 
-    signal.signal(signal.SIGINT, graceful_termination_handler)
-    signal.signal(signal.SIGTERM, graceful_termination_handler)
-
+    exit_code = 0
     # 5. Run workload scheduler loop
     try:
-        benchmark.run()
+        await benchmark.run()
     except Exception as err:
+        exit_code = 1
         print(
             f"Fatal exception encountered during benchmark execution: {err}",
             file=sys.stderr,
         )
     finally:
-        # Normal duration finish cleanup
-        if not is_terminating:
-            is_terminating = True
-            shutdown_metrics()
+        shutdown_telemetry()
 
-        # Close all Spanner client transports and pool cleanly to release threads
+        # Close all Spanner client transports cleanly to release background resources
         if database is not None:
-            _safe_call(
-                lambda: (
-                    database.channel_pool.close()
-                    if getattr(database, "channel_pool", None)
-                    else None
-                )
-            )
-            _safe_call(lambda: database.pool.close())
-            _safe_call(lambda: database.spanner_api.transport.close())
+            try:
+                await database.close()
+            except Exception:
+                pass
+            if hasattr(database, "spanner_api") and hasattr(
+                database.spanner_api, "transport"
+            ):
+                await _async_safe_call(lambda: database.spanner_api.transport.close())
         if spanner_client is not None:
-            _safe_call(lambda: spanner_client.database_admin_api.transport.close())
-            _safe_call(lambda: spanner_client.instance_admin_api.transport.close())
+            if hasattr(spanner_client, "database_admin_api") and hasattr(
+                spanner_client.database_admin_api, "transport"
+            ):
+                await _async_safe_call(
+                    lambda: spanner_client.database_admin_api.transport.close()
+                )
+            if hasattr(spanner_client, "instance_admin_api") and hasattr(
+                spanner_client.instance_admin_api, "transport"
+            ):
+                await _async_safe_call(
+                    lambda: spanner_client.instance_admin_api.transport.close()
+                )
             _safe_call(lambda: spanner_client.close())
 
         if mock_server:
@@ -704,7 +721,12 @@ def main():
 
         sys.stdout.flush()
         sys.stderr.flush()
-        os._exit(0)
+        os._exit(exit_code)
+
+
+def main():
+    """Synchronous launcher for async main."""
+    asyncio.run(async_main())
 
 
 if __name__ == "__main__":
