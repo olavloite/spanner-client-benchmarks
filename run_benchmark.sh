@@ -4,15 +4,15 @@
 set -e
 
 if [ "$#" -lt 1 ]; then
-  echo "Usage: $0 <go|java|node|python|rust>"
+  echo "Usage: $0 <go|java|jdbc|node|python|rust>"
   exit 1
 fi
 
 CLIENT_TYPE="$1"
 shift
 
-if [ "$CLIENT_TYPE" != "go" ] && [ "$CLIENT_TYPE" != "java" ] && [ "$CLIENT_TYPE" != "node" ] && [ "$CLIENT_TYPE" != "python" ] && [ "$CLIENT_TYPE" != "rust" ]; then
-  echo "Unsupported client type: $CLIENT_TYPE. Use 'go', 'java', 'node', 'python', or 'rust'."
+if [ "$CLIENT_TYPE" != "go" ] && [ "$CLIENT_TYPE" != "java" ] && [ "$CLIENT_TYPE" != "jdbc" ] && [ "$CLIENT_TYPE" != "node" ] && [ "$CLIENT_TYPE" != "python" ] && [ "$CLIENT_TYPE" != "rust" ]; then
+  echo "Unsupported client type: $CLIENT_TYPE. Use 'go', 'java', 'jdbc', 'node', 'python', or 'rust'."
   exit 1
 fi
 

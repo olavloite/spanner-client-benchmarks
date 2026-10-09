@@ -1,5 +1,6 @@
 use futures::FutureExt;
 use futures::future::BoxFuture;
+use google_cloud_spanner::Error;
 use google_cloud_spanner::client::DatabaseClient;
 use google_cloud_spanner::result::{ResultSet, Row};
 use google_cloud_spanner::statement::Statement;
@@ -27,7 +28,7 @@ pub fn execute_read_narrow_result_set(
         let transaction = client.single_use().build();
         let mut result_set: ResultSet = transaction.execute_query(statement).await?;
         if let Some(row) = result_set.next().await.transpose()? {
-            decode_row(&row);
+            decode_row(&row)?;
         } else {
             return Ok(());
         }
@@ -36,7 +37,7 @@ pub fn execute_read_narrow_result_set(
         // to measure purely the iteration and decoding latency of the remaining rows. Do not change this.
         let start = Instant::now();
         while let Some(row) = result_set.next().await.transpose()? {
-            decode_row(&row);
+            decode_row(&row)?;
         }
         let duration_us = start.elapsed().as_micros() as f64;
         histogram.record(duration_us, &attributes);
@@ -46,7 +47,8 @@ pub fn execute_read_narrow_result_set(
     .boxed()
 }
 
-fn decode_row(row: &Row) {
-    let _: i64 = black_box(row.get(0));
-    let _: i64 = black_box(row.get(1));
+fn decode_row(row: &Row) -> Result<(), Error> {
+    let _: i64 = black_box(row.get(0)?);
+    let _: i64 = black_box(row.get(1)?);
+    Ok(())
 }

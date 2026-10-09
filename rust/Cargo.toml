@@ -5,7 +5,9 @@ edition = "2024"
 publish = false
 
 [dependencies]
-google-cloud-spanner = { git = "https://github.com/googleapis/google-cloud-rust", package = "google-cloud-spanner" }
+google-cloud-spanner = { git = "https://github.com/googleapis/google-cloud-rust", package = "google-cloud-spanner", features = [
+  "unstable-time",
+] }
 google-cloud-auth = { git = "https://github.com/googleapis/google-cloud-rust", package = "google-cloud-auth" }
 
 tokio = { version = "1.52", features = ["full"] }
