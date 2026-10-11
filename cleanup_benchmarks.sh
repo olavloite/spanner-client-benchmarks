@@ -11,7 +11,7 @@ EXPIRATION_DATE=$(python3 -c "from datetime import datetime, timedelta, timezone
 
 echo "Cleaning up benchmark artifacts older than $EXPIRATION_DATE..."
 
-SUPPORTED_CLIENTS=("java" "jdbc" "go" "python" "node" "rust")
+SUPPORTED_CLIENTS=("java" "jdbc" "go" "python" "python-async" "node" "rust")
 
 for CLIENT_TYPE in "${SUPPORTED_CLIENTS[@]}"; do
   echo "Scanning artifacts for client: $CLIENT_TYPE"

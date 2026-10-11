@@ -4,7 +4,7 @@
 set -e
 
 if [ "$#" -lt 1 ]; then
-  echo "Usage: $0 <go|java|jdbc|node|python|rust> [options] [benchmark-type]"
+  echo "Usage: $0 <go|java|jdbc|node|python|python-async|rust> [options] [benchmark-type]"
   exit 1
 fi
 
@@ -13,8 +13,8 @@ shift
 
 INIT_DIR="$(pwd)"
 
-if [ "$CLIENT_TYPE" != "go" ] && [ "$CLIENT_TYPE" != "java" ] && [ "$CLIENT_TYPE" != "jdbc" ] && [ "$CLIENT_TYPE" != "node" ] && [ "$CLIENT_TYPE" != "python" ] && [ "$CLIENT_TYPE" != "rust" ]; then
-  echo "Unsupported client type: $CLIENT_TYPE. Use 'go', 'java', 'jdbc', 'node', 'python', or 'rust'."
+if [ "$CLIENT_TYPE" != "go" ] && [ "$CLIENT_TYPE" != "java" ] && [ "$CLIENT_TYPE" != "jdbc" ] && [ "$CLIENT_TYPE" != "node" ] && [ "$CLIENT_TYPE" != "python" ] && [ "$CLIENT_TYPE" != "python-async" ] && [ "$CLIENT_TYPE" != "rust" ]; then
+  echo "Unsupported client type: $CLIENT_TYPE. Use 'go', 'java', 'jdbc', 'node', 'python', 'python-async', or 'rust'."
   exit 1
 fi
 
@@ -32,6 +32,8 @@ elif [ "$CLIENT_TYPE" = "go" ]; then
 elif [ "$CLIENT_TYPE" = "node" ]; then
   node dist/index.js "$@"
 elif [ "$CLIENT_TYPE" = "python" ]; then
+  python3 main.py "$@"
+elif [ "$CLIENT_TYPE" = "python-async" ]; then
   python3 main.py "$@"
 elif [ "$CLIENT_TYPE" = "rust" ]; then
   ./target/release/spanner-rust-benchmark "$@"

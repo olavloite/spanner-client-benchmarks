@@ -630,7 +630,7 @@ def main():
         )
     else:
         print(
-            f"Error: Unsupported benchmark type: '{args.command}'. Valid options are: 'point-select', 'select-update', 'read-large-result-set', 'tpcc'.",
+            f"Error: Unsupported benchmark type: '{args.command}'. Valid options are: 'point-select', 'select-update', 'read-large-result-set', 'read-narrow-result-set', 'tpcc'.",
             file=sys.stderr,
         )
         sys.exit(1)

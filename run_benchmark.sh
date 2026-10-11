@@ -4,15 +4,15 @@
 set -e
 
 if [ "$#" -lt 1 ]; then
-  echo "Usage: $0 <go|java|jdbc|node|python|rust>"
+  echo "Usage: $0 <go|java|jdbc|node|python|python-async|rust>"
   exit 1
 fi
 
 CLIENT_TYPE="$1"
 shift
 
-if [ "$CLIENT_TYPE" != "go" ] && [ "$CLIENT_TYPE" != "java" ] && [ "$CLIENT_TYPE" != "jdbc" ] && [ "$CLIENT_TYPE" != "node" ] && [ "$CLIENT_TYPE" != "python" ] && [ "$CLIENT_TYPE" != "rust" ]; then
-  echo "Unsupported client type: $CLIENT_TYPE. Use 'go', 'java', 'jdbc', 'node', 'python', or 'rust'."
+if [ "$CLIENT_TYPE" != "go" ] && [ "$CLIENT_TYPE" != "java" ] && [ "$CLIENT_TYPE" != "jdbc" ] && [ "$CLIENT_TYPE" != "node" ] && [ "$CLIENT_TYPE" != "python" ] && [ "$CLIENT_TYPE" != "python-async" ] && [ "$CLIENT_TYPE" != "rust" ]; then
+  echo "Unsupported client type: $CLIENT_TYPE. Use 'go', 'java', 'jdbc', 'node', 'python', 'python-async', or 'rust'."
   exit 1
 fi
 
@@ -93,7 +93,7 @@ if [ "$BENCHMARK_TYPE" = "tpcc" ] || [ "$BENCHMARK_TYPE" = "tpcc-init" ]; then
   ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}${BENCHMARK_NAME_FLAG}$BENCHMARK_TYPE,--warehouses=${WAREHOUSES:-1000},--items=${ITEMS:-1000000}"
   if [ "$BENCHMARK_TYPE" = "tpcc" ]; then
     ARGS="${ARGS},--clients=${CLIENTS:-10}"
-    if [ -n "$WORKERS" ] && ([ "$CLIENT_TYPE" = "node" ] || [ "$CLIENT_TYPE" = "python" ]); then ARGS="${ARGS},--workers=$WORKERS"; fi
+    if [ -n "$WORKERS" ] && ([ "$CLIENT_TYPE" = "node" ] || [ "$CLIENT_TYPE" = "python" ] || [ "$CLIENT_TYPE" = "python-async" ]); then ARGS="${ARGS},--workers=$WORKERS"; fi
   fi
 else
   MOCK_FLAG=""
@@ -114,7 +114,7 @@ else
   if [ -n "$BURST_FACTOR" ]; then ARGS="${ARGS},--burst-factor=$BURST_FACTOR"; fi
   if [ -n "$BURST_DURATION" ]; then ARGS="${ARGS},--burst-duration=$BURST_DURATION"; fi
   if [ -n "$BURST_FRACTION" ]; then ARGS="${ARGS},--burst-fraction=$BURST_FRACTION"; fi
-  if [ -n "$WORKERS" ] && ([ "$CLIENT_TYPE" = "node" ] || [ "$CLIENT_TYPE" = "python" ]); then ARGS="${ARGS},--workers=$WORKERS"; fi
+  if [ -n "$WORKERS" ] && ([ "$CLIENT_TYPE" = "node" ] || [ "$CLIENT_TYPE" = "python" ] || [ "$CLIENT_TYPE" = "python-async" ]); then ARGS="${ARGS},--workers=$WORKERS"; fi
 fi
 
 ENV_FLAGS="--set-env-vars=BENCHMARK_CPU_LIMIT=$CPU"
