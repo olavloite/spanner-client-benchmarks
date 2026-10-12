@@ -1,8 +1,8 @@
-name: Latency Benchmarks
+name: Steady Latency Benchmarks
 
 on:
   schedule:
-    - cron: "42 5 * * *"
+    - cron: "45 5 * * *"
   workflow_dispatch:
     inputs:
       action:
@@ -13,14 +13,12 @@ on:
           - all
           - steady-point-select
           - steady-select-update
-          - sine-point-select
-          - sine-select-update
         default: "all"
       clients:
         description: "JSON array of client languages to run"
         required: false
         type: string
-        default: '["java", "go", "node", "python", "rust"]'
+        default: '["go", "java", "jdbc", "node", "python", "python-async", "rust"]'
       client_branch:
         description: "Client branch to benchmark (optional)"
         required: false
@@ -50,7 +48,7 @@ on:
         description: "Benchmark execution duration"
         required: false
         type: string
-        default: "2h"
+        default: "1h"
       for_alerting:
         description: "Mark metrics for alerting"
         required: false
@@ -63,11 +61,11 @@ jobs:
     uses: ./.github/workflows/benchmark-template.yml
     with:
       benchmark_types: '["point-select"]'
-      duration: "${{ inputs.duration || '2h' }}"
+      duration: "${{ inputs.duration || '1h' }}"
       load_type: "steady"
       tps: "100"
       use_sidecar: "true"
-      clients: "${{ inputs.clients || '[\"java\", \"go\", \"node\", \"python\", \"rust\"]' }}"
+      clients: "${{ inputs.clients || '[\"go\", \"java\", \"jdbc\", \"node\", \"python\", \"python-async\", \"rust\"]' }}"
       client_branch: "${{ inputs.client_branch || 'main' }}"
       spanner_enable_channel_pool: "${{ inputs.spanner_enable_channel_pool || 'false' }}"
       spanner_enable_dynamic_channel_pool: "${{ inputs.spanner_enable_dynamic_channel_pool || 'false' }}"
@@ -82,58 +80,16 @@ jobs:
     uses: ./.github/workflows/benchmark-template.yml
     with:
       benchmark_types: '["select-update"]'
-      duration: "${{ inputs.duration || '2h' }}"
+      duration: "${{ inputs.duration || '1h' }}"
       load_type: "steady"
       tps: "50"
       use_sidecar: "true"
-      clients: "${{ inputs.clients || '[\"java\", \"go\", \"node\", \"python\", \"rust\"]' }}"
+      clients: "${{ inputs.clients || '[\"go\", \"java\", \"jdbc\", \"node\", \"python\", \"python-async\", \"rust\"]' }}"
       client_branch: "${{ inputs.client_branch || 'main' }}"
       spanner_enable_channel_pool: "${{ inputs.spanner_enable_channel_pool || 'false' }}"
       spanner_enable_dynamic_channel_pool: "${{ inputs.spanner_enable_dynamic_channel_pool || 'false' }}"
       google_spanner_enable_direct_access: "${{ inputs.google_spanner_enable_direct_access || 'false' }}"
       benchmark_name: "${{ inputs.benchmark_name || 'scheduled-steady-select-update' }}"
-      for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
-    secrets:
-      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-
-  run-sine-point-select:
-    if: ${{ github.event_name == 'schedule' || inputs.action == 'all' || inputs.action == 'sine-point-select' }}
-    uses: ./.github/workflows/benchmark-template.yml
-    with:
-      benchmark_types: '["point-select"]'
-      duration: "${{ inputs.duration || '2h' }}"
-      load_type: "gradual"
-      tps: "100"
-      cycle_duration: "1h"
-      peak_factor: "2.0"
-      use_sidecar: "true"
-      clients: "${{ inputs.clients || '[\"java\", \"go\", \"node\", \"python\", \"rust\"]' }}"
-      client_branch: "${{ inputs.client_branch || 'main' }}"
-      spanner_enable_channel_pool: "${{ inputs.spanner_enable_channel_pool || 'false' }}"
-      spanner_enable_dynamic_channel_pool: "${{ inputs.spanner_enable_dynamic_channel_pool || 'false' }}"
-      google_spanner_enable_direct_access: "${{ inputs.google_spanner_enable_direct_access || 'false' }}"
-      benchmark_name: "${{ inputs.benchmark_name || 'scheduled-sine-point-select' }}"
-      for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
-    secrets:
-      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-
-  run-sine-select-update:
-    if: ${{ github.event_name == 'schedule' || inputs.action == 'all' || inputs.action == 'sine-select-update' }}
-    uses: ./.github/workflows/benchmark-template.yml
-    with:
-      benchmark_types: '["select-update"]'
-      duration: "${{ inputs.duration || '2h' }}"
-      load_type: "gradual"
-      tps: "50"
-      cycle_duration: "1h"
-      peak_factor: "2.0"
-      use_sidecar: "true"
-      clients: "${{ inputs.clients || '[\"java\", \"go\", \"node\", \"python\", \"rust\"]' }}"
-      client_branch: "${{ inputs.client_branch || 'main' }}"
-      spanner_enable_channel_pool: "${{ inputs.spanner_enable_channel_pool || 'false' }}"
-      spanner_enable_dynamic_channel_pool: "${{ inputs.spanner_enable_dynamic_channel_pool || 'false' }}"
-      google_spanner_enable_direct_access: "${{ inputs.google_spanner_enable_direct_access || 'false' }}"
-      benchmark_name: "${{ inputs.benchmark_name || 'scheduled-sine-select-update' }}"
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"
     secrets:
       GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}

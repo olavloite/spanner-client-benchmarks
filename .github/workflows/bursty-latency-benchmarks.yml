@@ -2,8 +2,8 @@ name: Bursty Latency Benchmarks
 
 on:
   schedule:
-    # Schedule at 05:42 UTC
-    - cron: '42 5 * * *'
+    # Schedule at 03:15 UTC
+    - cron: '15 3 * * *'
   workflow_dispatch:
     inputs:
       for_alerting:
@@ -22,7 +22,7 @@ jobs:
     uses: ./.github/workflows/benchmark-template.yml
     with:
       benchmark_types: '["point-select"]'
-      duration: '2h'
+      duration: '1h'
       load_type: 'spiky'
       tps: '50'
       burst_factor: '4.0'
@@ -39,7 +39,7 @@ jobs:
     uses: ./.github/workflows/benchmark-template.yml
     with:
       benchmark_types: '["select-update"]'
-      duration: '2h'
+      duration: '1h'
       load_type: 'spiky'
       tps: '25'
       burst_factor: '4.0'
