@@ -9,7 +9,7 @@ on:
         description: "JSON array of client languages to run"
         required: false
         type: string
-        default: '["java", "go", "node", "python", "rust"]'
+        default: '["go", "java", "jdbc", "node", "python", "python-async", "rust"]'
       client_branch:
         description: "Client branch to benchmark (optional)"
         required: false
@@ -24,7 +24,7 @@ on:
         description: "Benchmark execution duration"
         required: false
         type: string
-        default: "1h"
+        default: "15m"
       for_alerting:
         description: "Mark metrics for alerting"
         required: false
@@ -46,11 +46,11 @@ jobs:
     uses: ./.github/workflows/benchmark-template.yml
     with:
       benchmark_types: '["read-large-result-set", "read-narrow-result-set"]'
-      duration: "${{ inputs.duration || '1h' }}"
+      duration: "${{ inputs.duration || '15m' }}"
       load_type: "closed-loop"
       threads: "1"
       cpu: "2"
-      clients: "${{ inputs.clients || '[\"java\", \"go\", \"node\", \"python\", \"rust\"]' }}"
+      clients: "${{ inputs.clients || '[\"go\", \"java\", \"jdbc\", \"node\", \"python\", \"python-async\", \"rust\"]' }}"
       client_branch: "${{ inputs.client_branch || 'main' }}"
       benchmark_name: "${{ inputs.benchmark_name || 'scheduled-main' }}"
       for_alerting: "${{ github.event_name == 'schedule' || inputs.for_alerting == true || inputs.for_alerting == 'true' }}"

@@ -2,11 +2,13 @@ name: TPC-C Benchmark Runner
 
 on:
   schedule:
-    - cron: '7 19 * * *'   # Java
-    - cron: '44 20 * * *'  # Go
-    - cron: '21 22 * * *'  # Node
-    - cron: '43 23 * * *'  # Python
-    - cron: '35 0 * * *'   # Rust
+    - cron: '15 18 * * *'  # Java
+    - cron: '30 19 * * *'  # JDBC
+    - cron: '45 20 * * *'  # Go
+    - cron: '0 22 * * *'   # Node
+    - cron: '15 23 * * *'  # Python
+    - cron: '30 0 * * *'   # Async Python
+    - cron: '45 1 * * *'   # Rust (last, accounts for longer build time)
   workflow_dispatch:
     inputs:
       action:
@@ -18,8 +20,10 @@ on:
           - tpcc (all languages)
           - tpcc (java)
           - tpcc (go)
+          - tpcc (jdbc)
           - tpcc (node)
           - tpcc (python)
+          - tpcc (python-async)
           - tpcc (rust)
         default: 'tpcc-init (schema and data populator)'
       warehouses:
@@ -79,11 +83,13 @@ jobs:
             # Map the scheduled hour (UTC) to the target client language
             HOUR=$(echo "${{ github.event.schedule }}" | cut -d' ' -f2)
             case "$HOUR" in
-              19) CLIENT="java" ;;   # 19:07 UTC
-              20) CLIENT="go" ;;     # 20:44 UTC
-              22) CLIENT="node" ;;   # 22:21 UTC
-              23) CLIENT="python" ;; # 23:43 UTC
-              0)  CLIENT="rust" ;;   # 00:35 UTC
+              18) CLIENT="java" ;;         # 18:15 UTC
+              19) CLIENT="jdbc" ;;         # 19:30 UTC
+              20) CLIENT="go" ;;           # 20:45 UTC
+              22) CLIENT="node" ;;         # 22:00 UTC
+              23) CLIENT="python" ;;       # 23:15 UTC
+              0)  CLIENT="python-async" ;; # 00:30 UTC
+              1)  CLIENT="rust" ;;         # 01:45 UTC
               *)
                 echo "Unknown schedule hour: $HOUR"
                 exit 1
@@ -110,7 +116,7 @@ jobs:
               CLIENTS_JSON='["java"]'
               BENCHMARK_TYPES_JSON='["tpcc-init"]'
             elif [ "$ACTION" = "tpcc (all languages)" ]; then
-              CLIENTS_JSON='["java", "go", "node", "python", "rust"]'
+              CLIENTS_JSON='["go", "java", "jdbc", "node", "python", "python-async", "rust"]'
               BENCHMARK_TYPES_JSON='["tpcc"]'
             else
               CLIENT=$(echo "$ACTION" | sed -n 's/tpcc (\(.*\))/\1/p')

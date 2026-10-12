@@ -2,8 +2,7 @@ name: Mock Benchmarks
 
 on:
   schedule:
-    # Run daily at 12:00 UTC (midday), during a low-activity window for other schedules
-    - cron: '0 12 * * *'
+    - cron: '0 7 * * *'
   workflow_dispatch:
 
 jobs:
