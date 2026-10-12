@@ -20,6 +20,7 @@ on:
           - tpcc (all languages)
           - tpcc (java)
           - tpcc (go)
+          - tpcc (go-sql)
           - tpcc (jdbc)
           - tpcc (node)
           - tpcc (python)
@@ -116,7 +117,7 @@ jobs:
               CLIENTS_JSON='["java"]'
               BENCHMARK_TYPES_JSON='["tpcc-init"]'
             elif [ "$ACTION" = "tpcc (all languages)" ]; then
-              CLIENTS_JSON='["go", "java", "jdbc", "node", "python", "python-async", "rust"]'
+              CLIENTS_JSON='["go", "go-sql", "java", "jdbc", "node", "python", "python-async", "rust"]'
               BENCHMARK_TYPES_JSON='["tpcc"]'
             else
               CLIENT=$(echo "$ACTION" | sed -n 's/tpcc (\(.*\))/\1/p')

@@ -4,7 +4,7 @@
 set -e
 
 if [ "$#" -lt 1 ]; then
-  echo "Usage: $0 <go|java|jdbc|node|python|python-async|rust> [options] [benchmark-type]"
+  echo "Usage: $0 <go|go-sql|java|jdbc|node|python|python-async|rust> [options] [benchmark-type]"
   exit 1
 fi
 
@@ -13,8 +13,8 @@ shift
 
 INIT_DIR="$(pwd)"
 
-if [ "$CLIENT_TYPE" != "go" ] && [ "$CLIENT_TYPE" != "java" ] && [ "$CLIENT_TYPE" != "jdbc" ] && [ "$CLIENT_TYPE" != "node" ] && [ "$CLIENT_TYPE" != "python" ] && [ "$CLIENT_TYPE" != "python-async" ] && [ "$CLIENT_TYPE" != "rust" ]; then
-  echo "Unsupported client type: $CLIENT_TYPE. Use 'go', 'java', 'jdbc', 'node', 'python', 'python-async', or 'rust'."
+if [ "$CLIENT_TYPE" != "go" ] && [ "$CLIENT_TYPE" != "go-sql" ] && [ "$CLIENT_TYPE" != "java" ] && [ "$CLIENT_TYPE" != "jdbc" ] && [ "$CLIENT_TYPE" != "node" ] && [ "$CLIENT_TYPE" != "python" ] && [ "$CLIENT_TYPE" != "python-async" ] && [ "$CLIENT_TYPE" != "rust" ]; then
+  echo "Unsupported client type: $CLIENT_TYPE. Use 'go', 'go-sql', 'java', 'jdbc', 'node', 'python', 'python-async', or 'rust'."
   exit 1
 fi
 
@@ -27,7 +27,7 @@ if [ "$CLIENT_TYPE" = "java" ]; then
   java -jar target/spanner-java-benchmark-1.0-SNAPSHOT.jar "$@"
 elif [ "$CLIENT_TYPE" = "jdbc" ]; then
   java -jar target/spanner-jdbc-benchmark-1.0-SNAPSHOT.jar "$@"
-elif [ "$CLIENT_TYPE" = "go" ]; then
+elif [ "$CLIENT_TYPE" = "go" ] || [ "$CLIENT_TYPE" = "go-sql" ]; then
   ./benchmark-app "$@"
 elif [ "$CLIENT_TYPE" = "node" ]; then
   node dist/index.js "$@"

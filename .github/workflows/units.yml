@@ -99,6 +99,36 @@ jobs:
         working-directory: go
         run: go test -v ./...
 
+  go-sql-tests:
+    name: Go database/sql Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '>=1.26'
+          cache-dependency-path: go-sql/go.sum
+
+      - name: Download Go modules
+        working-directory: go-sql
+        run: go mod download
+
+      - name: Check formatting
+        working-directory: go-sql
+        run: |
+          if [ -n "$(gofmt -s -l .)" ]; then
+            echo "Go files are not formatted. Run 'gofmt -s -w .'"
+            gofmt -s -d .
+            exit 1
+          fi
+
+      - name: Run tests
+        working-directory: go-sql
+        run: go test -v ./...
+
   python-tests:
     name: Python Integration Tests
     runs-on: ubuntu-latest

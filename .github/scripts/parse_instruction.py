@@ -6,7 +6,7 @@ import urllib.request
 import re
 
 # Strict enum definitions for sanitization
-SUPPORTED_CLIENTS = {"go", "java", "jdbc", "node", "python", "python-async", "rust"}
+SUPPORTED_CLIENTS = {"go", "go-sql", "java", "jdbc", "node", "python", "python-async", "rust"}
 SUPPORTED_BENCHMARKS = {
     "point-select",
     "select-update",

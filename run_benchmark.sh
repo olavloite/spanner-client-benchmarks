@@ -4,15 +4,15 @@
 set -e
 
 if [ "$#" -lt 1 ]; then
-  echo "Usage: $0 <go|java|jdbc|node|python|python-async|rust>"
+  echo "Usage: $0 <go|go-sql|java|jdbc|node|python|python-async|rust>"
   exit 1
 fi
 
 CLIENT_TYPE="$1"
 shift
 
-if [ "$CLIENT_TYPE" != "go" ] && [ "$CLIENT_TYPE" != "java" ] && [ "$CLIENT_TYPE" != "jdbc" ] && [ "$CLIENT_TYPE" != "node" ] && [ "$CLIENT_TYPE" != "python" ] && [ "$CLIENT_TYPE" != "python-async" ] && [ "$CLIENT_TYPE" != "rust" ]; then
-  echo "Unsupported client type: $CLIENT_TYPE. Use 'go', 'java', 'jdbc', 'node', 'python', 'python-async', or 'rust'."
+if [ "$CLIENT_TYPE" != "go" ] && [ "$CLIENT_TYPE" != "go-sql" ] && [ "$CLIENT_TYPE" != "java" ] && [ "$CLIENT_TYPE" != "jdbc" ] && [ "$CLIENT_TYPE" != "node" ] && [ "$CLIENT_TYPE" != "python" ] && [ "$CLIENT_TYPE" != "python-async" ] && [ "$CLIENT_TYPE" != "rust" ]; then
+  echo "Unsupported client type: $CLIENT_TYPE. Use 'go', 'go-sql', 'java', 'jdbc', 'node', 'python', 'python-async', or 'rust'."
   exit 1
 fi
 

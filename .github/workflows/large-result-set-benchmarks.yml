@@ -9,7 +9,7 @@ on:
         description: "JSON array of client languages to run"
         required: false
         type: string
-        default: '["go", "java", "jdbc", "node", "python", "python-async", "rust"]'
+        default: '["go", "go-sql", "java", "jdbc", "node", "python", "python-async", "rust"]'
       client_branch:
         description: "Client branch to benchmark (optional)"
         required: false
