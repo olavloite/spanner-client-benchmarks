@@ -3,7 +3,7 @@ module spanner-go-benchmark
 go 1.26.0
 
 require (
-	cloud.google.com/go/spanner v1.96.0
+	cloud.google.com/go/spanner v1.96.1
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.62.0
 	github.com/google/uuid v1.6.0
 	github.com/urfave/cli/v3 v3.14.0
