@@ -29,7 +29,7 @@ Before you state that a task is complete, you **MUST** run the code formatters, 
   mvn fmt:format
   ```
 
-#### 🐹 Go (Directory: `go`)
+#### 🐹 Go (Directories: `go`, `go-sql`)
 - **Action**: Run the formatter.
 - **Command**:
   ```bash
@@ -67,7 +67,7 @@ Before you state that a task is complete, you **MUST** run the code formatters, 
   mvn test
   ```
 
-#### 🐹 Go (Directory: `go`)
+#### 🐹 Go (Directories: `go`, `go-sql`)
 - **Command**:
   ```bash
   go test -v ./...

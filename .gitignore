@@ -9,6 +9,7 @@
 # Go compiled binaries
 **/benchmark-app
 **/spanner-go-benchmark
+**/spanner-go-sql-benchmark
 
 # IDEs and editors
 .idea/

@@ -20,6 +20,17 @@ updates:
         patterns:
           - "*"
 
+  - package-ecosystem: "gomod"
+    directory: "/go-sql"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      go-sql-dependencies:
+        patterns:
+          - "*"
+
   # 3. Java (Benchmark App)
   - package-ecosystem: "maven"
     directory: "/java"
@@ -94,6 +105,13 @@ updates:
   # 8. Docker Base Images (Multiple Directories)
   - package-ecosystem: "docker"
     directory: "/go"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "docker"
+    directory: "/go-sql"
     schedule:
       interval: "weekly"
       day: "monday"

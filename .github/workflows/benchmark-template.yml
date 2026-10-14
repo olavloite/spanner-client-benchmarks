@@ -49,7 +49,7 @@ on:
         description: 'JSON array of client languages to run'
         required: false
         type: string
-        default: '["go", "java", "jdbc", "node", "python", "python-async", "rust"]'
+        default: '["go", "go-sql", "java", "jdbc", "node", "python", "python-async", "rust"]'
       cpu:
         description: 'Number of vCPUs'
         required: false
