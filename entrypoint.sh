@@ -2,7 +2,7 @@
 set -e
 
 # Opt-in Go sidecar generator orchestration
-if [ "$USE_SIDECAR" = "true" ] && [ "$LOAD_TYPE" != "closed-loop" ]; then
+if [ "$USE_SIDECAR" = "true" ] && [ "$LOAD_TYPE" != "closed-loop" ] && [ "$LOAD_TYPE" != "unified-profile" ] && [ "$LOAD_TYPE" != "UNIFIED_PROFILE" ]; then
   echo "Orchestrating Go-based workload generator sidecar..."
   SOCKET_PATH="/tmp/benchmark.sock"
 

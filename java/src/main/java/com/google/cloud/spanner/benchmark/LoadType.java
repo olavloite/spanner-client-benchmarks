@@ -1,5 +1,6 @@
 package com.google.cloud.spanner.benchmark;
 
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 
 public enum LoadType {
@@ -180,7 +181,21 @@ public enum LoadType {
         Thread.currentThread().interrupt();
       }
     }
+  },
+  UNIFIED_PROFILE {
+    @Override
+    public void run(AbstractBenchmark benchmark, ExecutorService executor) {
+      throw new UnsupportedOperationException(
+          "UNIFIED_PROFILE manages its own phased concurrency via UnifiedProfileRunner");
+    }
   };
+
+  public static LoadType fromString(String value) {
+    if (value == null || value.trim().isEmpty()) {
+      throw new IllegalArgumentException("LoadType cannot be null or empty");
+    }
+    return LoadType.valueOf(value.trim().toUpperCase(Locale.ROOT).replace('-', '_'));
+  }
 
   public abstract void run(AbstractBenchmark benchmark, ExecutorService executor);
 }

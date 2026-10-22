@@ -36,7 +36,7 @@ REPO_PATTERN = re.compile(
 )
 BOOL_PATTERN = re.compile(r"^(true|false|1|0|yes|no)$", re.IGNORECASE)
 
-LOAD_TYPE_SUPPORTED = {"steady", "spiky", "gradual"}
+LOAD_TYPE_SUPPORTED = {"steady", "spiky", "gradual", "unified-profile"}
 
 RESPONSE_SCHEMA = {
     "type": "OBJECT",

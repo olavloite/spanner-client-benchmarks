@@ -41,6 +41,8 @@ public abstract class AbstractBenchmark {
   protected final String resourceProbeInterval;
   private ResourceMonitor resourceMonitor;
   private SocketChannel socketChannel = null;
+  private UnifiedProfileConfig unifiedProfileConfig;
+  private volatile ChannelPoolVerificationReport lastVerificationReport;
 
   public AbstractBenchmark(
       DatabaseClient client,
@@ -116,7 +118,29 @@ public abstract class AbstractBenchmark {
     return this.attributes;
   }
 
+  public void setUnifiedProfileConfig(UnifiedProfileConfig unifiedProfileConfig) {
+    this.unifiedProfileConfig = unifiedProfileConfig;
+  }
+
+  public UnifiedProfileConfig getUnifiedProfileConfig() {
+    return this.unifiedProfileConfig;
+  }
+
+  public void setLastVerificationReport(ChannelPoolVerificationReport report) {
+    this.lastVerificationReport = report;
+  }
+
+  public ChannelPoolVerificationReport getLastVerificationReport() {
+    return this.lastVerificationReport;
+  }
+
   public void run() throws Exception {
+    if (loadType == LoadType.UNIFIED_PROFILE) {
+      UnifiedProfileConfig cfg =
+          unifiedProfileConfig != null ? unifiedProfileConfig : UnifiedProfileConfig.defaults();
+      new UnifiedProfileRunner(this, cfg).run();
+      return;
+    }
     System.out.println(
         "Starting " + getBenchmarkName() + " with TPS: " + tps + ", threads: " + threads);
     ExecutorService executor = Executors.newFixedThreadPool(threads);
