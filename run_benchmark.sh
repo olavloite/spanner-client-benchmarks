@@ -96,6 +96,15 @@ if [ "$BENCHMARK_TYPE" = "tpcc" ] || [ "$BENCHMARK_TYPE" = "tpcc-init" ]; then
     if [ -n "$WORKERS" ] && ([ "$CLIENT_TYPE" = "node" ] || [ "$CLIENT_TYPE" = "python" ] || [ "$CLIENT_TYPE" = "python-async" ]); then ARGS="${ARGS},--workers=$WORKERS"; fi
   fi
 else
+  if [ -n "$BENCHMARK_CONFIG" ]; then
+    if [ "$CLIENT_TYPE" != "java" ]; then
+      echo "Error: BENCHMARK_CONFIG is only supported for the 'java' client (got '$CLIENT_TYPE')." >&2
+      exit 1
+    fi
+    if [ -z "$LOAD_TYPE" ]; then
+      LOAD_TYPE="spiky"
+    fi
+  fi
   MOCK_FLAG=""
   if [ "$MOCK" = "true" ]; then
     MOCK_FLAG="--mock,"
@@ -108,12 +117,22 @@ else
   fi
   ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}${BENCHMARK_NAME_FLAG}${MOCK_FLAG}$BENCHMARK_TYPE,--table=$TABLE_NAME"
   if [ -n "$LOAD_TYPE" ]; then ARGS="${ARGS},--load-type=$LOAD_TYPE"; fi
-  if [ -n "$TPS" ]; then ARGS="${ARGS},--tps=$TPS"; fi
-  if [ -n "$THREADS" ]; then ARGS="${ARGS},--threads=$THREADS"; fi
   if [ -n "$NUM_ROWS" ]; then ARGS="${ARGS},--num-rows=$NUM_ROWS"; fi
-  if [ -n "$BURST_FACTOR" ]; then ARGS="${ARGS},--burst-factor=$BURST_FACTOR"; fi
-  if [ -n "$BURST_DURATION" ]; then ARGS="${ARGS},--burst-duration=$BURST_DURATION"; fi
-  if [ -n "$BURST_FRACTION" ]; then ARGS="${ARGS},--burst-fraction=$BURST_FRACTION"; fi
+  if [ -n "$BENCHMARK_CONFIG" ]; then
+    ARGS="${ARGS},--config=$BENCHMARK_CONFIG"
+    if [ -n "$MIN_CHANNELS" ]; then ARGS="${ARGS},--min-channels=$MIN_CHANNELS"; fi
+    if [ -n "$MAX_CHANNELS" ]; then ARGS="${ARGS},--max-channels=$MAX_CHANNELS"; fi
+    if [ -n "$POST_TEST_WAIT" ]; then ARGS="${ARGS},--post-test-wait=$POST_TEST_WAIT"; fi
+    if [ -n "$DELTA_US" ]; then ARGS="${ARGS},--delta-us=$DELTA_US"; fi
+    if [ "$ENFORCE_GATES" = "true" ]; then ARGS="${ARGS},--enforce-gates=true"; fi
+    if [ "$ENFORCE_GATES" = "false" ]; then ARGS="${ARGS},--enforce-gates=false"; fi
+  else
+    if [ -n "$TPS" ]; then ARGS="${ARGS},--tps=$TPS"; fi
+    if [ -n "$THREADS" ]; then ARGS="${ARGS},--threads=$THREADS"; fi
+    if [ -n "$BURST_FACTOR" ]; then ARGS="${ARGS},--burst-factor=$BURST_FACTOR"; fi
+    if [ -n "$BURST_DURATION" ]; then ARGS="${ARGS},--burst-duration=$BURST_DURATION"; fi
+    if [ -n "$BURST_FRACTION" ]; then ARGS="${ARGS},--burst-fraction=$BURST_FRACTION"; fi
+  fi
   if [ -n "$WORKERS" ] && ([ "$CLIENT_TYPE" = "node" ] || [ "$CLIENT_TYPE" = "python" ] || [ "$CLIENT_TYPE" = "python-async" ]); then ARGS="${ARGS},--workers=$WORKERS"; fi
 fi
 
@@ -142,6 +161,7 @@ if [ -n "$DURATION" ]; then ENV_FLAGS="${ENV_FLAGS},DURATION=$DURATION"; fi
 if [ -n "$CYCLE_DURATION" ]; then ENV_FLAGS="${ENV_FLAGS},CYCLE_DURATION=$CYCLE_DURATION"; fi
 if [ -n "$PEAK_FACTOR" ]; then ENV_FLAGS="${ENV_FLAGS},PEAK_FACTOR=$PEAK_FACTOR"; fi
 if [ -n "$BURST_FACTOR" ]; then ENV_FLAGS="${ENV_FLAGS},BURST_FACTOR=$BURST_FACTOR"; fi
+if [ -n "$BENCHMARK_CONFIG" ]; then ENV_FLAGS="${ENV_FLAGS},BENCHMARK_CONFIG=$BENCHMARK_CONFIG"; fi
 if [ -n "$BURST_DURATION" ]; then ENV_FLAGS="${ENV_FLAGS},BURST_DURATION=$BURST_DURATION"; fi
 if [ -n "$BURST_FRACTION" ]; then ENV_FLAGS="${ENV_FLAGS},BURST_FRACTION=$BURST_FRACTION"; fi
 if [ -n "$WORKERS" ]; then ENV_FLAGS="${ENV_FLAGS},WORKERS=$WORKERS"; fi

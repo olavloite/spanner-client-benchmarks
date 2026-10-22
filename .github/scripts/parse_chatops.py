@@ -13,7 +13,16 @@ except AttributeError:
     pass
 
 # Strict enum definitions for sanitization
-SUPPORTED_CLIENTS = {"go", "go-sql", "java", "jdbc", "node", "python", "python-async", "rust"}
+SUPPORTED_CLIENTS = {
+    "go",
+    "go-sql",
+    "java",
+    "jdbc",
+    "node",
+    "python",
+    "python-async",
+    "rust",
+}
 SUPPORTED_BENCHMARKS = {
     "point-select",
     "select-update",
@@ -37,6 +46,7 @@ REPO_PATTERN = re.compile(
 BOOL_PATTERN = re.compile(r"^(true|false|1|0|yes|no)$", re.IGNORECASE)
 
 LOAD_TYPE_SUPPORTED = {"steady", "spiky", "gradual"}
+CONFIG_SUPPORTED = {"default", "burst-profile.yaml", "benchmark.yaml"}
 
 RESPONSE_SCHEMA = {
     "type": "OBJECT",
@@ -75,6 +85,10 @@ RESPONSE_SCHEMA = {
                     "burst_factor": {"type": "STRING"},
                     "burst_duration": {"type": "STRING"},
                     "burst_fraction": {"type": "STRING"},
+                    "config": {
+                        "type": "STRING",
+                        "enum": list(CONFIG_SUPPORTED),
+                    },
                     "warehouses": {"type": "STRING"},
                     "items": {"type": "STRING"},
                     "clients": {"type": "STRING"},
@@ -131,6 +145,14 @@ def sanitize_run(run):
     burst_factor = sanitize_value(run.get("burst_factor"), FLOAT_PATTERN, "")
     burst_duration = sanitize_value(run.get("burst_duration"), FLOAT_PATTERN, "")
     burst_fraction = sanitize_value(run.get("burst_fraction"), FLOAT_PATTERN, "")
+    config = (run.get("config") or "").strip()
+    if config:
+        if config not in CONFIG_SUPPORTED:
+            raise ValueError(f"Unsupported config: {config}")
+        if client != "java":
+            raise ValueError("config is only supported for client_type 'java'")
+        if not load_type:
+            load_type = "spiky"
     warehouses = sanitize_value(run.get("warehouses"), INT_PATTERN, "")
     items = sanitize_value(run.get("items"), INT_PATTERN, "")
     clients = sanitize_value(run.get("clients"), INT_PATTERN, "")
@@ -161,6 +183,7 @@ def sanitize_run(run):
         "burst_factor": burst_factor,
         "burst_duration": burst_duration,
         "burst_fraction": burst_fraction,
+        "config": config,
         "warehouses": warehouses,
         "items": items,
         "clients": clients,

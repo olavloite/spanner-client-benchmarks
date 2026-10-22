@@ -9,6 +9,7 @@ import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.DatabaseId;
 import com.google.cloud.spanner.Spanner;
 import com.google.cloud.spanner.SpannerOptions;
+import com.google.cloud.spanner.benchmark.LoadType.BenchmarkYamlConfig;
 import io.grpc.Server;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.metrics.DoubleHistogram;
@@ -76,14 +77,87 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
       description = "Fraction of total time spent in the burst state")
   protected Double burstFraction;
 
+  @Option(
+      names = {"--config"},
+      description =
+          "Path to a YAML benchmark configuration file (or 'default') configuring benchmark"
+              + " options and multi-step workloads across all load types (STEADY, SPIKY, GRADUAL,"
+              + " CLOSED_LOOP)")
+  protected String configFile;
+
+  @Option(
+      names = {"--min-channels"},
+      description =
+          "Minimum (and initial) number of gRPC channels in the pool (overrides YAML minChannels)")
+  protected Integer minChannels;
+
+  @Option(
+      names = {"--max-channels"},
+      description =
+          "Maximum number of gRPC channels in the pool M, up to 100 (overrides YAML maxChannels)")
+  protected Integer maxChannels;
+
+  @Option(
+      names = {"--post-test-wait"},
+      description =
+          "Idle wait duration before post-test heap measurement (overrides YAML postTestWait)")
+  protected String postTestWait;
+
+  @Option(
+      names = {"--delta-us"},
+      description =
+          "Allowed client-side P90 latency overhead buffer in microseconds (overrides YAML deltaMicros)")
+  protected Long deltaMicros;
+
+  @Option(
+      names = {"--enforce-gates"},
+      arity = "0..1",
+      fallbackValue = "true",
+      description =
+          "Throw an IllegalStateException if any verification gate fails (overrides YAML enforceGates)")
+  protected Boolean enforceGates;
+
+  private BenchmarkYamlConfig resolvedYamlConfig;
+
   protected String getMetricName() {
     return LATENCY_NAME;
   }
 
-  @Override
-  public void run() {
-    // Validation
+  protected BenchmarkYamlConfig buildYamlConfig() {
+    Duration postWaitOverride =
+        postTestWait != null ? LoadType.parseStepDuration(postTestWait, "post-test-wait") : null;
+    return BenchmarkYamlConfig.fromFileOrDefault(
+        configFile,
+        loadType,
+        minChannels,
+        maxChannels,
+        postWaitOverride,
+        deltaMicros,
+        enforceGates);
+  }
 
+  protected void validateOptions() {
+    resolvedYamlConfig = null;
+    if (configFile != null) {
+      if (numRows <= 0) {
+        throw new IllegalArgumentException("num-rows must be > 0");
+      }
+      resolvedYamlConfig = buildYamlConfig();
+      if (cycleDuration != null
+          || peakFactor != null
+          || burstFactor != null
+          || burstDuration != null
+          || burstFraction != null) {
+        throw new IllegalArgumentException(
+            "Cannot combine --config multi-step YAML with single-step CLI burst or gradual flags");
+      }
+      if (cycleDuration == null) cycleDuration = "1h";
+      if (peakFactor == null) peakFactor = 2.0;
+      if (burstFactor == null) burstFactor = 1.0;
+      if (burstDuration == null) burstDuration = 1.0;
+      if (burstFraction == null) burstFraction = 0.1;
+      return;
+    }
     if (loadType == LoadType.STEADY) {
       if (cycleDuration != null
           || peakFactor != null
@@ -118,6 +192,11 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
     if (burstFraction == null) burstFraction = 0.1;
     if (cycleDuration == null) cycleDuration = "1h";
     if (peakFactor == null) peakFactor = 2.0;
+  }
+
+  @Override
+  public void run() {
+    validateOptions();
 
     Server server = null;
     if (parent.isMock()) {
@@ -138,19 +217,36 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
       // Initialize Spanner
       SpannerOptions.Builder spannerOptionsBuilder =
           SpannerOptions.newBuilder().setProjectId(parent.getProjectId());
-      if (parent.getHost() != null) {
+      String emulatorHost = System.getenv("SPANNER_EMULATOR_HOST");
+      if (emulatorHost != null && !emulatorHost.isEmpty()) {
+        spannerOptionsBuilder
+            .setEmulatorHost(emulatorHost)
+            .setCredentials(NoCredentials.getInstance());
+      } else if (parent.getHost() != null) {
         spannerOptionsBuilder.setHost(parent.getHost());
         spannerOptionsBuilder.setChannelConfigurator(builder -> builder.usePlaintext());
         spannerOptionsBuilder.setCredentials(NoCredentials.getInstance());
       }
-      String numChannelsStr = System.getenv("SPANNER_NUM_CHANNELS");
-      if (numChannelsStr != null && !numChannelsStr.isEmpty()) {
-        try {
-          int numChannels = Integer.parseInt(numChannelsStr);
-          spannerOptionsBuilder.setNumChannels(numChannels);
-          System.out.println("Configured Spanner Java client with " + numChannels + " channels.");
-        } catch (NumberFormatException e) {
-          System.err.println("Invalid SPANNER_NUM_CHANNELS value: " + numChannelsStr);
+      BenchmarkYamlConfig yamlCfg =
+          resolvedYamlConfig != null
+              ? resolvedYamlConfig
+              : (configFile != null ? buildYamlConfig() : null);
+      if (yamlCfg != null && yamlCfg.isChannelPoolConfigured()) {
+        spannerOptionsBuilder
+            .enableDynamicChannelPool()
+            .setGcpChannelPoolOptions(
+                BenchmarkYamlConfig.buildChannelPoolOptions(
+                    yamlCfg.getMinChannels(), yamlCfg.getMaxChannels()));
+      } else {
+        String numChannelsStr = System.getenv("SPANNER_NUM_CHANNELS");
+        if (numChannelsStr != null && !numChannelsStr.isEmpty()) {
+          try {
+            int numChannels = Integer.parseInt(numChannelsStr);
+            spannerOptionsBuilder.setNumChannels(numChannels);
+            System.out.println("Configured Spanner Java client with " + numChannels + " channels.");
+          } catch (NumberFormatException e) {
+            System.err.println("Invalid SPANNER_NUM_CHANNELS value: " + numChannelsStr);
+          }
         }
       }
       SpannerOptions spannerOptions = spannerOptionsBuilder.build();
@@ -181,8 +277,13 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
                 forAlerting,
                 benchmarkName,
                 parent.isMock());
+        if (yamlCfg != null) {
+          benchmark.setYamlConfig(yamlCfg);
+        }
         benchmark.run();
       }
+    } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException e) {
+      throw e;
     } catch (Exception e) {
       e.printStackTrace();
     } finally {
@@ -208,7 +309,7 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
   public static class LoadTypeConverter implements picocli.CommandLine.ITypeConverter<LoadType> {
     @Override
     public LoadType convert(String value) throws Exception {
-      return LoadType.valueOf(value.toUpperCase().replace('-', '_'));
+      return LoadType.fromString(value);
     }
   }
 }

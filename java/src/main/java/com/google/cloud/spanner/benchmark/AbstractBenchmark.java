@@ -1,18 +1,34 @@
 package com.google.cloud.spanner.benchmark;
 
 import com.google.cloud.spanner.DatabaseClient;
+import com.google.cloud.spanner.benchmark.LoadType.BenchmarkYamlConfig;
+import com.google.cloud.spanner.benchmark.LoadType.StepConfig;
+import com.google.cloud.spanner.benchmark.PhaseLatencyRecorder.PhaseSummary;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.DoubleHistogram;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.LongHistogram;
+import java.lang.management.ManagementFactory;
 import java.net.StandardProtocolFamily;
 import java.net.UnixDomainSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 import javax.annotation.Nonnull;
 
 public abstract class AbstractBenchmark {
@@ -41,6 +57,8 @@ public abstract class AbstractBenchmark {
   protected final String resourceProbeInterval;
   private ResourceMonitor resourceMonitor;
   private SocketChannel socketChannel = null;
+  private UnifiedProfileConfig unifiedProfileConfig;
+  private volatile ChannelPoolVerificationReport lastVerificationReport;
 
   public AbstractBenchmark(
       DatabaseClient client,
@@ -116,7 +134,277 @@ public abstract class AbstractBenchmark {
     return this.attributes;
   }
 
+  public void setUnifiedProfileConfig(UnifiedProfileConfig unifiedProfileConfig) {
+    this.unifiedProfileConfig = unifiedProfileConfig;
+  }
+
+  public UnifiedProfileConfig getUnifiedProfileConfig() {
+    return this.unifiedProfileConfig;
+  }
+
+  public void setLastVerificationReport(ChannelPoolVerificationReport report) {
+    this.lastVerificationReport = report;
+  }
+
+  public ChannelPoolVerificationReport getLastVerificationReport() {
+    return this.lastVerificationReport;
+  }
+
+  private BenchmarkYamlConfig yamlConfig;
+
+  public void setYamlConfig(BenchmarkYamlConfig yamlConfig) {
+    this.yamlConfig = yamlConfig;
+  }
+
+  public BenchmarkYamlConfig getYamlConfig() {
+    return yamlConfig;
+  }
+
+  private static final class ActiveStepContext {
+    final StepConfig step;
+    final PhaseLatencyRecorder recorder;
+    final Attributes attributes;
+    final long stepStartNanos;
+    final AtomicLong nextScheduledNanos;
+
+    ActiveStepContext(
+        StepConfig step,
+        PhaseLatencyRecorder recorder,
+        Attributes attributes,
+        long stepStartNanos) {
+      this.step = step;
+      this.recorder = recorder;
+      this.attributes = attributes;
+      this.stepStartNanos = stepStartNanos;
+      this.nextScheduledNanos = new AtomicLong(stepStartNanos);
+    }
+  }
+
+  public ChannelPoolVerificationReport runConfiguredSteps(BenchmarkYamlConfig config)
+      throws Exception {
+    Map<ChannelPoolPhase, PhaseLatencyRecorder> phaseRecorders =
+        new EnumMap<>(ChannelPoolPhase.class);
+    for (ChannelPoolPhase phase : ChannelPoolPhase.values()) {
+      phaseRecorders.put(phase, new PhaseLatencyRecorder());
+    }
+    List<ActiveStepContext> stepContexts = new ArrayList<>(config.getSteps().size());
+    for (StepConfig step : config.getSteps()) {
+      PhaseLatencyRecorder recorder =
+          step.getPhase() != null
+              ? phaseRecorders.get(step.getPhase())
+              : new PhaseLatencyRecorder();
+      Attributes attrs =
+          getAttributes().toBuilder()
+              .put("load_type", step.getLoadType().name().toLowerCase(Locale.ROOT))
+              .put("phase", step.getName())
+              .put("max_channels", config.getMaxChannels())
+              .build();
+      stepContexts.add(new ActiveStepContext(step, recorder, attrs, System.nanoTime()));
+    }
+
+    startResourceMonitoring();
+    long baselineUsedHeapBytes = recordHeapAfterGc();
+    int maxConcurrency = config.getMaxConcurrency();
+    ExecutorService executor = Executors.newFixedThreadPool(maxConcurrency);
+    ReentrantLock lock = new ReentrantLock();
+    Condition changed = lock.newCondition();
+    AtomicInteger targetConcurrency = new AtomicInteger(0);
+    final AtomicReference<ActiveStepContext> activeHolder =
+        new AtomicReference<>(stepContexts.get(0));
+    final AtomicBoolean runningFlag = new AtomicBoolean(true);
+
+    try {
+      for (int i = 0; i < maxConcurrency; i++) {
+        final int workerIndex = i;
+        executor.submit(
+            () ->
+                runStepWorkerLoop(
+                    workerIndex, lock, changed, targetConcurrency, activeHolder, runningFlag));
+      }
+      for (ActiveStepContext ctx : stepContexts) {
+        Duration d = ctx.step.getDuration();
+        if (d == null || d.toMillis() <= 0) {
+          continue;
+        }
+        System.out.printf(
+            "Entering step %s (loadType=%s, concurrency=%d, tps=%d) for %s%n",
+            ctx.step.getName(),
+            ctx.step.getLoadType(),
+            ctx.step.getConcurrency(),
+            ctx.step.getTps(),
+            d);
+        ActiveStepContext liveCtx =
+            new ActiveStepContext(ctx.step, ctx.recorder, ctx.attributes, System.nanoTime());
+        lock.lock();
+        try {
+          activeHolder.set(liveCtx);
+          targetConcurrency.set(ctx.step.getConcurrency());
+          changed.signalAll();
+        } finally {
+          lock.unlock();
+        }
+        Thread.sleep(d.toMillis());
+      }
+      lock.lock();
+      try {
+        targetConcurrency.set(0);
+        changed.signalAll();
+      } finally {
+        lock.unlock();
+      }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    } finally {
+      if (resourceMonitor != null) {
+        resourceMonitor.stop();
+      }
+      lock.lock();
+      try {
+        runningFlag.set(false);
+        targetConcurrency.set(0);
+        changed.signalAll();
+      } finally {
+        lock.unlock();
+      }
+      executor.shutdownNow();
+      executor.awaitTermination(30, TimeUnit.SECONDS);
+    }
+
+    Map<ChannelPoolPhase, PhaseSummary> summaries = new EnumMap<>(ChannelPoolPhase.class);
+    for (ChannelPoolPhase phase : ChannelPoolPhase.values()) {
+      int cr = config.getPhaseConcurrencies().getOrDefault(phase, 0);
+      summaries.put(phase, phaseRecorders.get(phase).toSummary(phase, cr));
+    }
+    Duration wait = config.getPostTestWaitDuration();
+    if (wait != null && !wait.isZero() && !wait.isNegative()) {
+      Thread.sleep(wait.toMillis());
+    }
+    long postGcUsedHeapBytes = recordHeapAfterGc();
+    ChannelPoolVerificationReport report =
+        new ChannelPoolVerificationReport(
+            summaries, config.getDeltaMicros(), baselineUsedHeapBytes, postGcUsedHeapBytes);
+    this.lastVerificationReport = report;
+    printMultiStepReport(config, stepContexts, phaseRecorders, report);
+    if (config.isEnforceGates() && !report.isAllGatesPassed()) {
+      throw new IllegalStateException("Benchmark verification gates failed");
+    }
+    return report;
+  }
+
+  private void runStepWorkerLoop(
+      int workerIndex,
+      ReentrantLock lock,
+      Condition changed,
+      AtomicInteger targetConcurrency,
+      AtomicReference<ActiveStepContext> activeHolder,
+      AtomicBoolean runningFlag) {
+    while (runningFlag.get() && !Thread.currentThread().isInterrupted()) {
+      if (workerIndex >= targetConcurrency.get()) {
+        lock.lock();
+        try {
+          while (runningFlag.get() && workerIndex >= targetConcurrency.get()) {
+            changed.await();
+          }
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          return;
+        } finally {
+          lock.unlock();
+        }
+      }
+      if (!runningFlag.get() || Thread.currentThread().isInterrupted()) {
+        return;
+      }
+      ActiveStepContext ctx = activeHolder.get();
+      if (!ctx.step.isClosedLoopStep()) {
+        long now = System.nanoTime();
+        long intervalNanos = ctx.step.computeIntervalNanos(Math.max(0L, now - ctx.stepStartNanos));
+        long scheduled = ctx.nextScheduledNanos.getAndAdd(intervalNanos);
+        if (scheduled < now - intervalNanos) {
+          ctx.nextScheduledNanos.set(now);
+          scheduled = now;
+        }
+        long sleepNanos = scheduled - now;
+        if (sleepNanos > 0) {
+          try {
+            TimeUnit.NANOSECONDS.sleep(sleepNanos);
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+          }
+        }
+      }
+      long startTime = System.nanoTime();
+      boolean failed = false;
+      try {
+        executeOperation();
+      } catch (Exception e) {
+        if (!runningFlag.get() || Thread.currentThread().isInterrupted()) {
+          return;
+        }
+        if (isCancellationOrInterruption(e)) {
+          ctx.recorder.recordCancelled();
+          continue;
+        }
+        failed = true;
+        errorCounter.add(1, ctx.attributes);
+      }
+      long latencyUs = TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - startTime);
+      if (!failed && shouldMeasureEntireMethod()) {
+        latencyHistogram.record(latencyUs, ctx.attributes);
+      }
+      operationCounter.add(1, ctx.attributes);
+      ctx.recorder.recordOperation(latencyUs, failed);
+    }
+  }
+
+  private static long recordHeapAfterGc() {
+    System.gc();
+    return ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+  }
+
+  private static void printMultiStepReport(
+      BenchmarkYamlConfig config,
+      List<ActiveStepContext> stepContexts,
+      Map<ChannelPoolPhase, PhaseLatencyRecorder> phaseRecorders,
+      ChannelPoolVerificationReport report) {
+    if (!config.hasStandardGatePhases()) {
+      StringBuilder sb = new StringBuilder("=== Multi-Step Benchmark Summary ===\n");
+      for (ActiveStepContext ctx : stepContexts) {
+        PhaseSummary s = ctx.recorder.toSummary(ctx.step.getPhase(), ctx.step.getConcurrency());
+        sb.append(
+            String.format(
+                Locale.ROOT,
+                "Step %-15s (loadType=%s, CR=%3d, TPS=%d): ops=%d, errors=%d, P50=%d us, P90=%d us, P99=%d us\n",
+                ctx.step.getName(),
+                ctx.step.getLoadType(),
+                s.getConcurrency(),
+                ctx.step.getTps(),
+                s.getOperationCount(),
+                s.getErrorCount(),
+                s.getP50Micros(),
+                s.getP90Micros(),
+                s.getP99Micros()));
+      }
+      System.out.print(sb.toString());
+      return;
+    }
+    Map<ChannelPoolPhase, Long> cancelled = new EnumMap<>(ChannelPoolPhase.class);
+    for (ChannelPoolPhase phase : ChannelPoolPhase.values()) {
+      cancelled.put(phase, phaseRecorders.get(phase).getCancelledCount());
+    }
+    System.out.print(report.formatSummary(cancelled));
+  }
+
   public void run() throws Exception {
+    if (yamlConfig != null && !yamlConfig.getSteps().isEmpty()) {
+      runConfiguredSteps(yamlConfig);
+      return;
+    }
+    if (unifiedProfileConfig != null) {
+      runConfiguredSteps(BenchmarkYamlConfig.fromLegacy(unifiedProfileConfig));
+      return;
+    }
     System.out.println(
         "Starting " + getBenchmarkName() + " with TPS: " + tps + ", threads: " + threads);
     ExecutorService executor = Executors.newFixedThreadPool(threads);

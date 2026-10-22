@@ -127,6 +127,7 @@ jobs:
             burst_factor=$(echo "$run" | jq -r '.burst_factor')
             burst_duration=$(echo "$run" | jq -r '.burst_duration')
             burst_fraction=$(echo "$run" | jq -r '.burst_fraction')
+            config=$(echo "$run" | jq -r '.config // empty')
             warehouses=$(echo "$run" | jq -r '.warehouses')
             items=$(echo "$run" | jq -r '.items')
             clients=$(echo "$run" | jq -r '.clients')
@@ -152,6 +153,7 @@ jobs:
             BURST_FACTOR="$burst_factor" \
             BURST_DURATION="$burst_duration" \
             BURST_FRACTION="$burst_fraction" \
+            BENCHMARK_CONFIG="$config" \
             WAREHOUSES="$warehouses" \
             ITEMS="$items" \
             CLIENTS="$clients" \
