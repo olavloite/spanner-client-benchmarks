@@ -46,7 +46,7 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
 
   @Option(
       names = {"--load-type"},
-      description = "Load type (STEADY, SPIKY, GRADUAL, CLOSED_LOOP)",
+      description = "Load type (STEADY, SPIKY, GRADUAL, CLOSED_LOOP, UNIFIED_PROFILE)",
       defaultValue = "STEADY",
       converter = LoadTypeConverter.class)
   protected LoadType loadType = LoadType.STEADY;
@@ -76,14 +76,119 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
       description = "Fraction of total time spent in the burst state")
   protected Double burstFraction;
 
+  @Option(
+      names = {"--min-channels"},
+      description =
+          "Minimum (and initial) number of gRPC channels in the pool (for UNIFIED_PROFILE)",
+      defaultValue = "1")
+  protected int minChannels = 1;
+
+  @Option(
+      names = {"--max-channels"},
+      description = "Maximum number of gRPC channels in the pool M (for UNIFIED_PROFILE)",
+      defaultValue = "3")
+  protected int maxChannels = 3;
+
+  @Option(
+      names = {"--warmup-duration"},
+      description = "Phase 1 (Warmup at 50 CR) duration (for UNIFIED_PROFILE)",
+      defaultValue = "5m")
+  protected String warmupDuration = "5m";
+
+  @Option(
+      names = {"--spike-duration"},
+      description = "Phase 2 (70%% Capacity Spike at 210 CR) duration (for UNIFIED_PROFILE)",
+      defaultValue = "10m")
+  protected String spikeDuration = "10m";
+
+  @Option(
+      names = {"--saturation-duration"},
+      description =
+          "Phase 3 Step 1 (100%% Capacity Saturation at 300 CR) duration (for UNIFIED_PROFILE)",
+      defaultValue = "5m")
+  protected String saturationDuration = "5m";
+
+  @Option(
+      names = {"--recovery-duration"},
+      description =
+          "Phase 3 Steps 2-3 (40%% Capacity Recovery at 120 CR) duration (for UNIFIED_PROFILE)",
+      defaultValue = "15m")
+  protected String recoveryDuration = "15m";
+
+  @Option(
+      names = {"--post-test-wait"},
+      description = "Idle wait duration before post-test heap measurement (for UNIFIED_PROFILE)",
+      defaultValue = "5m")
+  protected String postTestWait = "5m";
+
+  @Option(
+      names = {"--warmup-cr"},
+      description = "Override concurrent requests during Phase 1 Warmup (defaults to 50 for M=3)")
+  protected Integer warmupCr;
+
+  @Option(
+      names = {"--spike-cr"},
+      description = "Override concurrent requests during Phase 2 Spike (defaults to M * 70)")
+  protected Integer spikeCr;
+
+  @Option(
+      names = {"--saturation-cr"},
+      description = "Override concurrent requests during Phase 3 Saturation (defaults to M * 100)")
+  protected Integer saturationCr;
+
+  @Option(
+      names = {"--recovery-cr"},
+      description = "Override concurrent requests during Phase 3 Recovery (defaults to M * 40)")
+  protected Integer recoveryCr;
+
+  @Option(
+      names = {"--delta-us"},
+      description =
+          "Allowed client-side P90 latency overhead buffer in microseconds (default 1000us = 1ms)",
+      defaultValue = "1000")
+  protected long deltaMicros = 1000L;
+
+  @Option(
+      names = {"--enforce-gates"},
+      description =
+          "Throw an IllegalStateException if any verification gate fails (for UNIFIED_PROFILE)",
+      defaultValue = "false")
+  protected boolean enforceGates;
+
   protected String getMetricName() {
     return LATENCY_NAME;
   }
 
-  @Override
-  public void run() {
-    // Validation
+  protected UnifiedProfileConfig buildUnifiedProfileConfig() {
+    int resolvedWarmupCr =
+        warmupCr != null ? warmupCr : UnifiedProfileConfig.defaultWarmupConcurrency(maxChannels);
+    int resolvedSpikeCr =
+        spikeCr != null ? spikeCr : UnifiedProfileConfig.defaultSpikeConcurrency(maxChannels);
+    int resolvedSaturationCr =
+        saturationCr != null
+            ? saturationCr
+            : UnifiedProfileConfig.defaultSaturationConcurrency(maxChannels);
+    int resolvedRecoveryCr =
+        recoveryCr != null
+            ? recoveryCr
+            : UnifiedProfileConfig.defaultRecoveryConcurrency(maxChannels);
+    return new UnifiedProfileConfig(
+        minChannels,
+        maxChannels,
+        resolvedWarmupCr,
+        resolvedSpikeCr,
+        resolvedSaturationCr,
+        resolvedRecoveryCr,
+        UnifiedProfileConfig.parsePhaseDuration(warmupDuration, "warmup-duration"),
+        UnifiedProfileConfig.parsePhaseDuration(spikeDuration, "spike-duration"),
+        UnifiedProfileConfig.parsePhaseDuration(saturationDuration, "saturation-duration"),
+        UnifiedProfileConfig.parsePhaseDuration(recoveryDuration, "recovery-duration"),
+        UnifiedProfileConfig.parsePhaseDuration(postTestWait, "post-test-wait"),
+        deltaMicros,
+        enforceGates);
+  }
 
+  protected void validateOptions() {
     if (loadType == LoadType.STEADY) {
       if (cycleDuration != null
           || peakFactor != null
@@ -110,6 +215,19 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
       // Set defaults if not specified
       if (cycleDuration == null) cycleDuration = "1h";
       if (peakFactor == null) peakFactor = 2.0;
+    } else if (loadType == LoadType.UNIFIED_PROFILE) {
+      if (cycleDuration != null
+          || peakFactor != null
+          || burstFactor != null
+          || burstDuration != null
+          || burstFraction != null) {
+        throw new IllegalArgumentException(
+            "Cannot specify burst or gradual load options when load-type is unified-profile");
+      }
+      if (numRows <= 0) {
+        throw new IllegalArgumentException("num-rows must be > 0");
+      }
+      buildUnifiedProfileConfig();
     }
 
     // Set defaults for anything still null to avoid NPE during unboxing
@@ -118,6 +236,11 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
     if (burstFraction == null) burstFraction = 0.1;
     if (cycleDuration == null) cycleDuration = "1h";
     if (peakFactor == null) peakFactor = 2.0;
+  }
+
+  @Override
+  public void run() {
+    validateOptions();
 
     Server server = null;
     if (parent.isMock()) {
@@ -138,19 +261,31 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
       // Initialize Spanner
       SpannerOptions.Builder spannerOptionsBuilder =
           SpannerOptions.newBuilder().setProjectId(parent.getProjectId());
-      if (parent.getHost() != null) {
+      String emulatorHost = System.getenv("SPANNER_EMULATOR_HOST");
+      if (emulatorHost != null && !emulatorHost.isEmpty()) {
+        spannerOptionsBuilder
+            .setEmulatorHost(emulatorHost)
+            .setCredentials(NoCredentials.getInstance());
+      } else if (parent.getHost() != null) {
         spannerOptionsBuilder.setHost(parent.getHost());
         spannerOptionsBuilder.setChannelConfigurator(builder -> builder.usePlaintext());
         spannerOptionsBuilder.setCredentials(NoCredentials.getInstance());
       }
-      String numChannelsStr = System.getenv("SPANNER_NUM_CHANNELS");
-      if (numChannelsStr != null && !numChannelsStr.isEmpty()) {
-        try {
-          int numChannels = Integer.parseInt(numChannelsStr);
-          spannerOptionsBuilder.setNumChannels(numChannels);
-          System.out.println("Configured Spanner Java client with " + numChannels + " channels.");
-        } catch (NumberFormatException e) {
-          System.err.println("Invalid SPANNER_NUM_CHANNELS value: " + numChannelsStr);
+      if (loadType == LoadType.UNIFIED_PROFILE) {
+        spannerOptionsBuilder
+            .enableDynamicChannelPool()
+            .setGcpChannelPoolOptions(
+                UnifiedProfileConfig.buildChannelPoolOptions(minChannels, maxChannels));
+      } else {
+        String numChannelsStr = System.getenv("SPANNER_NUM_CHANNELS");
+        if (numChannelsStr != null && !numChannelsStr.isEmpty()) {
+          try {
+            int numChannels = Integer.parseInt(numChannelsStr);
+            spannerOptionsBuilder.setNumChannels(numChannels);
+            System.out.println("Configured Spanner Java client with " + numChannels + " channels.");
+          } catch (NumberFormatException e) {
+            System.err.println("Invalid SPANNER_NUM_CHANNELS value: " + numChannelsStr);
+          }
         }
       }
       SpannerOptions spannerOptions = spannerOptionsBuilder.build();
@@ -181,8 +316,13 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
                 forAlerting,
                 benchmarkName,
                 parent.isMock());
+        if (loadType == LoadType.UNIFIED_PROFILE) {
+          benchmark.setUnifiedProfileConfig(buildUnifiedProfileConfig());
+        }
         benchmark.run();
       }
+    } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException e) {
+      throw e;
     } catch (Exception e) {
       e.printStackTrace();
     } finally {
@@ -208,7 +348,7 @@ public abstract class AbstractBenchmarkCommand implements Runnable {
   public static class LoadTypeConverter implements picocli.CommandLine.ITypeConverter<LoadType> {
     @Override
     public LoadType convert(String value) throws Exception {
-      return LoadType.valueOf(value.toUpperCase().replace('-', '_'));
+      return LoadType.fromString(value);
     }
   }
 }

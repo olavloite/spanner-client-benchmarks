@@ -108,12 +108,28 @@ else
   fi
   ARGS="--project=$PROJECT_ID,--instance=$INSTANCE_ID,--database=$DATABASE_ID,--duration=$DURATION,${FOR_ALERTING_FLAG}${BENCHMARK_NAME_FLAG}${MOCK_FLAG}$BENCHMARK_TYPE,--table=$TABLE_NAME"
   if [ -n "$LOAD_TYPE" ]; then ARGS="${ARGS},--load-type=$LOAD_TYPE"; fi
-  if [ -n "$TPS" ]; then ARGS="${ARGS},--tps=$TPS"; fi
-  if [ -n "$THREADS" ]; then ARGS="${ARGS},--threads=$THREADS"; fi
   if [ -n "$NUM_ROWS" ]; then ARGS="${ARGS},--num-rows=$NUM_ROWS"; fi
-  if [ -n "$BURST_FACTOR" ]; then ARGS="${ARGS},--burst-factor=$BURST_FACTOR"; fi
-  if [ -n "$BURST_DURATION" ]; then ARGS="${ARGS},--burst-duration=$BURST_DURATION"; fi
-  if [ -n "$BURST_FRACTION" ]; then ARGS="${ARGS},--burst-fraction=$BURST_FRACTION"; fi
+  if [ "$LOAD_TYPE" = "unified-profile" ] || [ "$LOAD_TYPE" = "UNIFIED_PROFILE" ]; then
+    if [ -n "$MIN_CHANNELS" ]; then ARGS="${ARGS},--min-channels=$MIN_CHANNELS"; fi
+    if [ -n "$MAX_CHANNELS" ]; then ARGS="${ARGS},--max-channels=$MAX_CHANNELS"; fi
+    if [ -n "$WARMUP_DURATION" ]; then ARGS="${ARGS},--warmup-duration=$WARMUP_DURATION"; fi
+    if [ -n "$SPIKE_DURATION" ]; then ARGS="${ARGS},--spike-duration=$SPIKE_DURATION"; fi
+    if [ -n "$SATURATION_DURATION" ]; then ARGS="${ARGS},--saturation-duration=$SATURATION_DURATION"; fi
+    if [ -n "$RECOVERY_DURATION" ]; then ARGS="${ARGS},--recovery-duration=$RECOVERY_DURATION"; fi
+    if [ -n "$POST_TEST_WAIT" ]; then ARGS="${ARGS},--post-test-wait=$POST_TEST_WAIT"; fi
+    if [ -n "$WARMUP_CR" ]; then ARGS="${ARGS},--warmup-cr=$WARMUP_CR"; fi
+    if [ -n "$SPIKE_CR" ]; then ARGS="${ARGS},--spike-cr=$SPIKE_CR"; fi
+    if [ -n "$SATURATION_CR" ]; then ARGS="${ARGS},--saturation-cr=$SATURATION_CR"; fi
+    if [ -n "$RECOVERY_CR" ]; then ARGS="${ARGS},--recovery-cr=$RECOVERY_CR"; fi
+    if [ -n "$DELTA_US" ]; then ARGS="${ARGS},--delta-us=$DELTA_US"; fi
+    if [ "$ENFORCE_GATES" = "true" ]; then ARGS="${ARGS},--enforce-gates"; fi
+  else
+    if [ -n "$TPS" ]; then ARGS="${ARGS},--tps=$TPS"; fi
+    if [ -n "$THREADS" ]; then ARGS="${ARGS},--threads=$THREADS"; fi
+    if [ -n "$BURST_FACTOR" ]; then ARGS="${ARGS},--burst-factor=$BURST_FACTOR"; fi
+    if [ -n "$BURST_DURATION" ]; then ARGS="${ARGS},--burst-duration=$BURST_DURATION"; fi
+    if [ -n "$BURST_FRACTION" ]; then ARGS="${ARGS},--burst-fraction=$BURST_FRACTION"; fi
+  fi
   if [ -n "$WORKERS" ] && ([ "$CLIENT_TYPE" = "node" ] || [ "$CLIENT_TYPE" = "python" ] || [ "$CLIENT_TYPE" = "python-async" ]); then ARGS="${ARGS},--workers=$WORKERS"; fi
 fi
 
